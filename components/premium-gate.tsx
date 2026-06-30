@@ -12,7 +12,7 @@ export function PremiumGate({ feature }: { feature: string }) {
         <h2 className="text-xl font-semibold">{feature} is a premium feature</h2>
         <p className="mx-auto mt-1 max-w-sm text-pretty text-muted-foreground">
           Subscribe to unlock AI summaries, quizzes, podcasts, and the full
-          Voxify library.
+          VOXYFI library.
         </p>
       </div>
       <Link href="/subscribe" className={buttonVariants({ size: "lg" })}>

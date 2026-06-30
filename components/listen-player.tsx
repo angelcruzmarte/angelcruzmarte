@@ -63,7 +63,7 @@ export function ListenPlayer({
         <h1 className="text-xl font-semibold">Text-to-speech not supported</h1>
         <p className="max-w-sm text-muted-foreground">
           Your browser does not support the Web Speech API. Try the latest
-          version of Chrome, Edge, or Safari to listen on Voxify.
+          version of Chrome, Edge, or Safari to listen on VOXYFI.
         </p>
       </div>
     )

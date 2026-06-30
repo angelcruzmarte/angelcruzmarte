@@ -22,7 +22,7 @@ export default async function AdminLayout({
             <AudioLines className="h-4 w-4" />
           </div>
           <div className="leading-none">
-            <p className="text-sm font-semibold">Voxify</p>
+            <p className="text-sm font-semibold">VOXYFI</p>
             <p className="text-xs text-muted-foreground">Admin</p>
           </div>
         </div>

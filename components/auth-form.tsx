@@ -62,7 +62,7 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <AudioLines className="h-5 w-5" />
         </div>
-        <span className="text-xl font-semibold tracking-tight">Voxify</span>
+        <span className="text-xl font-semibold tracking-tight">VOXYFI</span>
       </Link>
 
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
@@ -128,7 +128,7 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
         </form>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          {isSignUp ? "Already have an account? " : "New to Voxify? "}
+          {isSignUp ? "Already have an account? " : "New to VOXYFI? "}
           <Link
             href={isSignUp ? "/sign-in" : "/sign-up"}
             className="font-medium text-primary hover:underline"

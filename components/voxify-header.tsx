@@ -23,7 +23,7 @@ export function VoxifyHeader({ mode, onToggleMode, wordCount }: Props) {
             <AudioLines className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="leading-none">
-            <span className="text-lg font-semibold tracking-tight">Voxify</span>
+            <span className="text-lg font-semibold tracking-tight">VOXYFI</span>
             <span className="ml-2 hidden text-sm text-muted-foreground sm:inline">
               {wordCount.toLocaleString()} words · {estimateMinutes(wordCount)} min listen
             </span>
