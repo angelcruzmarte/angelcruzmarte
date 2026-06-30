@@ -22,14 +22,14 @@ export function BookCover({
         style={{ backgroundColor: book.accentColor, opacity: 0.6 }}
         aria-hidden
       />
-      <div>
+      <div className="min-w-0">
         <p
-          className="text-pretty text-[0.95rem] font-bold leading-tight text-white"
+          className="line-clamp-4 text-pretty text-[0.95rem] font-bold leading-tight text-white"
           style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}
         >
           {book.title}
         </p>
-        <p className="mt-1 text-[0.7rem] font-medium uppercase tracking-wide text-white/75">
+        <p className="mt-1 truncate text-[0.7rem] font-medium uppercase tracking-wide text-white/75">
           {book.author}
         </p>
       </div>
