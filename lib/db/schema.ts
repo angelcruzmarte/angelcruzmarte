@@ -1,9 +1,11 @@
 import {
   boolean,
+  integer,
   pgTable,
   serial,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core"
 
 // ----- Better Auth tables (camelCase columns must match Better Auth defaults) -----
@@ -80,5 +82,49 @@ export const readingItem = pgTable("reading_item", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
 
+// User-owned text-to-speech documents (paste / type / file / link)
+export const document = pgTable("document", {
+  id: serial("id").primaryKey(),
+  userId: text("userId").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  sourceType: text("sourceType").notNull().default("text"),
+  sourceUrl: text("sourceUrl"),
+  wordCount: integer("wordCount").notNull().default(0),
+  lastWord: integer("lastWord").notNull().default(0),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+})
+
+// Per-user Discover interest selections
+export const userInterest = pgTable(
+  "user_interest",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    interest: text("interest").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserInterest: unique().on(t.userId, t.interest),
+  }),
+)
+
+// Books store catalog
+export const book = pgTable("book", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  author: text("author").notNull(),
+  category: text("category").notNull().default("General"),
+  description: text("description").notNull(),
+  excerpt: text("excerpt").notNull(),
+  coverColor: text("coverColor").notNull().default("#3b3f8f"),
+  accentColor: text("accentColor").notNull().default("#f4b740"),
+  featured: boolean("featured").notNull().default(false),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
+
 export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect
+export type Document = typeof document.$inferSelect
+export type Book = typeof book.$inferSelect

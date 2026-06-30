@@ -1,0 +1,151 @@
+"use server"
+
+import { auth } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { document } from "@/lib/db/schema"
+import { and, desc, eq } from "drizzle-orm"
+import { headers } from "next/headers"
+import { revalidatePath } from "next/cache"
+
+async function getUserId() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) throw new Error("Unauthorized")
+  return session.user.id
+}
+
+function countWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
+
+export async function getDocuments() {
+  const userId = await getUserId()
+  return db
+    .select()
+    .from(document)
+    .where(eq(document.userId, userId))
+    .orderBy(desc(document.updatedAt))
+}
+
+export async function getDocument(id: number) {
+  const userId = await getUserId()
+  const [doc] = await db
+    .select()
+    .from(document)
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+    .limit(1)
+  return doc ?? null
+}
+
+export async function createDocument(input: {
+  title: string
+  content: string
+  sourceType?: string
+  sourceUrl?: string
+}) {
+  const userId = await getUserId()
+  const title = input.title.trim() || "Untitled"
+  const content = input.content.trim()
+  if (!content) throw new Error("Content is required")
+
+  const [doc] = await db
+    .insert(document)
+    .values({
+      userId,
+      title,
+      content,
+      sourceType: input.sourceType ?? "text",
+      sourceUrl: input.sourceUrl ?? null,
+      wordCount: countWords(content),
+    })
+    .returning()
+
+  revalidatePath("/app/library")
+  return doc
+}
+
+/**
+ * Fetches a URL and extracts readable text (title + body) so it can be
+ * turned into a listening document. Best-effort HTML stripping.
+ */
+export async function importFromUrl(rawUrl: string) {
+  await getUserId()
+  let url: URL
+  try {
+    url = new URL(rawUrl.trim())
+    if (!/^https?:$/.test(url.protocol)) throw new Error("bad protocol")
+  } catch {
+    throw new Error("Please enter a valid http(s) URL.")
+  }
+
+  let html = ""
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; VoxifyBot/1.0)" },
+    })
+    if (!res.ok) throw new Error(`status ${res.status}`)
+    html = await res.text()
+  } catch {
+    throw new Error("Could not fetch that page. Try pasting the text instead.")
+  }
+
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  const title = titleMatch
+    ? decodeEntities(titleMatch[1]).trim().slice(0, 200)
+    : url.hostname
+
+  const text = htmlToText(html)
+  if (countWords(text) < 20) {
+    throw new Error(
+      "Couldn't extract enough readable text from that link. Try pasting the text instead.",
+    )
+  }
+
+  return createDocument({
+    title,
+    content: text,
+    sourceType: "link",
+    sourceUrl: url.toString(),
+  })
+}
+
+function decodeEntities(s: string) {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+}
+
+function htmlToText(html: string) {
+  const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html
+  return decodeEntities(
+    body
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<(nav|header|footer|aside)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<\/(p|div|h[1-6]|li|br|section|article)>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+export async function updateProgress(id: number, lastWord: number) {
+  const userId = await getUserId()
+  await db
+    .update(document)
+    .set({ lastWord, updatedAt: new Date() })
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+}
+
+export async function deleteDocument(id: number) {
+  const userId = await getUserId()
+  await db
+    .delete(document)
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+  revalidatePath("/app/library")
+}
