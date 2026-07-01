@@ -17,7 +17,7 @@ export async function SiteHeader() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <AudioLines className="h-5 w-5" aria-hidden="true" />
           </div>
-          <span className="text-lg font-semibold tracking-tight">Voxify</span>
+          <span className="text-lg font-semibold tracking-tight">VOXYFI</span>
         </Link>
 
         <nav className="flex items-center gap-2 sm:gap-3">

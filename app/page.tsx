@@ -11,12 +11,8 @@ export default async function HomePage() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
 
-  const primaryHref = subscribed ? "/library" : user ? "/subscribe" : "/sign-up"
-  const primaryLabel = subscribed
-    ? "Go to your library"
-    : user
-      ? "Choose a plan"
-      : "Start listening free"
+  const primaryHref = user ? "/app" : "/sign-up"
+  const primaryLabel = user ? "Open VOXYFI" : "Start listening free"
 
   return (
     <div className="min-h-screen">
@@ -30,7 +26,7 @@ export default async function HomePage() {
             Listen to anything, anywhere
           </span>
           <h1 className="mt-5 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Turn reading into listening with Voxify
+            Turn reading into listening with VOXYFI
           </h1>
           <p className="mt-4 text-pretty text-lg leading-relaxed text-muted-foreground">
             Subscribe to a growing library of articles and books, narrated with
@@ -42,7 +38,7 @@ export default async function HomePage() {
               {primaryLabel}
             </Link>
             <Link
-              href="/library"
+              href={user ? "/app/books" : "/sign-up"}
               className={buttonVariants({ variant: "secondary", size: "lg" })}
             >
               Browse the library
@@ -149,7 +145,7 @@ export default async function HomePage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-8 text-sm text-muted-foreground sm:px-6">
           <span className="flex items-center gap-2">
             <AudioLines className="h-4 w-4" />
-            Voxify
+            VOXYFI
           </span>
           <span>Listen to anything.</span>
         </div>

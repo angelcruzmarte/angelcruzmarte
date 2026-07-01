@@ -57,7 +57,7 @@ export default async function AccountPage() {
           {subscribed ? (
             <div className="mt-4">
               <p className="text-lg font-semibold">
-                {plan?.name ?? "Voxify Premium"}
+                {plan?.name ?? "VOXYFI Premium"}
               </p>
               {plan && (
                 <p className="text-sm text-muted-foreground">

@@ -13,7 +13,7 @@ export interface Plan {
 export const PLANS: Plan[] = [
   {
     id: "monthly",
-    name: "Voxify Premium",
+    name: "VOXYFI Premium",
     description: "Unlimited listening, billed monthly.",
     priceInCents: 1200,
     interval: "month",
@@ -26,7 +26,7 @@ export const PLANS: Plan[] = [
   },
   {
     id: "yearly",
-    name: "Voxify Premium Annual",
+    name: "VOXYFI Premium Annual",
     description: "Unlimited listening, billed yearly. Save 30%.",
     priceInCents: 9900,
     interval: "year",

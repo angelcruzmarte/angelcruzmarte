@@ -12,9 +12,17 @@ type Props = {
   title: string
   author?: string | null
   content: string
+  backHref?: string
+  backLabel?: string
 }
 
-export function ListenPlayer({ title, author, content }: Props) {
+export function ListenPlayer({
+  title,
+  author,
+  content,
+  backHref = "/library",
+  backLabel = "Library",
+}: Props) {
   const {
     status,
     currentWord,
@@ -55,7 +63,7 @@ export function ListenPlayer({ title, author, content }: Props) {
         <h1 className="text-xl font-semibold">Text-to-speech not supported</h1>
         <p className="max-w-sm text-muted-foreground">
           Your browser does not support the Web Speech API. Try the latest
-          version of Chrome, Edge, or Safari to listen on Voxify.
+          version of Chrome, Edge, or Safari to listen on VOXYFI.
         </p>
       </div>
     )
@@ -65,11 +73,11 @@ export function ListenPlayer({ title, author, content }: Props) {
     <div>
       <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6">
         <Link
-          href="/library"
+          href={backHref}
           className={buttonVariants({ variant: "ghost", size: "sm" }) + " gap-1.5"}
         >
           <ArrowLeft className="h-4 w-4" />
-          Library
+          {backLabel}
         </Link>
       </div>
 
