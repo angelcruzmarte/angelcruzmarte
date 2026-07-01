@@ -18,10 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { chunkText } from "@/lib/chunk-text"
-import {
-  generatePremiumSpeech,
-  PREMIUM_VOICES,
-} from "@/app/actions/speech"
+import { generatePremiumSpeech } from "@/app/actions/speech"
+import { PREMIUM_VOICES } from "@/lib/voices"
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 

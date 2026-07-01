@@ -11,9 +11,9 @@ const geistMono = Geist_Mono({
 const lora = Lora({ variable: '--font-lora', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Voxify — Listen to anything',
+  title: 'VOXYFI — Listen to anything',
   description:
-    'Voxify turns any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
+    'VOXYFI turns any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
   generator: 'v0.app',
   icons: {
     icon: [

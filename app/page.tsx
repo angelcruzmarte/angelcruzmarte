@@ -30,7 +30,7 @@ export default async function HomePage() {
             Listen to anything, anywhere
           </span>
           <h1 className="mt-5 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Turn reading into listening with Voxify
+            Turn reading into listening with VOXYFI
           </h1>
           <p className="mt-4 text-pretty text-lg leading-relaxed text-muted-foreground">
             Subscribe to a growing library of articles and books, narrated with
