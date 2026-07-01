@@ -2,18 +2,7 @@
 
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
-
-/** Premium voices offered to subscribers, mapped to OpenAI TTS voice IDs. */
-export const PREMIUM_VOICES = [
-  { id: "alloy", label: "Alloy — Balanced" },
-  { id: "nova", label: "Nova — Warm" },
-  { id: "shimmer", label: "Shimmer — Bright" },
-  { id: "echo", label: "Echo — Calm" },
-  { id: "onyx", label: "Onyx — Deep" },
-  { id: "fable", label: "Fable — Expressive" },
-] as const
-
-export type PremiumVoiceId = (typeof PREMIUM_VOICES)[number]["id"]
+import { PREMIUM_VOICES, type PremiumVoiceId } from "@/lib/voices"
 
 const VALID_VOICES = new Set<string>(PREMIUM_VOICES.map((v) => v.id))
 // OpenAI TTS accepts up to ~4096 characters per request; stay safely under it.

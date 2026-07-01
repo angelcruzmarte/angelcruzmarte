@@ -73,7 +73,7 @@ export function VoxifyApp() {
         <h1 className="text-xl font-semibold">Text-to-speech not supported</h1>
         <p className="max-w-sm text-muted-foreground">
           Your browser does not support the Web Speech API. Try the latest version of
-          Chrome, Edge, or Safari to use Voxify.
+          Chrome, Edge, or Safari to use VOXYFI.
         </p>
       </div>
     )
