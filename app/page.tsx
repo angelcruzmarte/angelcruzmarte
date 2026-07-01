@@ -146,12 +146,22 @@ export default async function HomePage() {
       </section>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-8 text-sm text-muted-foreground sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span className="flex items-center gap-2">
             <AudioLines className="h-4 w-4" />
-            Voxify
+            VOXYFI
           </span>
-          <span>Listen to anything.</span>
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link href="/legal/terms" className="hover:text-foreground">
+              Terms
+            </Link>
+            <Link href="/legal/privacy" className="hover:text-foreground">
+              Privacy
+            </Link>
+            <Link href="/legal/refund" className="hover:text-foreground">
+              Refunds
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>

@@ -35,17 +35,29 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
           email,
           password,
           name,
+          callbackURL: "/subscribe",
         })
         if (error) {
           setError(error.message ?? "Could not create account.")
           return
         }
-      } else {
-        const { error } = await authClient.signIn.email({ email, password })
-        if (error) {
-          setError(error.message ?? "Invalid email or password.")
+        // Email verification is required, so no session exists yet.
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+        return
+      }
+
+      const { error } = await authClient.signIn.email({ email, password })
+      if (error) {
+        if (
+          error.code === "EMAIL_NOT_VERIFIED" ||
+          error.status === 403 ||
+          /verif/i.test(error.message ?? "")
+        ) {
+          router.push(`/verify-email?email=${encodeURIComponent(email)}`)
           return
         }
+        setError(error.message ?? "Invalid email or password.")
+        return
       }
       router.push(redirectTo)
       router.refresh()
@@ -62,7 +74,7 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <AudioLines className="h-5 w-5" />
         </div>
-        <span className="text-xl font-semibold tracking-tight">Voxify</span>
+        <span className="text-xl font-semibold tracking-tight">VOXYFI</span>
       </Link>
 
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
@@ -102,7 +114,17 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              {!isSignUp && (
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              )}
+            </div>
             <Input
               id="password"
               type="password"
@@ -128,7 +150,7 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
         </form>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          {isSignUp ? "Already have an account? " : "New to Voxify? "}
+          {isSignUp ? "Already have an account? " : "New to VOXYFI? "}
           <Link
             href={isSignUp ? "/sign-in" : "/sign-up"}
             className="font-medium text-primary hover:underline"
