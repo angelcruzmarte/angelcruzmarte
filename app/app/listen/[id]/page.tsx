@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { getDocument } from "@/app/actions/documents"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { ListenPlayer } from "@/components/listen-player"
 
 export default async function AppListenPage({
@@ -11,8 +12,9 @@ export default async function AppListenPage({
   const docId = Number(id)
   if (Number.isNaN(docId)) notFound()
 
-  const doc = await getDocument(docId)
+  const [doc, user] = await Promise.all([getDocument(docId), getCurrentUser()])
   if (!doc) notFound()
+  const premium = hasActiveSubscription(user)
 
   return (
     <ListenPlayer
@@ -20,6 +22,7 @@ export default async function AppListenPage({
       content={doc.content}
       backHref="/app/library"
       backLabel="Library"
+      premium={premium}
     />
   )
 }

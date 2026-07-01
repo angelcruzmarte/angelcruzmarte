@@ -45,6 +45,23 @@ export default async function SubscribePage({
             Go to your library
           </Link>
         </p>
+
+        <p className="mx-auto mt-6 max-w-md text-balance text-center text-xs leading-relaxed text-muted-foreground">
+          Subscriptions renew automatically until canceled. By subscribing you
+          agree to our{" "}
+          <Link href="/legal/terms" className="underline hover:text-foreground">
+            Terms
+          </Link>
+          ,{" "}
+          <Link href="/legal/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+          , and{" "}
+          <Link href="/legal/refund" className="underline hover:text-foreground">
+            Refund Policy
+          </Link>
+          .
+        </p>
       </main>
     </div>
   )
