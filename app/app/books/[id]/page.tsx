@@ -53,7 +53,7 @@ export default async function BookDetailPage({
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-primary/10 px-4 py-3 text-sm">
           <span className="flex items-center gap-2 text-primary">
             <Lock className="h-4 w-4" />
-            Subscribe to listen to the full book.
+            Subscribe for premium AI narration of the full book.
           </span>
           <Link
             href="/subscribe"
@@ -63,6 +63,15 @@ export default async function BookDetailPage({
           </Link>
         </div>
       )}
+
+      <ListenPlayer
+        title={book.title}
+        author={book.author}
+        content={subscribed ? book.excerpt : book.excerpt.slice(0, 600)}
+        backHref="/app/books"
+        backLabel="Book Store"
+        premium={subscribed}
+      />
     </div>
   )
 }
