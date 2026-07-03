@@ -7,12 +7,16 @@ import { generateObject, generateText } from "ai"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
+// Anthropic is a separate zero-config provider with its own free-tier quota;
+// OpenAI text models are aggressively rate-limited on the free tier, so we use
+// Claude for the higher-volume translation workload.
+const TRANSLATE_MODEL = "anthropic/claude-haiku-4.5"
 const MAX_INPUT = 16000
-// Upper bound on how much text we translate in one request to keep latency and
-// cost reasonable. Longer documents are translated up to this point.
+// Upper bound on how much text we translate to keep latency/cost reasonable.
 const MAX_TRANSLATE = 24000
-// Per-request translation chunk size (chars). Smaller = faster first result.
-const TRANSLATE_CHUNK = 2200
+// Per-request translation chunk size (chars). Larger chunks = fewer requests,
+// which is friendlier to rate limits.
+const TRANSLATE_CHUNK = 4000
 
 async function requirePremium() {
   const user = await getCurrentUser()
@@ -20,6 +24,20 @@ async function requirePremium() {
   if (!hasActiveSubscription(user)) {
     throw new Error("An active subscription is required to use AI features.")
   }
+}
+
+/**
+ * Non-throwing premium check. Returns a user-facing message string when the
+ * user is not eligible, or null when allowed. Used by actions that surface
+ * errors as returned data (thrown errors are sanitized in production).
+ */
+async function premiumGuardMessage(): Promise<string | null> {
+  const user = await getCurrentUser()
+  if (!user) return "Please sign in to use AI features."
+  if (!hasActiveSubscription(user)) {
+    return "An active subscription is required to use AI features."
+  }
+  return null
 }
 
 function clamp(text: string) {
@@ -125,11 +143,13 @@ export async function generatePodcast(input: string): Promise<PodcastResult> {
 export interface TranslationResult {
   translated: string
   truncated: boolean
+  /** Present when translation could not be completed (shown to the user). */
+  error?: string
 }
 
-async function translateChunk(chunk: string, language: string) {
+async function translateChunkOnce(chunk: string, language: string) {
   const { text } = await generateText({
-    model: MODEL,
+    model: TRANSLATE_MODEL,
     prompt:
       `Translate the following text into ${language}. ` +
       `Preserve the meaning, tone, and paragraph breaks. ` +
@@ -139,27 +159,79 @@ async function translateChunk(chunk: string, language: string) {
   return text.trim()
 }
 
+/** Translate one chunk with a single retry to ride out transient rate limits. */
+async function translateChunk(chunk: string, language: string) {
+  try {
+    return await translateChunkOnce(chunk, language)
+  } catch {
+    await new Promise((r) => setTimeout(r, 800))
+    return translateChunkOnce(chunk, language)
+  }
+}
+
+/**
+ * Runs async tasks with bounded concurrency so we never fire dozens of model
+ * requests at once (which trips provider rate limits). Results preserve order.
+ */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++
+      results[i] = await fn(items[i], i)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 /**
  * Translates document text into the target language for reading/narration.
- * The text is split into chunks (up to MAX_TRANSLATE characters) that are
- * translated concurrently and rejoined, so even long documents complete well
- * within the serverless time limit.
+ * The text is split into chunks (up to MAX_TRANSLATE characters) translated
+ * with bounded concurrency + retry. If an individual chunk still fails, the
+ * original text is kept for that chunk so the whole request never hard-fails.
  */
 export async function translateText(
   input: string,
   targetLang: string,
 ): Promise<TranslationResult> {
-  await requirePremium()
+  const premiumError = await premiumGuardMessage()
+  if (premiumError) return { translated: input ?? "", truncated: false, error: premiumError }
+
   const source = (input ?? "").trim()
-  if (!source) throw new Error("There is no text to translate.")
+  if (!source) return { translated: "", truncated: false }
 
   const language = languageName(targetLang)
   const truncated = source.length > MAX_TRANSLATE
   const capped = source.slice(0, MAX_TRANSLATE)
   const chunks = chunkText(capped, TRANSLATE_CHUNK)
 
-  // Translate all chunks in parallel to keep total latency low.
-  const out = await Promise.all(chunks.map((c) => translateChunk(c, language)))
+  let failures = 0
+  const out = await mapPool(chunks, 2, async (chunk) => {
+    try {
+      return await translateChunk(chunk, language)
+    } catch {
+      // Keep the original text for this chunk rather than failing the document.
+      failures++
+      return chunk
+    }
+  })
+
+  // If nothing could be translated, return a clear message as data (thrown
+  // errors are sanitized in production, so we must not throw here).
+  if (failures === chunks.length) {
+    return {
+      translated: source,
+      truncated,
+      error:
+        "Translation is temporarily unavailable due to high demand. Please try again in a minute.",
+    }
+  }
 
   return { translated: out.join("\n\n"), truncated }
 }

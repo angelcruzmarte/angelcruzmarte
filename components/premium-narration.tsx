@@ -223,12 +223,16 @@ export function PremiumNarration({
       setTranslating(true)
       try {
         const res = await translateText(text, next)
+        if (res.error) {
+          setError(res.error)
+          return
+        }
         setTranslations((prev) => ({ ...prev, [next]: res.translated }))
         setTruncatedNote(res.truncated)
         setLang(next)
-      } catch (err) {
+      } catch {
         setError(
-          err instanceof Error ? err.message : "Could not translate this text.",
+          "Could not translate this text right now. Please try again shortly.",
         )
       } finally {
         setTranslating(false)
