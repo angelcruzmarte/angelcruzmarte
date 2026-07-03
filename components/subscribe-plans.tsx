@@ -37,14 +37,14 @@ export function SubscribePlans() {
 
   return (
     <div>
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-6 pt-3 sm:grid-cols-2">
         {PLANS.map((plan) => (
           <Card
             key={plan.id}
             className={
               plan.highlighted
-                ? "relative border-primary p-7 ring-1 ring-primary"
-                : "relative p-7"
+                ? "relative overflow-visible border-primary p-7 ring-1 ring-primary"
+                : "relative overflow-visible p-7"
             }
           >
             {plan.highlighted && (

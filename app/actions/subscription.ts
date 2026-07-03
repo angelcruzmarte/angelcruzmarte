@@ -27,7 +27,20 @@ async function ensureCustomer(userId: string, email: string, name: string) {
     .where(eq(userTable.id, userId))
     .limit(1)
   const existing = rows[0]?.stripeCustomerId
-  if (existing) return existing
+  if (existing) {
+    // Verify the stored customer still exists in the current Stripe mode.
+    // A customer created with test keys will not resolve under live keys, so
+    // we transparently recreate it instead of failing checkout.
+    try {
+      const customer = await stripe.customers.retrieve(existing)
+      if (!("deleted" in customer) || !customer.deleted) return existing
+    } catch (error) {
+      console.error(
+        "[v0] Stored Stripe customer is invalid, recreating:",
+        error,
+      )
+    }
+  }
 
   const customer = await stripe.customers.create({
     email,
@@ -126,11 +139,31 @@ export async function refreshSubscriptionFor(userId: string | null) {
   const u = rows[0]
   if (!u?.stripeCustomerId) return
 
-  const subs = await stripe.subscriptions.list({
-    customer: u.stripeCustomerId,
-    status: "all",
-    limit: 1,
-  })
+  let subs
+  try {
+    subs = await stripe.subscriptions.list({
+      customer: u.stripeCustomerId,
+      status: "all",
+      limit: 1,
+    })
+  } catch (error) {
+    // A stale customer id (e.g. a test-mode customer under live keys) throws
+    // "No such customer". Clear it so the account keeps working and a fresh
+    // customer is created on the next checkout.
+    if (
+      error instanceof Error &&
+      (error as { code?: string }).code === "resource_missing"
+    ) {
+      await db
+        .update(userTable)
+        .set({ stripeCustomerId: null, updatedAt: new Date() })
+        .where(eq(userTable.id, u.id))
+      return
+    }
+    console.error("[v0] Failed to list subscriptions:", error)
+    return
+  }
+
   const sub = subs.data[0]
   if (!sub) return
 

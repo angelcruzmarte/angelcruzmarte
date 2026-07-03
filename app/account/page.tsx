@@ -11,7 +11,13 @@ import { ManageBillingButton } from "@/components/manage-billing-button"
 
 export default async function AccountPage() {
   // Reconcile with Stripe on load so status is correct even without webhooks.
-  await syncSubscription()
+  // Never let a billing/Stripe hiccup crash the page (e.g. a stale customer id
+  // after switching from test to live keys).
+  try {
+    await syncSubscription()
+  } catch (error) {
+    console.error("[v0] syncSubscription failed on account page:", error)
+  }
 
   const user = await getCurrentUser()
   if (!user) redirect("/sign-in")

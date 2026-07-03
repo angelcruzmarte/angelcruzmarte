@@ -13,9 +13,10 @@ import { Label } from "@/components/ui/label"
 type Props = {
   mode: "sign-in" | "sign-up"
   redirectTo?: string
+  notice?: string
 }
 
-export function AuthForm({ mode, redirectTo = "/library" }: Props) {
+export function AuthForm({ mode, redirectTo = "/library", notice }: Props) {
   const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -86,6 +87,12 @@ export function AuthForm({ mode, redirectTo = "/library" }: Props) {
             ? "Start listening to your library in minutes."
             : "Sign in to continue listening."}
         </p>
+
+        {notice && (
+          <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+            {notice}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           {isSignUp && (
