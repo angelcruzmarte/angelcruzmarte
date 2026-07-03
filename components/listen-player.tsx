@@ -176,14 +176,7 @@ export function ListenPlayer({
 
       {premium && mode === "premium" && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
-          <PremiumNarration text={content} />
-          <ReaderPanel
-            title={title}
-            text={content}
-            words={words}
-            currentWord={-1}
-            onWordClick={() => {}}
-          />
+          <PremiumNarration text={content} title={title} />
         </div>
       )}
 

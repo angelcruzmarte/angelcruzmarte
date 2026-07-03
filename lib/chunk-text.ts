@@ -46,3 +46,27 @@ export function chunkText(text: string, maxChars = 3500): string[] {
   if (current.trim()) chunks.push(current.trim())
   return chunks
 }
+
+/**
+ * Chunks text for on-demand narration with a deliberately small FIRST chunk so
+ * audio for section one is generated (and starts playing) almost instantly,
+ * then falls back to larger chunks to minimize the number of requests. This
+ * dramatically reduces the perceived latency before narration begins.
+ */
+export function chunkForNarration(
+  text: string,
+  leadChars = 380,
+  bodyChars = 1400,
+): string[] {
+  const clean = text.replace(/\s+/g, " ").trim()
+  if (!clean) return []
+  if (clean.length <= leadChars) return [clean]
+
+  // Build a short lead chunk on a sentence boundary for a fast first request.
+  const first = chunkText(clean, leadChars)[0]
+  const chunks = [first]
+
+  const rest = clean.slice(first.length).trim()
+  if (rest) chunks.push(...chunkText(rest, bodyChars))
+  return chunks
+}

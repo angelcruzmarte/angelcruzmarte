@@ -1,11 +1,18 @@
 "use server"
 
+import { chunkText } from "@/lib/chunk-text"
+import { languageName } from "@/lib/languages"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { generateObject, generateText } from "ai"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
 const MAX_INPUT = 16000
+// Upper bound on how much text we translate in one request to keep latency and
+// cost reasonable. Longer documents are translated up to this point.
+const MAX_TRANSLATE = 24000
+// Per-request translation chunk size (chars). Smaller = faster first result.
+const TRANSLATE_CHUNK = 2200
 
 async function requirePremium() {
   const user = await getCurrentUser()
@@ -113,6 +120,45 @@ export async function generatePodcast(input: string): Promise<PodcastResult> {
     prompt: `Turn the following text into an engaging two-person podcast conversation between a Host and a Guest. Keep it lively, insightful, and faithful to the source.\n\n${text}`,
   })
   return object
+}
+
+export interface TranslationResult {
+  translated: string
+  truncated: boolean
+}
+
+/**
+ * Translates document text into the target language for reading/narration.
+ * Long documents are translated in sequential chunks (up to MAX_TRANSLATE
+ * characters) and rejoined so paragraph structure is preserved.
+ */
+export async function translateText(
+  input: string,
+  targetLang: string,
+): Promise<TranslationResult> {
+  await requirePremium()
+  const source = (input ?? "").trim()
+  if (!source) throw new Error("There is no text to translate.")
+
+  const language = languageName(targetLang)
+  const truncated = source.length > MAX_TRANSLATE
+  const capped = source.slice(0, MAX_TRANSLATE)
+  const chunks = chunkText(capped, TRANSLATE_CHUNK)
+
+  const out: string[] = []
+  for (const chunk of chunks) {
+    const { text } = await generateText({
+      model: MODEL,
+      prompt:
+        `Translate the following text into ${language}. ` +
+        `Preserve the meaning, tone, and paragraph breaks. ` +
+        `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
+        chunk,
+    })
+    out.push(text.trim())
+  }
+
+  return { translated: out.join("\n\n"), truncated }
 }
 
 /** Quick free-form generation for the "Type anything" box on Home. */
