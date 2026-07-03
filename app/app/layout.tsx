@@ -2,6 +2,8 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AppTabBar } from "@/components/app-tab-bar"
+import { PlayerProvider } from "@/components/player-provider"
+import { MiniPlayer } from "@/components/mini-player"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
 import { Waves } from "lucide-react"
@@ -13,9 +15,11 @@ export default async function AppLayout({
 }) {
   const user = await getCurrentUser()
   if (!user) redirect("/sign-in")
+  if (!user.onboardingComplete) redirect("/onboarding")
   const subscribed = hasActiveSubscription(user)
 
   return (
+    <PlayerProvider>
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
         <Link href="/app" className="flex items-center gap-2">
@@ -45,7 +49,9 @@ export default async function AppLayout({
 
       <main className="flex-1 pb-28">{children}</main>
 
+      <MiniPlayer />
       <AppTabBar />
     </div>
+    </PlayerProvider>
   )
 }

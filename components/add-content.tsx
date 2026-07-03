@@ -190,48 +190,51 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
       )}
 
       {mode === "file" && (
-        <FileImport
-          loading={loading}
-          onText={(name, text) =>
-            save(
-              createDocument({
-                title: name,
-                content: text,
-                sourceType: "file",
-              }),
-            )
-          }
-          onError={setError}
-        />
+        <FileImport onError={setError} onDone={(id) => router.push(`/app/listen/${id}`)} />
       )}
     </div>
   )
 }
 
 function FileImport({
-  loading,
-  onText,
   onError,
+  onDone,
 }: {
-  loading: boolean
-  onText: (name: string, text: string) => void
   onError: (msg: string) => void
+  onDone: (id: number) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   async function handleFile(file: File) {
-    if (file.size > 2 * 1024 * 1024) {
-      onError("File is too large. Please use a file under 2MB.")
-      return
-    }
-    const text = await file.text()
-    if (!text.trim()) {
-      onError("That file appears to be empty or unreadable as text.")
+    if (file.size > 15 * 1024 * 1024) {
+      onError("File is too large. Please use a file under 15MB.")
       return
     }
     setFileName(file.name)
-    onText(file.name.replace(/\.[^.]+$/, ""), text)
+    setUploading(true)
+    onError("")
+    try {
+      // Binary formats (PDF/DOCX/EPUB) must be parsed server-side, so we send
+      // the raw file to the upload endpoint which extracts the text.
+      const body = new FormData()
+      body.append("file", file)
+      const res = await fetch("/api/documents/upload", {
+        method: "POST",
+        body,
+      })
+      const data = (await res.json()) as { id?: number; error?: string }
+      if (!res.ok || !data.id) {
+        onError(data.error ?? "Could not process that file.")
+        setUploading(false)
+        return
+      }
+      onDone(data.id)
+    } catch {
+      onError("Upload failed. Please try again.")
+      setUploading(false)
+    }
   }
 
   return (
@@ -239,25 +242,27 @@ function FileImport({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={loading}
+        disabled={uploading}
         className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-secondary/50 px-6 py-12 text-center transition-colors hover:bg-secondary"
       >
-        {loading ? (
+        {uploading ? (
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
         ) : (
           <FolderOpen className="h-7 w-7 text-muted-foreground" />
         )}
         <span className="font-medium">
-          {fileName ?? "Choose a text file"}
+          {uploading
+            ? `Processing ${fileName ?? "file"}…`
+            : (fileName ?? "Choose a document")}
         </span>
         <span className="text-xs text-muted-foreground">
-          Supports .txt and .md files
+          Supports PDF, DOCX, EPUB, TXT, and MD (up to 15MB)
         </span>
       </button>
       <input
         ref={inputRef}
         type="file"
-        accept=".txt,.md,.markdown,text/plain"
+        accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

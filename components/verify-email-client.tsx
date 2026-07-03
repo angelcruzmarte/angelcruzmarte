@@ -23,7 +23,7 @@ export function VerifyEmailClient({ email }: { email: string }) {
     try {
       const { error } = await authClient.sendVerificationEmail({
         email,
-        callbackURL: "/subscribe",
+        callbackURL: "/app",
       })
       if (error) {
         setError(error.message ?? "Could not resend the email.")

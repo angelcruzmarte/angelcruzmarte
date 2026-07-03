@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Lora } from 'next/font/google'
+import { IdleLogout } from '@/components/idle-logout'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -54,6 +55,7 @@ export default function RootLayout({
     >
       <body className="font-sans antialiased">
         {children}
+        <IdleLogout />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

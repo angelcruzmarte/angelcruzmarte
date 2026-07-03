@@ -4,9 +4,31 @@ export function BookCover({
   book,
   className = "",
 }: {
-  book: Pick<Book, "title" | "author" | "coverColor" | "accentColor">
+  book: Pick<
+    Book,
+    "title" | "author" | "coverColor" | "accentColor" | "coverImageUrl"
+  >
   className?: string
 }) {
+  // Prefer the real cover image (e.g. Project Gutenberg). Fall back to the
+  // generated color card when no image is available.
+  if (book.coverImageUrl) {
+    return (
+      <div
+        className={`relative aspect-[2/3] overflow-hidden rounded-lg shadow-md ${className}`}
+        style={{ backgroundColor: book.coverColor }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={book.coverImageUrl || "/placeholder.svg"}
+          alt={`Cover of ${book.title} by ${book.author}`}
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+      </div>
+    )
+  }
+
   return (
     <div
       className={`relative flex aspect-[2/3] flex-col justify-between overflow-hidden rounded-lg p-3 shadow-md ${className}`}

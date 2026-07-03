@@ -7,7 +7,11 @@ import { PLANS, formatPrice } from "@/lib/plans"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
-export function SubscribePlans() {
+export function SubscribePlans({
+  trialEligible = false,
+}: {
+  trialEligible?: boolean
+}) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,14 +41,14 @@ export function SubscribePlans() {
 
   return (
     <div>
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-6 pt-3 sm:grid-cols-2">
         {PLANS.map((plan) => (
           <Card
             key={plan.id}
             className={
               plan.highlighted
-                ? "relative border-primary p-7 ring-1 ring-primary"
-                : "relative p-7"
+                ? "relative overflow-visible border-primary p-7 ring-1 ring-primary"
+                : "relative overflow-visible p-7"
             }
           >
             {plan.highlighted && (
@@ -62,6 +66,12 @@ export function SubscribePlans() {
                 /{plan.interval}
               </span>
             </p>
+            {trialEligible && (
+              <p className="mt-1.5 text-sm font-medium text-primary">
+                7 days free, then {formatPrice(plan.priceInCents)}/
+                {plan.interval}
+              </p>
+            )}
 
             <ul className="mt-6 flex flex-col gap-3">
               {plan.features.map((feature) => (
@@ -81,7 +91,7 @@ export function SubscribePlans() {
               {loadingId === plan.id && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
-              Subscribe
+              {trialEligible ? "Start free trial" : "Subscribe"}
             </Button>
           </Card>
         ))}

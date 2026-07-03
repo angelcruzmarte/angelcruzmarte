@@ -74,7 +74,7 @@ export async function createItem(input: {
     createdBy: admin.id,
   })
   revalidatePath("/admin")
-  revalidatePath("/library")
+  revalidatePath("/app/library")
   return { success: true }
 }
 
@@ -95,7 +95,7 @@ export async function updateItem(
     .set({ ...input, updatedAt: new Date() })
     .where(eq(readingItem.id, id))
   revalidatePath("/admin")
-  revalidatePath("/library")
+  revalidatePath("/app/library")
   return { success: true }
 }
 
@@ -103,7 +103,7 @@ export async function deleteItem(id: number) {
   await requireAdmin()
   await db.delete(readingItem).where(eq(readingItem.id, id))
   revalidatePath("/admin")
-  revalidatePath("/library")
+  revalidatePath("/app/library")
   return { success: true }
 }
 
@@ -114,6 +114,6 @@ export async function togglePublished(id: number, published: boolean) {
     .set({ published, updatedAt: new Date() })
     .where(eq(readingItem.id, id))
   revalidatePath("/admin")
-  revalidatePath("/library")
+  revalidatePath("/app/library")
   return { success: true }
 }

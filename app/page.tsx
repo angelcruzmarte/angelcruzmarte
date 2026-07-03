@@ -11,12 +11,8 @@ export default async function HomePage() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
 
-  const primaryHref = subscribed ? "/library" : user ? "/subscribe" : "/sign-up"
-  const primaryLabel = subscribed
-    ? "Go to your library"
-    : user
-      ? "Choose a plan"
-      : "Start listening free"
+  const primaryHref = user ? "/app" : "/sign-up"
+  const primaryLabel = user ? "Open the app" : "Start listening free"
 
   return (
     <div className="min-h-screen">
@@ -42,12 +38,23 @@ export default async function HomePage() {
               {primaryLabel}
             </Link>
             <Link
-              href="/library"
+              href={user ? "/app" : "/sign-up"}
               className={buttonVariants({ variant: "secondary", size: "lg" })}
             >
-              Browse the library
+              Browse the app
             </Link>
           </div>
+          {!user && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link
+                href="/sign-in"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Sign in
+              </Link>
+            </p>
+          )}
         </div>
 
         <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-border bg-muted shadow-sm">

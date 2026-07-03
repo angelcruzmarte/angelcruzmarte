@@ -23,6 +23,10 @@ export const user = pgTable("user", {
   subscriptionStatus: text("subscriptionStatus"),
   plan: text("plan"),
   currentPeriodEnd: timestamp("currentPeriodEnd"),
+  // Whether this account has already used its one-time free trial.
+  hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
+  // Whether the user has completed the first-run onboarding flow.
+  onboardingComplete: boolean("onboardingComplete").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
@@ -118,13 +122,42 @@ export const book = pgTable("book", {
   category: text("category").notNull().default("General"),
   description: text("description").notNull(),
   excerpt: text("excerpt").notNull(),
+  // Full book text used for text-to-speech once purchased.
+  content: text("content").notNull().default(""),
+  // One-time purchase price in cents.
+  priceInCents: integer("priceInCents").notNull().default(499),
+  // Real cover image URL (e.g. Project Gutenberg). Falls back to the color
+  // design when null.
+  coverImageUrl: text("coverImageUrl"),
+  // Source catalog id (Project Gutenberg ebook id) for reference/dedupe.
+  gutenbergId: integer("gutenbergId"),
   coverColor: text("coverColor").notNull().default("#3b3f8f"),
   accentColor: text("accentColor").notNull().default("#f4b740"),
   featured: boolean("featured").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 })
 
+// One-time book purchases. A row means the user owns the book forever.
+export const bookPurchase = pgTable(
+  "book_purchase",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    bookId: integer("bookId")
+      .notNull()
+      .references(() => book.id, { onDelete: "cascade" }),
+    // Resume position (word index) for the purchased book.
+    lastWord: integer("lastWord").notNull().default(0),
+    stripeSessionId: text("stripeSessionId"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserBook: unique().on(t.userId, t.bookId),
+  }),
+)
+
 export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
+export type BookPurchase = typeof bookPurchase.$inferSelect

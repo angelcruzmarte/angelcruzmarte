@@ -23,6 +23,9 @@ export default async function AppListenPage({
       backHref="/app/library"
       backLabel="Library"
       premium={premium}
+      allowDownload={premium}
+      documentId={doc.id}
+      initialWord={doc.lastWord}
     />
   )
 }
