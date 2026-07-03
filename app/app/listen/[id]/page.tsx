@@ -3,6 +3,9 @@ import { getDocument } from "@/app/actions/documents"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { ListenPlayer } from "@/components/listen-player"
 
+// Allow time for on-demand translation of long documents.
+export const maxDuration = 60
+
 export default async function AppListenPage({
   params,
 }: {

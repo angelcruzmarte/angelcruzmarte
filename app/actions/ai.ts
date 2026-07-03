@@ -127,10 +127,23 @@ export interface TranslationResult {
   truncated: boolean
 }
 
+async function translateChunk(chunk: string, language: string) {
+  const { text } = await generateText({
+    model: MODEL,
+    prompt:
+      `Translate the following text into ${language}. ` +
+      `Preserve the meaning, tone, and paragraph breaks. ` +
+      `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
+      chunk,
+  })
+  return text.trim()
+}
+
 /**
  * Translates document text into the target language for reading/narration.
- * Long documents are translated in sequential chunks (up to MAX_TRANSLATE
- * characters) and rejoined so paragraph structure is preserved.
+ * The text is split into chunks (up to MAX_TRANSLATE characters) that are
+ * translated concurrently and rejoined, so even long documents complete well
+ * within the serverless time limit.
  */
 export async function translateText(
   input: string,
@@ -145,20 +158,24 @@ export async function translateText(
   const capped = source.slice(0, MAX_TRANSLATE)
   const chunks = chunkText(capped, TRANSLATE_CHUNK)
 
-  const out: string[] = []
-  for (const chunk of chunks) {
-    const { text } = await generateText({
-      model: MODEL,
-      prompt:
-        `Translate the following text into ${language}. ` +
-        `Preserve the meaning, tone, and paragraph breaks. ` +
-        `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
-        chunk,
-    })
-    out.push(text.trim())
-  }
+  // Translate all chunks in parallel to keep total latency low.
+  const out = await Promise.all(chunks.map((c) => translateChunk(c, language)))
 
   return { translated: out.join("\n\n"), truncated }
+}
+
+/**
+ * Translates a single passage (e.g. one narration section) into the target
+ * language. Used for fast, progressive, per-section translation.
+ */
+export async function translatePassage(
+  input: string,
+  targetLang: string,
+): Promise<string> {
+  await requirePremium()
+  const source = (input ?? "").trim()
+  if (!source) return ""
+  return translateChunk(source, languageName(targetLang))
 }
 
 /** Quick free-form generation for the "Type anything" box on Home. */
