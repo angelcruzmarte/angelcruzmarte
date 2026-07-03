@@ -387,7 +387,7 @@ export function PremiumNarration({
       {/* Floating controls so the user can always pause/stop without scrolling
           back up to the card on long documents. */}
       {status !== "idle" && (
-        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 sm:px-6">
+        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
             <Button
               onClick={handlePlayPause}

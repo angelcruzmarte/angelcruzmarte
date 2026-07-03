@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { isHumanLikeVoice } from "@/lib/voices"
 
 export type Word = {
   text: string
@@ -88,10 +89,13 @@ export function useSpeech(text: string, initialWord = 0) {
       setVoices(mapped)
       setVoiceURIState((prev) => {
         if (prev) return prev
+        // Prefer natural, human-like voices for the default selection.
+        const pool = raw.filter((v) => isHumanLikeVoice(v.name))
+        const candidates = pool.length > 0 ? pool : raw
         const preferred =
-          raw.find((v) => v.default && v.lang.startsWith("en")) ??
-          raw.find((v) => v.lang.startsWith("en")) ??
-          raw[0]
+          candidates.find((v) => v.default && v.lang.startsWith("en")) ??
+          candidates.find((v) => v.lang.startsWith("en")) ??
+          candidates[0]
         return preferred ? preferred.voiceURI : ""
       })
     }
