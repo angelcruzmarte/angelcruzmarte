@@ -148,6 +148,11 @@ export function VoxifyApp() {
             rate={rate}
             voices={voices}
             voiceURI={voiceURI}
+            readingLang="en"
+            translating={false}
+            canTranslate={false}
+            readingError={null}
+            onReadingLangChange={() => {}}
             onPlayPause={handlePlayPause}
             onStop={stop}
             onSkip={skip}
