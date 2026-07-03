@@ -23,6 +23,8 @@ export const user = pgTable("user", {
   subscriptionStatus: text("subscriptionStatus"),
   plan: text("plan"),
   currentPeriodEnd: timestamp("currentPeriodEnd"),
+  // Whether this account has already used its one-time free trial.
+  hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })

@@ -13,6 +13,8 @@ export default async function SubscribePage({
   if (!user) redirect("/sign-in")
   if (hasActiveSubscription(user)) redirect("/library")
 
+  const trialEligible = !user.hasUsedTrial && !user.stripeSubscriptionId
+
   const { canceled } = await searchParams
 
   return (
@@ -27,6 +29,11 @@ export default async function SubscribePage({
             Subscribe to listen to every title with natural narration and
             word-by-word highlighting.
           </p>
+          {trialEligible && (
+            <p className="mx-auto mt-5 inline-flex items-center rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+              Start with a 7-day free trial &mdash; cancel anytime
+            </p>
+          )}
         </div>
 
         {canceled && (
@@ -36,7 +43,7 @@ export default async function SubscribePage({
         )}
 
         <div className="mt-10">
-          <SubscribePlans />
+          <SubscribePlans trialEligible={trialEligible} />
         </div>
 
         <p className="mt-8 text-center text-sm text-muted-foreground">

@@ -7,6 +7,24 @@ import { getCurrentUser } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { eq } from "drizzle-orm"
 
+/** Length of the one-time free trial, in days. */
+export const TRIAL_DAYS = 7
+
+/**
+ * A user qualifies for the free trial only if they have never used one and
+ * have never had a subscription before (new subscribers only, once).
+ */
+async function isTrialEligible(userId: string) {
+  const rows = await db
+    .select()
+    .from(userTable)
+    .where(eq(userTable.id, userId))
+    .limit(1)
+  const u = rows[0]
+  if (!u) return false
+  return !u.hasUsedTrial && !u.stripeSubscriptionId
+}
+
 function getBaseUrl() {
   return (
     process.env.BETTER_AUTH_URL ??
@@ -73,9 +91,21 @@ export async function createSubscriptionCheckout(planId: string) {
   const customerId = await ensureCustomer(user.id, user.email, user.name)
   const baseUrl = getBaseUrl()
 
+  const trialEligible = await isTrialEligible(user.id)
+  const subscriptionData: Record<string, unknown> = {
+    metadata: { userId: user.id, planId: plan.id },
+  }
+  if (trialEligible) {
+    // 7-day free trial. The card is still collected at checkout and the
+    // subscription auto-converts to paid when the trial ends.
+    subscriptionData.trial_period_days = TRIAL_DAYS
+  }
+
   const checkout = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
+    // Always collect a card, even for the trial, so it converts automatically.
+    payment_method_collection: "always",
     line_items: [
       {
         quantity: 1,
@@ -91,9 +121,7 @@ export async function createSubscriptionCheckout(planId: string) {
       },
     ],
     metadata: { userId: user.id, planId: plan.id },
-    subscription_data: {
-      metadata: { userId: user.id, planId: plan.id },
-    },
+    subscription_data: subscriptionData,
     success_url: `${baseUrl}/library?welcome=1`,
     cancel_url: `${baseUrl}/subscribe?canceled=1`,
   })
@@ -169,12 +197,17 @@ export async function refreshSubscriptionFor(userId: string | null) {
 
   const item = sub.items.data[0]
   const planId = sub.metadata?.planId ?? null
+  // Once any subscription exists (including a trialing one), the account has
+  // consumed its one-time trial and won't be offered another.
+  const usedTrial =
+    u.hasUsedTrial || sub.status === "trialing" || Boolean(sub.trial_end)
   await db
     .update(userTable)
     .set({
       stripeSubscriptionId: sub.id,
       subscriptionStatus: sub.status,
       plan: planId,
+      hasUsedTrial: usedTrial,
       currentPeriodEnd: item?.current_period_end
         ? new Date(item.current_period_end * 1000)
         : null,
