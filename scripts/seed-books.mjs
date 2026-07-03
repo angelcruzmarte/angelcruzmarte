@@ -48,6 +48,16 @@ const CATALOG = [
 
 const MAX_CONTENT_CHARS = 500_000
 
+async function fetchWithTimeout(url, opts = {}, ms = 30_000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fetchText(id) {
   const urls = [
     `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`,
@@ -56,7 +66,7 @@ async function fetchText(id) {
   ]
   for (const url of urls) {
     try {
-      const res = await fetch(url)
+      const res = await fetchWithTimeout(url)
       if (res.ok) {
         const text = await res.text()
         if (text && text.length > 1000) return text
@@ -71,12 +81,29 @@ async function fetchText(id) {
 async function coverExists(id) {
   const url = `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`
   try {
-    const res = await fetch(url, { method: "HEAD" })
+    const res = await fetchWithTimeout(url, { method: "HEAD" }, 15_000)
     if (res.ok) return url
   } catch {
     // ignore
   }
   return null
+}
+
+// Runs async tasks with a bounded concurrency so we don't fire all requests at
+// once but still finish quickly.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length)
+  let cursor = 0
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await fn(items[index], index)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  )
+  return results
 }
 
 // Extracts title + author from the Gutenberg header and strips boilerplate.
@@ -131,18 +158,21 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL })
   console.log("[seed] fetching", CATALOG.length, "books from Project Gutenberg…")
 
-  const rows = []
-  for (let i = 0; i < CATALOG.length; i++) {
-    const entry = CATALOG[i]
-    const raw = await fetchText(entry.id)
+  const fetched = await mapWithConcurrency(CATALOG, 6, async (entry, i) => {
+    const [raw, cover] = await Promise.all([
+      fetchText(entry.id),
+      coverExists(entry.id),
+    ])
     if (!raw) {
       console.warn("[seed] skip", entry.id, "- no text")
-      continue
+      return null
     }
-    const cover = await coverExists(entry.id)
     const { title, author, body, excerpt, description } = parse(raw)
     const [coverColor, accentColor] = PALETTE[i % PALETTE.length]
-    rows.push({
+    console.log(
+      `[seed] ${title} — ${author} (${(body.length / 1000).toFixed(0)}k chars, cover: ${cover ? "yes" : "no"})`,
+    )
+    return {
       title,
       author,
       category: entry.category,
@@ -155,11 +185,9 @@ async function main() {
       coverColor,
       accentColor,
       featured: Boolean(entry.featured),
-    })
-    console.log(
-      `[seed] ${title} — ${author} (${(body.length / 1000).toFixed(0)}k chars, cover: ${cover ? "yes" : "no"})`,
-    )
-  }
+    }
+  })
+  const rows = fetched.filter(Boolean)
 
   if (rows.length === 0) {
     throw new Error("No books fetched — aborting without touching the catalog.")
