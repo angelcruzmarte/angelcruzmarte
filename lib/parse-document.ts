@@ -36,14 +36,12 @@ function stripHtml(html: string): string {
 }
 
 async function parsePdf(buffer: Buffer): Promise<string> {
-  const { PDFParse } = await import("pdf-parse")
-  const parser = new PDFParse({ data: new Uint8Array(buffer) })
-  try {
-    const result = await parser.getText()
-    return cleanText(result.text ?? "")
-  } finally {
-    await parser.destroy()
-  }
+  // `unpdf` ships a serverless build of pdf.js that runs in Node without the
+  // browser-only globals (e.g. DOMMatrix) that crash `pdf-parse`/`pdfjs-dist`.
+  const { extractText, getDocumentProxy } = await import("unpdf")
+  const pdf = await getDocumentProxy(new Uint8Array(buffer))
+  const { text } = await extractText(pdf, { mergePages: true })
+  return cleanText(Array.isArray(text) ? text.join("\n\n") : text)
 }
 
 async function parseDocx(buffer: Buffer): Promise<string> {
