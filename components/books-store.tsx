@@ -6,15 +6,20 @@ import { Sparkles } from "lucide-react"
 import type { Book } from "@/lib/db/schema"
 import { BookCover } from "@/components/book-cover"
 import { Button } from "@/components/ui/button"
+import { formatPrice } from "@/lib/plans"
 import { cn } from "@/lib/utils"
 
 export function BooksStore({
   books,
   personalized,
+  ownedIds = [],
 }: {
   books: Book[]
   personalized: boolean
+  ownedIds?: number[]
 }) {
+  const owned = useMemo(() => new Set(ownedIds), [ownedIds])
+
   const categories = useMemo(() => {
     const set = new Set(books.map((b) => b.category))
     return ["All", ...Array.from(set).sort()]
@@ -97,10 +102,22 @@ export function BooksStore({
             href={`/app/books/${book.id}`}
             className="group flex flex-col gap-2"
           >
-            <BookCover
-              book={book}
-              className="w-full transition-transform group-hover:-translate-y-1"
-            />
+            <div className="relative">
+              <BookCover
+                book={book}
+                className="w-full transition-transform group-hover:-translate-y-1"
+              />
+              <span
+                className={cn(
+                  "absolute right-1.5 top-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm",
+                  owned.has(book.id)
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card/90 text-foreground backdrop-blur",
+                )}
+              >
+                {owned.has(book.id) ? "Owned" : formatPrice(book.priceInCents)}
+              </span>
+            </div>
             <div>
               <p className="truncate text-sm font-semibold">{book.title}</p>
               <p className="truncate text-xs text-muted-foreground">

@@ -6,7 +6,6 @@ import {
   getBook,
   ownsBook,
 } from "@/app/actions/books"
-import { getCurrentUser } from "@/lib/session"
 import { formatPrice } from "@/lib/plans"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
@@ -26,7 +25,7 @@ export default async function BookDetailPage({
   const bookId = Number(id)
   if (Number.isNaN(bookId)) notFound()
 
-  const [book, user] = await Promise.all([getBook(bookId), getCurrentUser()])
+  const book = await getBook(bookId)
   if (!book) notFound()
 
   // Fallback grant in case the webhook hasn't landed yet after redirect.
