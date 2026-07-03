@@ -5,6 +5,7 @@ import { user as userTable } from "@/lib/db/schema"
 import { getPlan } from "@/lib/plans"
 import { getCurrentUser } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
+import { getBaseUrl } from "@/lib/urls"
 import { eq } from "drizzle-orm"
 
 /** Length of the one-time free trial, in days. */
@@ -23,18 +24,6 @@ async function isTrialEligible(userId: string) {
   const u = rows[0]
   if (!u) return false
   return !u.hasUsedTrial && !u.stripeSubscriptionId
-}
-
-function getBaseUrl() {
-  return (
-    process.env.BETTER_AUTH_URL ??
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.V0_RUNTIME_URL) ??
-    "http://localhost:3000"
-  )
 }
 
 /** Creates (or reuses) a Stripe customer for the current user. */

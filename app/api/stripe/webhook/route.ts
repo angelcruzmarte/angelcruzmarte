@@ -1,3 +1,4 @@
+import { grantBookPurchase } from "@/app/actions/books"
 import { db } from "@/lib/db"
 import { user as userTable } from "@/lib/db/schema"
 import { stripe } from "@/lib/stripe"
@@ -59,6 +60,18 @@ export async function POST(req: Request) {
             session.subscription as string,
           )
           await applySubscription(sub)
+        } else if (
+          session.metadata?.kind === "book" &&
+          session.metadata?.userId &&
+          session.metadata?.bookId &&
+          (session.payment_status === "paid" || session.status === "complete")
+        ) {
+          // One-time book purchase — grant lifetime ownership.
+          await grantBookPurchase(
+            session.metadata.userId,
+            Number(session.metadata.bookId),
+            session.id,
+          )
         }
         break
       }

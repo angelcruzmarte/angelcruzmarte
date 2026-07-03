@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, TriangleAlert, Sparkles, AudioLines } from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
 import { PremiumNarration } from "@/components/premium-narration"
+import { DownloadAudioButton } from "@/components/download-audio-button"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -18,15 +19,26 @@ type Props = {
   backLabel?: string
   /** Whether the current user has access to premium AI narration. */
   premium?: boolean
+  /** Saved resume position (word index) to start from. */
+  initialWord?: number
+  /** When set, playback progress is persisted for this book. */
+  bookId?: number
+  /** When set, playback progress is persisted for this document. */
+  documentId?: number
+  /** Whether to show the premium offline MP3 download control. */
+  allowDownload?: boolean
 }
 
 export function ListenPlayer({
   title,
-  author,
   content,
   backHref = "/app/library",
   backLabel = "Library",
   premium = false,
+  initialWord = 0,
+  bookId,
+  documentId,
+  allowDownload = false,
 }: Props) {
   const [mode, setMode] = useState<"standard" | "premium">(
     premium ? "premium" : "standard",
@@ -46,10 +58,46 @@ export function ListenPlayer({
     seekToWord,
     setRate,
     setVoiceURI,
-  } = useSpeech(content)
+  } = useSpeech(content, initialWord)
+
+  // Debounced persistence of the resume position.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSaved = useRef(initialWord)
+
+  const persistProgress = useCallback(
+    (wordIndex: number) => {
+      if (wordIndex < 0) return
+      if (Math.abs(wordIndex - lastSaved.current) < 5) return
+      lastSaved.current = wordIndex
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(async () => {
+        try {
+          if (bookId !== undefined) {
+            const { saveBookProgress } = await import("@/app/actions/books")
+            await saveBookProgress(bookId, wordIndex)
+          } else if (documentId !== undefined) {
+            const { updateProgress } = await import(
+              "@/app/actions/documents"
+            )
+            await updateProgress(documentId, wordIndex)
+          }
+        } catch {
+          // Progress saving is best-effort; ignore failures.
+        }
+      }, 1200)
+    },
+    [bookId, documentId],
+  )
 
   useEffect(() => {
-    return () => stop()
+    if (status === "playing") persistProgress(currentWord)
+  }, [currentWord, status, persistProgress])
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      stop()
+    }
   }, [stop])
 
   const progress =
@@ -79,7 +127,7 @@ export function ListenPlayer({
 
   return (
     <div>
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-6 sm:px-6">
         <Link
           href={backHref}
           className={buttonVariants({ variant: "ghost", size: "sm" }) + " gap-1.5"}
@@ -87,6 +135,9 @@ export function ListenPlayer({
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
         </Link>
+        {allowDownload && (
+          <DownloadAudioButton title={title} text={content} premium={premium} />
+        )}
       </div>
 
       {premium && (

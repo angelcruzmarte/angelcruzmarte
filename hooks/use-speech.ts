@@ -47,9 +47,10 @@ function findWordIndex(words: Word[], charIndex: number): number {
   return result
 }
 
-export function useSpeech(text: string) {
+export function useSpeech(text: string, initialWord = 0) {
   const [status, setStatus] = useState<SpeechStatus>("idle")
-  const [currentWord, setCurrentWord] = useState(-1)
+  // Seed from a saved resume position (word index) when provided.
+  const [currentWord, setCurrentWord] = useState(initialWord > 0 ? initialWord : -1)
   const [rate, setRateState] = useState(1)
   const [voices, setVoices] = useState<SpeechVoice[]>([])
   const [voiceURI, setVoiceURIState] = useState<string>("")
@@ -64,7 +65,7 @@ export function useSpeech(text: string) {
   const voiceURIRef = useRef(voiceURI)
   voiceURIRef.current = voiceURI
   const statusRef = useRef<SpeechStatus>("idle")
-  const currentWordRef = useRef(-1)
+  const currentWordRef = useRef(initialWord > 0 ? initialWord : -1)
   // Track whether the utterance "end" was triggered by us (stop/restart) so we
   // don't treat manual cancels as a natural completion.
   const internalStopRef = useRef(false)
