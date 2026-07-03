@@ -126,6 +126,11 @@ export const book = pgTable("book", {
   content: text("content").notNull().default(""),
   // One-time purchase price in cents.
   priceInCents: integer("priceInCents").notNull().default(499),
+  // Real cover image URL (e.g. Project Gutenberg). Falls back to the color
+  // design when null.
+  coverImageUrl: text("coverImageUrl"),
+  // Source catalog id (Project Gutenberg ebook id) for reference/dedupe.
+  gutenbergId: integer("gutenbergId"),
   coverColor: text("coverColor").notNull().default("#3b3f8f"),
   accentColor: text("accentColor").notNull().default("#f4b740"),
   featured: boolean("featured").notNull().default(false),
