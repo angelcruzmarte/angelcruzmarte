@@ -25,6 +25,8 @@ export const user = pgTable("user", {
   currentPeriodEnd: timestamp("currentPeriodEnd"),
   // Whether this account has already used its one-time free trial.
   hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
+  // Whether the user has completed the first-run onboarding flow.
+  onboardingComplete: boolean("onboardingComplete").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })

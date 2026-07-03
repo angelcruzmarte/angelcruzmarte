@@ -9,11 +9,12 @@ import {
   FileText,
   AudioLines,
   HelpCircle,
-  Smile,
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
 import { QuickCreate } from "@/components/quick-create"
+import { SavedStat } from "@/components/saved-stat"
+import { ContinueListening } from "@/components/continue-listening"
 import { cn } from "@/lib/utils"
 
 const ttsTiles = [
@@ -40,17 +41,7 @@ export default async function AppHome() {
 
   return (
     <div className="space-y-8 px-4 py-6 sm:px-6">
-      <div className="flex items-center gap-3 rounded-2xl bg-secondary px-4 py-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-          <Smile className="h-5 w-5" />
-        </span>
-        <p className="text-sm">
-          <span className="font-semibold">{minutesSaved}m saved</span>{" "}
-          <span className="text-muted-foreground">
-            across {docs.length} {docs.length === 1 ? "document" : "documents"}
-          </span>
-        </p>
-      </div>
+      <SavedStat minutesSaved={minutesSaved} docCount={docs.length} />
 
       <section>
         <h2 className="mb-3 text-2xl font-bold tracking-tight">Text to Speech</h2>
@@ -91,25 +82,14 @@ export default async function AppHome() {
               See all
             </Link>
           </div>
-          <div className="space-y-2">
-            {docs.slice(0, 3).map((doc) => (
-              <Link
-                key={doc.id}
-                href={`/app/listen/${doc.id}`}
-                className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:bg-secondary"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
-                  <FileText className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{doc.title}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {doc.wordCount} words
-                  </span>
-                </span>
-              </Link>
-            ))}
-          </div>
+          <ContinueListening
+            docs={docs.slice(0, 3).map((doc) => ({
+              id: doc.id,
+              title: doc.title,
+              content: doc.content,
+              wordCount: doc.wordCount,
+            }))}
+          />
         </section>
       )}
     </div>

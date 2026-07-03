@@ -1,8 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Library, Compass, BookOpen, Plus } from "lucide-react"
+import { Home, Library, Compass, BookOpen } from "lucide-react"
+import { AddSheet, AddSheetTrigger } from "@/components/add-sheet"
 import { cn } from "@/lib/utils"
 
 const tabs = [
@@ -14,6 +16,7 @@ const tabs = [
 
 export function AppTabBar() {
   const pathname = usePathname()
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
@@ -48,15 +51,10 @@ export function AppTabBar() {
               </Link>
             )
           })}
-          <Link
-            href="/app/new"
-            aria-label="Add content"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform hover:scale-105"
-          >
-            <Plus className="h-5 w-5" />
-          </Link>
+          <AddSheetTrigger onOpen={() => setSheetOpen(true)} />
         </div>
       </div>
+      <AddSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
     </nav>
   )
 }
