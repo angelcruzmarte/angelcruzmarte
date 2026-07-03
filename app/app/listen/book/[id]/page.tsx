@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/session"
 import { and, eq } from "drizzle-orm"
 import { ListenPlayer } from "@/components/listen-player"
 
+// Allow time for on-demand translation of long documents.
+export const maxDuration = 60
+
 export default async function BookListenPage({
   params,
 }: {
