@@ -42,7 +42,6 @@ export function IdleLogout() {
       "keydown",
       "touchstart",
       "scroll",
-      "visibilitychange",
     ]
     events.forEach((event) =>
       window.addEventListener(event, reset, { passive: true }),
