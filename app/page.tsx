@@ -48,6 +48,17 @@ export default async function HomePage() {
               Browse the library
             </Link>
           </div>
+          {!user && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link
+                href="/sign-in"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Sign in
+              </Link>
+            </p>
+          )}
         </div>
 
         <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-border bg-muted shadow-sm">

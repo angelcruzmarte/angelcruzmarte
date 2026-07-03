@@ -21,6 +21,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -177,7 +178,9 @@ export function PlaybackBar({
                 {rate}x
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-32">
-                <DropdownMenuLabel>Speed</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Speed</DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 {SPEEDS.map((speed) => (
                   <DropdownMenuItem
