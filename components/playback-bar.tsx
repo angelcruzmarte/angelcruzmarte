@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useMemo } from "react"
 import {
   Pause,
   Play,
@@ -28,6 +29,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import {
+  baseLang,
+  friendlyVoiceName,
+  isHumanLikeVoice,
+  languageLabel,
+} from "@/lib/voices"
 import type { SpeechVoice } from "@/hooks/use-speech"
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
@@ -64,11 +71,50 @@ export function PlaybackBar({
   onVoiceChange,
 }: Props) {
   const isPlaying = status === "playing"
-  const englishVoices = voices.filter((v) => v.lang.startsWith("en"))
-  const otherVoices = voices.filter((v) => !v.lang.startsWith("en"))
+
+  // Only expose natural, human-like voices.
+  const humanVoices = useMemo(
+    () => voices.filter((v) => isHumanLikeVoice(v.name)),
+    [voices],
+  )
+
+  // Distinct languages available, sorted by label.
+  const languages = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const v of humanVoices) {
+      const code = baseLang(v.lang)
+      if (code && !map.has(code)) map.set(code, languageLabel(code))
+    }
+    return [...map.entries()]
+      .map(([code, label]) => ({ code, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [humanVoices])
+
+  const currentVoice = humanVoices.find((v) => v.uri === voiceURI)
+  const activeLang = currentVoice
+    ? baseLang(currentVoice.lang)
+    : (languages[0]?.code ?? "")
+  const voicesForLang = humanVoices.filter(
+    (v) => baseLang(v.lang) === activeLang,
+  )
+
+  // If the selected voice isn't in the human-like list (e.g. a novelty default),
+  // switch to the first natural voice available.
+  useEffect(() => {
+    if (humanVoices.length === 0) return
+    if (!humanVoices.some((v) => v.uri === voiceURI)) {
+      onVoiceChange(humanVoices[0].uri)
+    }
+  }, [humanVoices, voiceURI, onVoiceChange])
+
+  const handleLangChange = (code: string | null) => {
+    if (!code) return
+    const first = humanVoices.find((v) => baseLang(v.lang) === code)
+    if (first) onVoiceChange(first.uri)
+  }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 sm:px-6">
+    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
       <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
         {/* Progress scrubber */}
         <div className="flex items-center gap-3">
@@ -89,36 +135,51 @@ export function PlaybackBar({
           </span>
         </div>
 
-        {/* Controls */}
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <Select
-              value={voiceURI}
-              onValueChange={(value) => onVoiceChange((value as string) ?? "")}
-            >
-              <SelectTrigger className="h-9 w-full max-w-[220px] text-sm">
-                <SelectValue placeholder="Select voice" />
-              </SelectTrigger>
-              <SelectContent>
-                {englishVoices.length > 0 &&
-                  englishVoices.map((v) => (
-                    <SelectItem key={v.uri} value={v.uri}>
-                      {v.name}
-                    </SelectItem>
-                  ))}
-                {otherVoices.map((v) => (
-                  <SelectItem key={v.uri} value={v.uri}>
-                    {v.name} ({v.lang})
-                  </SelectItem>
-                ))}
-                {voices.length === 0 && (
-                  <SelectItem value="none" disabled>
-                    No voices available
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* Language + voice selectors */}
+        <div className="mt-3 flex items-center gap-2">
+          <Select
+            value={activeLang}
+            onValueChange={handleLangChange}
+            disabled={languages.length === 0}
+          >
+            <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Language">
+              <SelectValue placeholder="Language" />
+            </SelectTrigger>
+            <SelectContent>
+              {languages.map((l) => (
+                <SelectItem key={l.code} value={l.code}>
+                  {l.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={voiceURI}
+            onValueChange={(value) => onVoiceChange((value as string) ?? "")}
+            disabled={voicesForLang.length === 0}
+          >
+            <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Voice">
+              <SelectValue placeholder="Voice" />
+            </SelectTrigger>
+            <SelectContent>
+              {voicesForLang.map((v) => (
+                <SelectItem key={v.uri} value={v.uri}>
+                  {friendlyVoiceName(v.name, v.lang)}
+                </SelectItem>
+              ))}
+              {humanVoices.length === 0 && (
+                <SelectItem value="none" disabled>
+                  No voices available
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Transport controls */}
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex-1" />
 
           <div className="flex items-center gap-1 sm:gap-2">
             <Button
