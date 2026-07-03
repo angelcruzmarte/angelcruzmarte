@@ -1,10 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Headphones, Sparkles, Store, Upload } from "lucide-react"
+import { Headphones, Search, Sparkles, Store, Upload, X } from "lucide-react"
 import type { Book, Document } from "@/lib/db/schema"
 import { BookCover } from "@/components/book-cover"
+import { LiveBookResults } from "@/components/live-book-results"
 import { UploadBook } from "@/components/upload-book"
 import { formatPrice } from "@/lib/plans"
 import { cn } from "@/lib/utils"
@@ -42,6 +43,16 @@ export function BooksStore({
   const filtered =
     active === "All" ? books : books.filter((b) => b.category === active)
 
+  // Live catalog search (Open Library). Debounced so we don't fire on every
+  // keystroke.
+  const [query, setQuery] = useState("")
+  const [debounced, setDebounced] = useState("")
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(query.trim()), 400)
+    return () => clearTimeout(id)
+  }, [query])
+  const searching = debounced.length > 0
+
   return (
     <div className="space-y-8">
       {/* Upload your own books (free to listen) */}
@@ -49,8 +60,53 @@ export function BooksStore({
         <UploadBook />
       </section>
 
-      {/* Your uploaded books */}
-      {uploads.length > 0 && (
+      {/* Search the entire live catalog */}
+      <section>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search millions of books by title or author…"
+            aria-label="Search the book store"
+            className="h-11 w-full rounded-xl border border-border bg-card pl-9 pr-9 text-sm outline-none ring-primary/30 transition focus:ring-2"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Live search results replace the curated shelves while searching. */}
+      {searching ? (
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <Store className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">
+              Results for &ldquo;{debounced}&rdquo;
+            </h2>
+          </div>
+          <LiveBookResults query={debounced} />
+        </section>
+      ) : (
+        <StoreShelves />
+      )}
+    </div>
+  )
+
+  function StoreShelves() {
+    return (
+      <>
+        {/* Your uploaded books */}
+        {uploads.length > 0 && (
         <section>
           <div className="mb-3 flex items-center gap-2">
             <Headphones className="h-5 w-5 text-primary" />
@@ -176,6 +232,7 @@ export function BooksStore({
           ))}
         </div>
       </section>
-    </div>
-  )
+      </>
+    )
+  }
 }

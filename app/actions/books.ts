@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db"
 import { book, bookPurchase } from "@/lib/db/schema"
+import { fetchAndParseGutenberg, gutenbergCoverUrl } from "@/lib/gutenberg"
 import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
@@ -9,6 +10,19 @@ import { getBaseUrl } from "@/lib/urls"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
+
+// Flat price for public-domain books imported on-demand from the live catalog.
+const IMPORTED_BOOK_PRICE = 499
+
+// Cover colors used when an imported book has no artwork.
+const IMPORT_PALETTE: Array<[string, string]> = [
+  ["#2f3e9e", "#f4b740"],
+  ["#7c2d12", "#fbbf24"],
+  ["#134e4a", "#5eead4"],
+  ["#4c1d95", "#f0abfc"],
+  ["#831843", "#fda4af"],
+  ["#1e3a5f", "#7dd3fc"],
+]
 
 export async function getBooks() {
   return db.select().from(book).orderBy(desc(book.featured), desc(book.createdAt))
@@ -81,6 +95,77 @@ export async function grantBookPurchase(
     .onConflictDoNothing({
       target: [bookPurchase.userId, bookPurchase.bookId],
     })
+}
+
+type GutenbergMeta = {
+  title?: string
+  author?: string
+  coverUrl?: string | null
+  category?: string
+}
+
+/**
+ * Imports a public-domain book from Project Gutenberg into our catalog on
+ * demand (idempotent by gutenbergId). Downloads and stores the full text so it
+ * can be read aloud once purchased. Returns the catalog book id, or null if
+ * the text couldn't be fetched.
+ */
+export async function importGutenbergBook(
+  gutenbergId: number,
+  meta: GutenbergMeta = {},
+): Promise<number | null> {
+  if (!Number.isFinite(gutenbergId) || gutenbergId <= 0) return null
+
+  // Reuse an existing catalog row if we've already imported this book.
+  const [existing] = await db
+    .select({ id: book.id })
+    .from(book)
+    .where(eq(book.gutenbergId, gutenbergId))
+    .limit(1)
+  if (existing) return existing.id
+
+  const parsed = await fetchAndParseGutenberg(gutenbergId)
+  if (!parsed) return null
+
+  const [color, accent] =
+    IMPORT_PALETTE[gutenbergId % IMPORT_PALETTE.length]
+
+  const [inserted] = await db
+    .insert(book)
+    .values({
+      title: meta.title?.trim() || parsed.title,
+      author: meta.author?.trim() || parsed.author,
+      category: meta.category?.trim() || "Classics",
+      description: parsed.description,
+      excerpt: parsed.excerpt,
+      content: parsed.body,
+      priceInCents: IMPORTED_BOOK_PRICE,
+      coverImageUrl: meta.coverUrl || gutenbergCoverUrl(gutenbergId),
+      gutenbergId,
+      coverColor: color,
+      accentColor: accent,
+    })
+    .returning({ id: book.id })
+
+  return inserted?.id ?? null
+}
+
+/**
+ * Imports a live-catalog public-domain book (if needed) and starts checkout
+ * for it. Used by the store's live search results.
+ */
+export async function createGutenbergCheckout(
+  gutenbergId: number,
+  meta: GutenbergMeta = {},
+) {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to buy books." }
+
+  const bookId = await importGutenbergBook(gutenbergId, meta)
+  if (!bookId) {
+    return { error: "Sorry, this book's text could not be loaded. Try another." }
+  }
+  return createBookCheckout(bookId)
 }
 
 /**
