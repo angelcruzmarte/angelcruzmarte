@@ -8,7 +8,7 @@ import { stripe } from "@/lib/stripe"
 import { eq } from "drizzle-orm"
 
 /** Length of the one-time free trial, in days. */
-export const TRIAL_DAYS = 7
+const TRIAL_DAYS = 7
 
 /**
  * A user qualifies for the free trial only if they have never used one and
