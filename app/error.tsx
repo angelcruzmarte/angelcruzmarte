@@ -27,13 +27,13 @@ export default function Error({
         </h1>
         <p className="max-w-sm text-pretty text-muted-foreground">
           We hit an unexpected error loading this page. Try again, or head back
-          to your library.
+          to the app.
         </p>
       </div>
       <div className="flex items-center gap-3">
         <Button onClick={reset}>Try again</Button>
-        <Link href="/library" className={buttonVariants({ variant: "secondary" })}>
-          Go to library
+        <Link href="/app" className={buttonVariants({ variant: "secondary" })}>
+          Go to the app
         </Link>
       </div>
     </main>

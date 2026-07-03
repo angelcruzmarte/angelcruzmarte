@@ -9,7 +9,7 @@ export default async function SignInPage({
   searchParams: Promise<{ timeout?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
-  if (session?.user) redirect("/library")
+  if (session?.user) redirect("/app")
   const { timeout } = await searchParams
   return (
     <AuthForm

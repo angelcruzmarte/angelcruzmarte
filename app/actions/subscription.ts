@@ -122,7 +122,7 @@ export async function createSubscriptionCheckout(planId: string) {
     ],
     metadata: { userId: user.id, planId: plan.id },
     subscription_data: subscriptionData,
-    success_url: `${baseUrl}/library?welcome=1`,
+    success_url: `${baseUrl}/app?welcome=1`,
     cancel_url: `${baseUrl}/subscribe?canceled=1`,
   })
 

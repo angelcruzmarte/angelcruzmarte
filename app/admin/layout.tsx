@@ -12,7 +12,7 @@ export default async function AdminLayout({
 }) {
   const user = await getCurrentUser()
   if (!user) redirect("/sign-in")
-  if (!isAdmin(user)) redirect("/library")
+  if (!isAdmin(user)) redirect("/app")
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
@@ -33,7 +33,7 @@ export default async function AdminLayout({
 
         <div className="hidden px-3 lg:block">
           <Link
-            href="/library"
+            href="/app"
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <ArrowLeft className="h-4 w-4" />

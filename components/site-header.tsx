@@ -24,10 +24,10 @@ export async function SiteHeader() {
           {user ? (
             <>
               <Link
-                href="/library"
+                href="/app"
                 className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
               >
-                Library
+                Open app
               </Link>
               {subscribed ? (
                 <Badge variant="secondary" className="hidden sm:inline-flex">

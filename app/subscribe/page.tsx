@@ -11,7 +11,7 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser()
   if (!user) redirect("/sign-in")
-  if (hasActiveSubscription(user)) redirect("/library")
+  if (hasActiveSubscription(user)) redirect("/app")
 
   const trialEligible = !user.hasUsedTrial && !user.stripeSubscriptionId
 
@@ -48,8 +48,8 @@ export default async function SubscribePage({
 
         <p className="mt-8 text-center text-sm text-muted-foreground">
           Already subscribed?{" "}
-          <Link href="/library" className="font-medium text-primary hover:underline">
-            Go to your library
+          <Link href="/app" className="font-medium text-primary hover:underline">
+            Go to the app
           </Link>
         </p>
 

@@ -16,7 +16,7 @@ type Props = {
   notice?: string
 }
 
-export function AuthForm({ mode, redirectTo = "/library", notice }: Props) {
+export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
   const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -36,7 +36,7 @@ export function AuthForm({ mode, redirectTo = "/library", notice }: Props) {
           email,
           password,
           name,
-          callbackURL: "/subscribe",
+          callbackURL: "/app",
         })
         if (error) {
           setError(error.message ?? "Could not create account.")

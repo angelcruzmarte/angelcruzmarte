@@ -24,7 +24,7 @@ export function ListenPlayer({
   title,
   author,
   content,
-  backHref = "/library",
+  backHref = "/app/library",
   backLabel = "Library",
   premium = false,
 }: Props) {
