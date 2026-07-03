@@ -14,12 +14,35 @@ type Props = {
 
 export function ReaderPanel({ title, text, words, currentWord, onWordClick }: Props) {
   const activeRef = useRef<HTMLButtonElement>(null)
+  // Timestamp of the last manual scroll/touch. While the user is actively
+  // scrolling (and for a short grace period after), we suppress follow-along
+  // auto-scroll so the reader doesn't fight the user or "jump" back.
+  const lastUserScroll = useRef(0)
+
+  // Pause auto-scroll whenever the user scrolls or touches the page.
+  useEffect(() => {
+    const markUserScroll = () => {
+      lastUserScroll.current = Date.now()
+    }
+    // `wheel` and `touchmove` reliably signal user-initiated scrolling
+    // (programmatic scrollIntoView does not fire these).
+    window.addEventListener("wheel", markUserScroll, { passive: true })
+    window.addEventListener("touchmove", markUserScroll, { passive: true })
+    window.addEventListener("touchstart", markUserScroll, { passive: true })
+    return () => {
+      window.removeEventListener("wheel", markUserScroll)
+      window.removeEventListener("touchmove", markUserScroll)
+      window.removeEventListener("touchstart", markUserScroll)
+    }
+  }, [])
 
   // Keep the spoken word in view as narration progresses. Only scroll when the
   // word drifts outside a comfortable middle band so we don't re-center on every
   // word (which is jarky) and so text never hides behind the bottom bars.
   useEffect(() => {
     if (currentWord < 0 || !activeRef.current) return
+    // Yield to the user: don't auto-scroll within 4s of a manual scroll/touch.
+    if (Date.now() - lastUserScroll.current < 4000) return
     const rect = activeRef.current.getBoundingClientRect()
     const topBound = window.innerHeight * 0.2
     const bottomBound = window.innerHeight * 0.62
