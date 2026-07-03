@@ -383,6 +383,54 @@ export function PremiumNarration({
         currentWord={currentWord}
         onWordClick={handleWordClick}
       />
+
+      {/* Floating controls so the user can always pause/stop without scrolling
+          back up to the card on long documents. */}
+      {status !== "idle" && (
+        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 sm:px-6">
+          <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
+            <Button
+              onClick={handlePlayPause}
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-full"
+              aria-label={status === "playing" ? "Pause" : "Play"}
+              disabled={busy}
+            >
+              {busy ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : status === "playing" ? (
+                <Pause className="h-5 w-5" />
+              ) : (
+                <Play className="h-5 w-5 translate-x-0.5" />
+              )}
+            </Button>
+
+            <Button
+              onClick={stop}
+              variant="secondary"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-full"
+              aria-label="Stop"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+
+            <div className="min-w-0 flex-1">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-1 truncate text-xs text-muted-foreground tabular-nums">
+                {status === "loading"
+                  ? "Loading…"
+                  : `Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

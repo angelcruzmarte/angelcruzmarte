@@ -21,6 +21,10 @@ export function AppTabBar() {
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
+  // The listen page is an immersive player with its own fixed playback bar at
+  // the bottom. Hide the global tab bar there so it doesn't cover the controls.
+  if (pathname?.startsWith("/app/listen")) return null
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40">
       <div className="mx-auto max-w-2xl px-4 pb-4">
