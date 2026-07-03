@@ -15,15 +15,21 @@ type Props = {
 export function ReaderPanel({ title, text, words, currentWord, onWordClick }: Props) {
   const activeRef = useRef<HTMLButtonElement>(null)
 
-  // Keep the spoken word in view as narration progresses.
+  // Keep the spoken word in view as narration progresses. Only scroll when the
+  // word drifts outside a comfortable middle band so we don't re-center on every
+  // word (which is jarky) and so text never hides behind the bottom bars.
   useEffect(() => {
-    if (currentWord >= 0 && activeRef.current) {
+    if (currentWord < 0 || !activeRef.current) return
+    const rect = activeRef.current.getBoundingClientRect()
+    const topBound = window.innerHeight * 0.2
+    const bottomBound = window.innerHeight * 0.62
+    if (rect.top < topBound || rect.bottom > bottomBound) {
       activeRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
     }
   }, [currentWord])
 
   return (
-    <article className="mx-auto max-w-3xl px-4 pb-44 pt-10 sm:px-6">
+    <article className="mx-auto max-w-3xl px-4 pb-64 pt-10 sm:px-6">
       <h1 className="text-balance font-serif text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
         {title}
       </h1>
