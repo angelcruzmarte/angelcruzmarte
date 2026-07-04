@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import useSWRInfinite from "swr/infinite"
 import {
   BookOpen,
@@ -9,10 +10,11 @@ import {
   Headphones,
   Library,
   Loader2,
+  Play,
   ShoppingCart,
+  Upload,
 } from "lucide-react"
-import { createGutenbergCheckout } from "@/app/actions/books"
-import { formatPrice } from "@/lib/plans"
+import { addGutenbergBook } from "@/app/actions/books"
 import { storeLinksFor } from "@/lib/book-stores"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,9 +26,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-// Flat price for imported public-domain books (mirrors the server value).
-const IMPORTED_PRICE = 499
 
 type StoreResult = {
   key: string
@@ -144,26 +143,59 @@ export function LiveBookResults({ query }: { query: string }) {
 }
 
 function LiveBookCard({ result }: { result: StoreResult }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
-  function handleBuy() {
+  // Public domain: add to the library for free and open the player.
+  function handleAddAndListen() {
     if (!result.gutenbergId) return
     setError(null)
     startTransition(async () => {
-      const res = await createGutenbergCheckout(result.gutenbergId as number, {
+      const res = await addGutenbergBook(result.gutenbergId as number, {
         title: result.title,
         author: result.author,
         coverUrl: result.coverUrl,
       })
-      if (res && "url" in res && res.url) {
-        window.location.href = res.url
+      if (res && "bookId" in res && res.bookId) {
+        router.push(`/app/listen/book/${res.bookId}`)
       } else {
         setError(
           (res && "error" in res && res.error) || "Something went wrong.",
         )
       }
     })
+  }
+
+  // Copyrighted: after buying elsewhere, import the file the user owns so it
+  // can be narrated in the app.
+  async function handleImportFile(file: File) {
+    if (file.size > 15 * 1024 * 1024) {
+      setError("File is too large. Please use a file under 15MB.")
+      return
+    }
+    setImporting(true)
+    setError(null)
+    try {
+      const body = new FormData()
+      body.append("file", file)
+      const res = await fetch("/api/documents/upload", {
+        method: "POST",
+        body,
+      })
+      const data = (await res.json()) as { id?: number; error?: string }
+      if (!res.ok || !data.id) {
+        setError(data.error ?? "Could not process that file.")
+        setImporting(false)
+        return
+      }
+      router.push(`/app/listen/${data.id}`)
+    } catch {
+      setError("Upload failed. Please try again.")
+      setImporting(false)
+    }
   }
 
   return (
@@ -181,19 +213,35 @@ function LiveBookCard({ result }: { result: StoreResult }) {
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={handleBuy}
+          onClick={handleAddAndListen}
           disabled={pending}
         >
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <ShoppingCart className="h-4 w-4" />
+            <Play className="h-4 w-4" />
           )}
-          Buy {formatPrice(IMPORTED_PRICE)}
+          Add &amp; Listen
         </Button>
       ) : (
-        <BuyElsewhereMenu title={result.title} author={result.author} />
+        <BuyElsewhereMenu
+          title={result.title}
+          author={result.author}
+          importing={importing}
+          onImport={() => fileRef.current?.click()}
+        />
       )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) handleImportFile(file)
+        }}
+      />
 
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
@@ -203,9 +251,13 @@ function LiveBookCard({ result }: { result: StoreResult }) {
 function BuyElsewhereMenu({
   title,
   author,
+  importing,
+  onImport,
 }: {
   title: string
   author: string
+  importing: boolean
+  onImport: () => void
 }) {
   const links = storeLinksFor(title, author)
   const buyLinks = links.filter((l) => l.kind === "buy")
@@ -215,14 +267,23 @@ function BuyElsewhereMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button size="sm" variant="secondary" className="w-full gap-1.5" />
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-full gap-1.5"
+            disabled={importing}
+          />
         }
       >
-        <ShoppingCart className="h-4 w-4" />
-        Buy elsewhere
-        <ChevronDown className="ml-auto h-4 w-4 opacity-70" />
+        {importing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <ShoppingCart className="h-4 w-4" />
+        )}
+        {importing ? "Importing…" : "Buy elsewhere"}
+        {!importing && <ChevronDown className="ml-auto h-4 w-4 opacity-70" />}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Buy from</DropdownMenuLabel>
           {buyLinks.map((store) => (
@@ -247,6 +308,14 @@ function BuyElsewhereMenu({
               {store.label}
             </DropdownMenuItem>
           ))}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Already bought it?</DropdownMenuLabel>
+          <DropdownMenuItem onClick={onImport}>
+            <Upload className="h-4 w-4" />
+            Import your file to listen
+          </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
