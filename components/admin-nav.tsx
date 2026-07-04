@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Library, Users } from "lucide-react"
+import { CircleDollarSign, LayoutDashboard, Library, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const LINKS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/finance", label: "Finance", icon: CircleDollarSign },
   { href: "/admin/content", label: "Content", icon: Library },
   { href: "/admin/subscribers", label: "Subscribers", icon: Users },
 ]
