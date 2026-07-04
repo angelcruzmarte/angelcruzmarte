@@ -34,6 +34,15 @@ export default async function AdminLayout({
             <p className="text-sm font-semibold">VOXYFI</p>
             <p className="text-xs text-muted-foreground">Admin</p>
           </div>
+          {/* Always-visible return button (mobile shows only the icon). */}
+          <Link
+            href={appUrl}
+            className="ml-auto flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:hidden"
+            aria-label="Back to app"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Back to app</span>
+          </Link>
         </div>
 
         <div className="px-3 pb-4 lg:pb-0">
