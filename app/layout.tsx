@@ -31,8 +31,10 @@ export const metadata: Metadata = {
         type: 'image/svg+xml',
       },
     ],
+    shortcut: '/favicon.ico',
     apple: '/apple-icon.png',
   },
+  manifest: '/manifest.webmanifest',
 }
 
 export const viewport: Viewport = {
