@@ -2,10 +2,11 @@ import type React from "react"
 import Link from "next/link"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { AudioLines, ArrowLeft } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import { AdminNav } from "@/components/admin-nav"
+import { LogoMark } from "@/components/logo-mark"
 
 export default async function AdminLayout({
   children,
@@ -28,7 +29,7 @@ export default async function AdminLayout({
       <aside className="border-b border-border bg-sidebar lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-16 items-center gap-2.5 px-5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <AudioLines className="h-4 w-4" />
+            <LogoMark className="h-4 w-4" />
           </div>
           <div className="leading-none">
             <p className="text-sm font-semibold">VOXYFI</p>

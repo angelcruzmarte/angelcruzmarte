@@ -1,9 +1,10 @@
 import Image from "next/image"
 import Link from "next/link"
-import { AudioLines, BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
+import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { PLANS, formatPrice } from "@/lib/plans"
 import { SiteHeader } from "@/components/site-header"
+import { LogoMark } from "@/components/logo-mark"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
@@ -155,7 +156,7 @@ export default async function HomePage() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span className="flex items-center gap-2">
-            <AudioLines className="h-4 w-4" />
+            <LogoMark className="h-4 w-4 text-primary" />
             VOXYFI
           </span>
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">

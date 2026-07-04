@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { AudioLines } from "lucide-react"
+import { LogoMark } from "@/components/logo-mark"
 
 export function AuthShell({
   title,
@@ -15,7 +15,7 @@ export function AuthShell({
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
       <Link href="/" className="mb-8 flex items-center gap-2.5">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <AudioLines className="h-5 w-5" />
+          <LogoMark className="h-5 w-5" />
         </div>
         <span className="text-xl font-semibold tracking-tight">VOXYFI</span>
       </Link>
