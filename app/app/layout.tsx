@@ -6,7 +6,8 @@ import { PlayerProvider } from "@/components/player-provider"
 import { MiniPlayer } from "@/components/mini-player"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
-import { Waves, Sparkles, ArrowUp } from "lucide-react"
+import { LogoMark } from "@/components/logo-mark"
+import { Sparkles, ArrowUp } from "lucide-react"
 
 export default async function AppLayout({
   children,
@@ -24,7 +25,7 @@ export default async function AppLayout({
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
         <Link href="/app" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Waves className="h-4 w-4" />
+            <LogoMark className="h-4 w-4" />
           </span>
           <span className="text-lg font-semibold tracking-tight">VOXYFI</span>
         </Link>
