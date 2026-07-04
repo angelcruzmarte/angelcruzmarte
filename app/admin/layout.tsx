@@ -1,8 +1,10 @@
 import type React from "react"
 import Link from "next/link"
+import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { AudioLines, ArrowLeft } from "lucide-react"
 import { getCurrentUser, isAdmin } from "@/lib/session"
+import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import { AdminNav } from "@/components/admin-nav"
 
 export default async function AdminLayout({
@@ -10,9 +12,16 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
+  // On the admin subdomain, non-admins must be sent to the primary domain
+  // (a relative redirect would resolve back onto the admin subdomain).
+  const host = (await headers()).get("host")
+  const onAdminHost = isAdminHost(host)
+  const signInUrl = onAdminHost ? mainSiteUrl("/sign-in") : "/sign-in"
+  const appUrl = onAdminHost ? mainSiteUrl("/app") : "/app"
+
   const user = await getCurrentUser()
-  if (!user) redirect("/sign-in")
-  if (!isAdmin(user)) redirect("/app")
+  if (!user) redirect(signInUrl)
+  if (!isAdmin(user)) redirect(appUrl)
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
@@ -33,7 +42,7 @@ export default async function AdminLayout({
 
         <div className="hidden px-3 lg:block">
           <Link
-            href="/app"
+            href={appUrl}
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <ArrowLeft className="h-4 w-4" />

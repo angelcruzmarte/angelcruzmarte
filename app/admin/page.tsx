@@ -88,7 +88,7 @@ export default async function AdminOverviewPage() {
 
       <div className="mt-4 flex justify-end">
         <Link
-          href="/admin/finance"
+          href="/finance"
           className={buttonVariants({ variant: "secondary", size: "sm" })}
         >
           <CircleDollarSign className="h-4 w-4" />
@@ -120,7 +120,7 @@ export default async function AdminOverviewPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Track MRR, book sales, plan mix, and recent transactions.
           </p>
-          <Link href="/admin/finance" className={buttonVariants() + " mt-4"}>
+          <Link href="/finance" className={buttonVariants() + " mt-4"}>
             View finance
           </Link>
         </Card>
@@ -130,7 +130,7 @@ export default async function AdminOverviewPage() {
             Publish an article or chapter for your subscribers to listen to.
           </p>
           <Link
-            href="/admin/content"
+            href="/content"
             className={buttonVariants({ variant: "secondary" }) + " mt-4"}
           >
             Manage content
@@ -142,7 +142,7 @@ export default async function AdminOverviewPage() {
             Review subscription status and assign admin access.
           </p>
           <Link
-            href="/admin/subscribers"
+            href="/subscribers"
             className={buttonVariants({ variant: "secondary" }) + " mt-4"}
           >
             View subscribers

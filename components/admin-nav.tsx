@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation"
 import { CircleDollarSign, LayoutDashboard, Library, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+// Clean, root-relative paths served from the admin subdomain
+// (admin.<root>). The proxy maps them onto the /admin route tree.
 const LINKS = [
-  { href: "/admin", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/finance", label: "Finance", icon: CircleDollarSign },
-  { href: "/admin/content", label: "Content", icon: Library },
-  { href: "/admin/subscribers", label: "Subscribers", icon: Users },
+  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/finance", label: "Finance", icon: CircleDollarSign },
+  { href: "/content", label: "Content", icon: Library },
+  { href: "/subscribers", label: "Subscribers", icon: Users },
 ]
 
 export function AdminNav() {
@@ -18,10 +20,13 @@ export function AdminNav() {
   return (
     <nav className="flex gap-1 overflow-x-auto p-2 lg:flex-col lg:overflow-visible">
       {LINKS.map((link) => {
+        // On the subdomain, pathname is the clean path ("/finance"); when the
+        // panel is accessed via /admin directly it carries the "/admin" prefix.
+        const normalized = pathname.replace(/^\/admin/, "") || "/"
         const active =
-          link.href === "/admin"
-            ? pathname === "/admin"
-            : pathname.startsWith(link.href)
+          link.href === "/"
+            ? normalized === "/"
+            : normalized.startsWith(link.href)
         return (
           <Link
             key={link.href}

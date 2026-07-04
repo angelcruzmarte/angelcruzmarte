@@ -2,6 +2,12 @@ import { betterAuth } from "better-auth"
 import { pool } from "@/lib/db"
 import { sendEmail, verificationEmail, resetPasswordEmail } from "@/lib/email"
 
+// Production root domain (e.g. "voxyfi.com"), used to share the session cookie
+// between the user app and the admin subdomain (admin.voxyfi.com).
+const rootDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ?.replace(/^https?:\/\//, "")
+  .replace(/\/$/, "")
+
 export const auth = betterAuth({
   database: pool,
   databaseHooks: {
@@ -55,24 +61,34 @@ export const auth = betterAuth({
     "http://localhost:3000",
     ...(process.env.V0_RUNTIME_URL ? [process.env.V0_RUNTIME_URL] : []),
     ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
-    ...(process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`]
+    ...(rootDomain
+      ? [`https://${rootDomain}`, `https://admin.${rootDomain}`]
       : []),
   ],
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
   },
-  ...(process.env.NODE_ENV === "development"
-    ? {
-        advanced: {
+  advanced: {
+    ...(process.env.NODE_ENV === "development"
+      ? {
           // In dev (v0 preview iframe), force cross-site cookies so the
           // session cookie is stored by the browser.
           defaultCookieAttributes: {
             sameSite: "none" as const,
             secure: true,
           },
-        },
-      }
-    : {}),
+        }
+      : {}),
+    // In production, scope the session cookie to the root domain so a login on
+    // voxyfi.com is also valid on admin.voxyfi.com.
+    ...(process.env.VERCEL_ENV === "production" && rootDomain
+      ? {
+          crossSubDomainCookies: {
+            enabled: true,
+            domain: `.${rootDomain}`,
+          },
+        }
+      : {}),
+  },
 })
