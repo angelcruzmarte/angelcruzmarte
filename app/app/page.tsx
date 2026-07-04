@@ -9,6 +9,8 @@ import {
   FileText,
   AudioLines,
   HelpCircle,
+  Lock,
+  Sparkles,
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
@@ -58,8 +60,9 @@ export default async function AppHome() {
           {!subscribed && (
             <Link
               href="/subscribe"
-              className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
               Premium
             </Link>
           )}
@@ -110,12 +113,29 @@ function TileLink({
   return (
     <Link
       href={locked ? "/subscribe" : href}
+      aria-label={locked ? `${label} (Premium)` : label}
       className={cn(
-        "flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-2xl bg-secondary text-center transition-colors hover:bg-accent",
+        "relative flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-2xl bg-secondary text-center transition-colors hover:bg-accent",
+        locked && "border border-dashed border-primary/30",
       )}
     >
-      <Icon className="h-6 w-6" strokeWidth={1.75} />
-      <span className="text-sm font-semibold">{label}</span>
+      {locked && (
+        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Lock className="h-3 w-3" aria-hidden="true" />
+        </span>
+      )}
+      <Icon
+        className={cn("h-6 w-6", locked && "text-muted-foreground")}
+        strokeWidth={1.75}
+      />
+      <span
+        className={cn(
+          "text-sm font-semibold",
+          locked && "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
     </Link>
   )
 }

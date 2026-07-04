@@ -6,7 +6,7 @@ import { PlayerProvider } from "@/components/player-provider"
 import { MiniPlayer } from "@/components/mini-player"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
-import { Waves } from "lucide-react"
+import { Waves, Sparkles, ArrowUp } from "lucide-react"
 
 export default async function AppLayout({
   children,
@@ -30,20 +30,27 @@ export default async function AppLayout({
         </Link>
         <div className="flex items-center gap-2">
           {subscribed ? (
-            <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
+            <Badge className="gap-1 bg-primary text-primary-foreground hover:bg-primary">
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
               Premium
             </Badge>
           ) : (
             <Link href="/subscribe">
               <Badge
                 variant="outline"
-                className="cursor-pointer border-primary/40 text-primary"
+                className="cursor-pointer gap-1 border-primary/40 text-primary"
               >
+                <ArrowUp className="h-3 w-3" aria-hidden="true" />
                 Upgrade
               </Badge>
             </Link>
           )}
-          <UserMenu name={user.name} email={user.email} isAdmin={user.role === "admin"} />
+          <UserMenu
+            name={user.name}
+            email={user.email}
+            isAdmin={user.role === "admin"}
+            isSubscribed={subscribed}
+          />
         </div>
       </header>
 
