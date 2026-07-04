@@ -9,6 +9,8 @@ import {
   FileText,
   AudioLines,
   HelpCircle,
+  Lock,
+  Sparkles,
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
@@ -43,6 +45,39 @@ export default async function AppHome() {
     <div className="space-y-8 px-4 py-6 sm:px-6">
       <SavedStat minutesSaved={minutesSaved} docCount={docs.length} />
 
+      {subscribed ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Premium active</p>
+            <p className="truncate text-xs text-muted-foreground">
+              All AI features and unlimited listening are unlocked.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <Link
+          href="/subscribe"
+          className="flex items-center gap-3 rounded-2xl border border-border bg-secondary px-4 py-3 transition-colors hover:bg-accent"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Lock className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">You&apos;re on the Free plan</p>
+            <p className="truncate text-xs text-muted-foreground">
+              Upgrade to unlock AI Summary, Podcast, and Quiz.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+            <Sparkles className="h-3 w-3" aria-hidden="true" />
+            Upgrade
+          </span>
+        </Link>
+      )}
+
       <section>
         <h2 className="mb-3 text-2xl font-bold tracking-tight">Text to Speech</h2>
         <div className="grid grid-cols-3 gap-3">
@@ -58,8 +93,9 @@ export default async function AppHome() {
           {!subscribed && (
             <Link
               href="/subscribe"
-              className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
               Premium
             </Link>
           )}
@@ -110,12 +146,29 @@ function TileLink({
   return (
     <Link
       href={locked ? "/subscribe" : href}
+      aria-label={locked ? `${label} (Premium)` : label}
       className={cn(
-        "flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-2xl bg-secondary text-center transition-colors hover:bg-accent",
+        "relative flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-2xl bg-secondary text-center transition-colors hover:bg-accent",
+        locked && "border border-dashed border-primary/30",
       )}
     >
-      <Icon className="h-6 w-6" strokeWidth={1.75} />
-      <span className="text-sm font-semibold">{label}</span>
+      {locked && (
+        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Lock className="h-3 w-3" aria-hidden="true" />
+        </span>
+      )}
+      <Icon
+        className={cn("h-6 w-6", locked && "text-muted-foreground")}
+        strokeWidth={1.75}
+      />
+      <span
+        className={cn(
+          "text-sm font-semibold",
+          locked && "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
     </Link>
   )
 }

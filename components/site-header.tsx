@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { AudioLines } from "lucide-react"
+import { AudioLines, Sparkles } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription, isAdmin } from "@/lib/session"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -30,7 +30,8 @@ export async function SiteHeader() {
                 Open app
               </Link>
               {subscribed ? (
-                <Badge variant="secondary" className="hidden sm:inline-flex">
+                <Badge className="hidden gap-1 bg-primary text-primary-foreground hover:bg-primary sm:inline-flex">
+                  <Sparkles className="h-3 w-3" aria-hidden="true" />
                   Premium
                 </Badge>
               ) : (
@@ -41,7 +42,12 @@ export async function SiteHeader() {
                   Subscribe
                 </Link>
               )}
-              <UserMenu name={user.name} email={user.email} isAdmin={admin} />
+              <UserMenu
+                name={user.name}
+                email={user.email}
+                isAdmin={admin}
+                isSubscribed={subscribed}
+              />
             </>
           ) : (
             <>
