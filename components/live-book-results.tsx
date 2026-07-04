@@ -23,7 +23,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { cn } from "@/lib/utils"
 
 // Flat price for imported public-domain books (mirrors the server value).
 const IMPORTED_PRICE = 499
@@ -272,23 +271,12 @@ function LiveCover({ result }: { result: StoreResult }) {
           </p>
         </div>
       )}
-      <span
-        className={cn(
-          "absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm",
-          result.listenable
-            ? "bg-primary text-primary-foreground"
-            : "bg-card/90 text-muted-foreground backdrop-blur",
-        )}
-      >
-        {result.listenable ? (
-          <>
-            <Headphones className="h-3 w-3" />
-            Listen
-          </>
-        ) : (
-          "Buy elsewhere"
-        )}
-      </span>
+      {result.listenable && (
+        <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-sm">
+          <Headphones className="h-3 w-3" />
+          Listen
+        </span>
+      )}
     </div>
   )
 }
