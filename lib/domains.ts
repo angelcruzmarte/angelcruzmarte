@@ -3,11 +3,18 @@
  * (admin.<root>) while the user-facing app stays on the primary domain.
  */
 
-/** The production root domain, e.g. "voxyfi.com" (no protocol, no trailing slash). */
+/**
+ * The production root domain, e.g. "voxyfi.com" (no protocol, no trailing
+ * slash, no leading "www."). Stripping "www." ensures the admin host resolves
+ * to admin.voxyfi.com rather than the non-existent admin.www.voxyfi.com.
+ */
 export function getRootDomain(): string | null {
   const raw = process.env.VERCEL_PROJECT_PRODUCTION_URL
   if (!raw) return null
-  return raw.replace(/^https?:\/\//, "").replace(/\/$/, "")
+  return raw
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
+    .replace(/^www\./, "")
 }
 
 /** True when the request host is the admin subdomain (admin.*). */

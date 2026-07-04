@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { getRootDomain } from "@/lib/domains"
 
 // Admin-only top-level paths that map onto the /admin/* route tree when served
 // from the admin subdomain (so URLs stay clean, e.g. admin.voxyfi.com/finance).
@@ -38,10 +39,7 @@ export function proxy(req: NextRequest) {
     process.env.ADMIN_SUBDOMAIN_ENABLED === "1" &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
-    const root = process.env.VERCEL_PROJECT_PRODUCTION_URL?.replace(
-      /^https?:\/\//,
-      "",
-    )
+    const root = getRootDomain()
     if (root) {
       const target = req.nextUrl.clone()
       target.host = `admin.${root}`
