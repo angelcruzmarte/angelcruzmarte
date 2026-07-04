@@ -151,6 +151,28 @@ export async function importGutenbergBook(
 }
 
 /**
+ * Adds a public-domain (Project Gutenberg) book to the user's library for
+ * free and grants ownership immediately, so they can listen right away with
+ * no external purchase. Returns the catalog book id to open the player.
+ */
+export async function addGutenbergBook(
+  gutenbergId: number,
+  meta: GutenbergMeta = {},
+) {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to add books." }
+
+  const bookId = await importGutenbergBook(gutenbergId, meta)
+  if (!bookId) {
+    return { error: "Sorry, this book's text could not be loaded. Try another." }
+  }
+
+  await grantBookPurchase(user.id, bookId)
+  revalidatePath("/app/library")
+  return { bookId }
+}
+
+/**
  * Imports a live-catalog public-domain book (if needed) and starts checkout
  * for it. Used by the store's live search results.
  */

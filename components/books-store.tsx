@@ -57,9 +57,9 @@ export function BooksStore({
   return (
     <div className="space-y-8">
       {/* Rotating hero of book covers (hidden while searching). */}
-      {!searching && books.length > 0 && (
+      {!searching && (
         <section>
-          <BookMarquee books={books} />
+          <BookMarquee />
         </section>
       )}
 
