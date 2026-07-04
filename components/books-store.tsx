@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Headphones, Search, Sparkles, Store, Upload, X } from "lucide-react"
 import type { Book, Document } from "@/lib/db/schema"
 import { BookCover } from "@/components/book-cover"
+import { BookMarquee } from "@/components/book-marquee"
 import { LiveBookResults } from "@/components/live-book-results"
 import { UploadBook } from "@/components/upload-book"
 import { formatPrice } from "@/lib/plans"
@@ -55,6 +56,13 @@ export function BooksStore({
 
   return (
     <div className="space-y-8">
+      {/* Rotating hero of book covers (hidden while searching). */}
+      {!searching && books.length > 0 && (
+        <section>
+          <BookMarquee books={books} />
+        </section>
+      )}
+
       {/* Upload your own books (free to listen) */}
       <section>
         <UploadBook />
