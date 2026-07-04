@@ -3,10 +3,13 @@ import { pool } from "@/lib/db"
 import { sendEmail, verificationEmail, resetPasswordEmail } from "@/lib/email"
 
 // Production root domain (e.g. "voxyfi.com"), used to share the session cookie
-// between the user app and the admin subdomain (admin.voxyfi.com).
+// between the user app and the admin subdomain (admin.voxyfi.com). The leading
+// "www." is stripped so the cookie domain is ".voxyfi.com" — shared across
+// www.voxyfi.com and admin.voxyfi.com alike.
 const rootDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL
   ?.replace(/^https?:\/\//, "")
   .replace(/\/$/, "")
+  .replace(/^www\./, "")
 
 export const auth = betterAuth({
   database: pool,
