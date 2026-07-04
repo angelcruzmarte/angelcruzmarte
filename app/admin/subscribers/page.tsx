@@ -12,7 +12,8 @@ export default async function AdminSubscribersPage() {
     <div className="px-4 py-8 sm:px-8">
       <h1 className="text-2xl font-semibold tracking-tight">Subscribers</h1>
       <p className="mt-1 text-muted-foreground">
-        Everyone who has signed up, with their subscription status.
+        Everyone who has signed up. Use the tabs to separate paying subscribers
+        from free users.
       </p>
       <div className="mt-8">
         <AdminSubscribersTable
