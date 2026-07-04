@@ -4,14 +4,25 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import useSWRInfinite from "swr/infinite"
 import {
   BookOpen,
+  ChevronDown,
   ExternalLink,
   Headphones,
+  Library,
   Loader2,
   ShoppingCart,
 } from "lucide-react"
 import { createGutenbergCheckout } from "@/app/actions/books"
 import { formatPrice } from "@/lib/plans"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { storeLinksFor } from "@/lib/book-stores"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 // Flat price for imported public-domain books (mirrors the server value).
@@ -181,22 +192,60 @@ function LiveBookCard({ result }: { result: StoreResult }) {
           Buy {formatPrice(IMPORTED_PRICE)}
         </Button>
       ) : (
-        <a
-          href={result.buyUrl}
-          target="_blank"
-          rel="noreferrer"
-          className={cn(
-            buttonVariants({ size: "sm", variant: "secondary" }),
-            "gap-1.5",
-          )}
-        >
-          <ExternalLink className="h-4 w-4" />
-          View
-        </a>
+        <BuyElsewhereMenu title={result.title} author={result.author} />
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  )
+}
+
+function BuyElsewhereMenu({
+  title,
+  author,
+}: {
+  title: string
+  author: string
+}) {
+  const links = storeLinksFor(title, author)
+  const buyLinks = links.filter((l) => l.kind === "buy")
+  const borrowLinks = links.filter((l) => l.kind === "borrow")
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button size="sm" variant="secondary" className="w-full gap-1.5" />
+        }
+      >
+        <ShoppingCart className="h-4 w-4" />
+        Buy elsewhere
+        <ChevronDown className="ml-auto h-4 w-4 opacity-70" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuLabel>Buy from</DropdownMenuLabel>
+        {buyLinks.map((store) => (
+          <DropdownMenuItem
+            key={store.id}
+            render={<a href={store.url} target="_blank" rel="noreferrer" />}
+          >
+            <ExternalLink className="h-4 w-4" />
+            {store.label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Borrow</DropdownMenuLabel>
+        {borrowLinks.map((store) => (
+          <DropdownMenuItem
+            key={store.id}
+            render={<a href={store.url} target="_blank" rel="noreferrer" />}
+          >
+            <Library className="h-4 w-4" />
+            {store.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

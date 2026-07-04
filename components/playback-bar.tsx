@@ -9,6 +9,8 @@ import {
   SkipForward,
   Gauge,
   Check,
+  Languages,
+  Loader2,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -29,12 +31,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import {
-  baseLang,
-  friendlyVoiceName,
-  isHumanLikeVoice,
-  languageLabel,
-} from "@/lib/voices"
+import { baseLang, friendlyVoiceName, isHumanLikeVoice } from "@/lib/voices"
+import { READING_LANGUAGES } from "@/lib/languages"
 import type { SpeechVoice } from "@/hooks/use-speech"
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
@@ -47,6 +45,15 @@ type Props = {
   rate: number
   voices: SpeechVoice[]
   voiceURI: string
+  /** Selected reading/translation language code ("en" = original). */
+  readingLang: string
+  /** Whether a translation request is in flight. */
+  translating: boolean
+  /** Whether the user may translate (premium). */
+  canTranslate: boolean
+  /** Error surfaced from a failed/blocked translation. */
+  readingError: string | null
+  onReadingLangChange: (code: string) => void
   onPlayPause: () => void
   onStop: () => void
   onSkip: (delta: number) => void
@@ -63,6 +70,11 @@ export function PlaybackBar({
   rate,
   voices,
   voiceURI,
+  readingLang,
+  translating,
+  canTranslate,
+  readingError,
+  onReadingLangChange,
   onPlayPause,
   onStop,
   onSkip,
@@ -78,25 +90,14 @@ export function PlaybackBar({
     [voices],
   )
 
-  // Distinct languages available, sorted by label.
-  const languages = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const v of humanVoices) {
-      const code = baseLang(v.lang)
-      if (code && !map.has(code)) map.set(code, languageLabel(code))
-    }
-    return [...map.entries()]
-      .map(([code, label]) => ({ code, label }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [humanVoices])
-
-  const currentVoice = humanVoices.find((v) => v.uri === voiceURI)
-  const activeLang = currentVoice
-    ? baseLang(currentVoice.lang)
-    : (languages[0]?.code ?? "")
-  const voicesForLang = humanVoices.filter(
-    (v) => baseLang(v.lang) === activeLang,
-  )
+  // Voices that match the current reading language; fall back to all human
+  // voices when the device has none installed for that language.
+  const voicesForLang = useMemo(() => {
+    const match = humanVoices.filter(
+      (v) => baseLang(v.lang) === baseLang(readingLang),
+    )
+    return match.length > 0 ? match : humanVoices
+  }, [humanVoices, readingLang])
 
   // If the selected voice isn't in the human-like list (e.g. a novelty default),
   // switch to the first natural voice available.
@@ -106,12 +107,6 @@ export function PlaybackBar({
       onVoiceChange(humanVoices[0].uri)
     }
   }, [humanVoices, voiceURI, onVoiceChange])
-
-  const handleLangChange = (code: string | null) => {
-    if (!code) return
-    const first = humanVoices.find((v) => baseLang(v.lang) === code)
-    if (first) onVoiceChange(first.uri)
-  }
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
@@ -135,24 +130,31 @@ export function PlaybackBar({
           </span>
         </div>
 
-        {/* Language + voice selectors */}
+        {/* Language (translation) + voice selectors */}
         <div className="mt-3 flex items-center gap-2">
-          <Select
-            value={activeLang}
-            onValueChange={handleLangChange}
-            disabled={languages.length === 0}
-          >
-            <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Language">
-              <SelectValue placeholder="Language" />
-            </SelectTrigger>
-            <SelectContent>
-              {languages.map((l) => (
-                <SelectItem key={l.code} value={l.code}>
-                  {l.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-1 items-center gap-1.5">
+            {translating ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+            ) : (
+              <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
+            <Select
+              value={readingLang}
+              onValueChange={(value) => onReadingLangChange((value as string) ?? "en")}
+              disabled={translating || !canTranslate}
+            >
+              <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Language">
+                <SelectValue placeholder="Language" />
+              </SelectTrigger>
+              <SelectContent>
+                {READING_LANGUAGES.map((l) => (
+                  <SelectItem key={l.code} value={l.code}>
+                    {l.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <Select
             value={voiceURI}
@@ -176,6 +178,17 @@ export function PlaybackBar({
             </SelectContent>
           </Select>
         </div>
+
+        {!canTranslate && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Translation to other languages is a premium feature.
+          </p>
+        )}
+        {readingError && (
+          <p className="mt-2 text-xs text-destructive" role="alert">
+            {readingError}
+          </p>
+        )}
 
         {/* Transport controls */}
         <div className="mt-3 flex items-center gap-2">

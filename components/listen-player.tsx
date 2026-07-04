@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, TriangleAlert, Sparkles, AudioLines } from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
@@ -10,6 +10,8 @@ import { PremiumNarration } from "@/components/premium-narration"
 import { DownloadAudioButton } from "@/components/download-audio-button"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { baseLang } from "@/lib/voices"
+import { translateText } from "@/app/actions/ai"
 
 type Props = {
   title: string
@@ -43,6 +45,18 @@ export function ListenPlayer({
   const [mode, setMode] = useState<"standard" | "premium">(
     premium ? "premium" : "standard",
   )
+
+  // Reading/translation language for the device-voice path. "en" = original.
+  const [readingLang, setReadingLang] = useState("en")
+  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [translating, setTranslating] = useState(false)
+  const [readingError, setReadingError] = useState<string | null>(null)
+
+  const activeContent = useMemo(
+    () => (readingLang === "en" ? content : translations[readingLang] ?? content),
+    [readingLang, translations, content],
+  )
+
   const {
     status,
     currentWord,
@@ -58,7 +72,48 @@ export function ListenPlayer({
     seekToWord,
     setRate,
     setVoiceURI,
-  } = useSpeech(content, initialWord)
+  } = useSpeech(activeContent, initialWord)
+
+  // Translate the document for device narration and pick a matching device
+  // voice. Only English (original) is available without a subscription.
+  const handleReadingLangChange = useCallback(
+    async (code: string) => {
+      if (code === readingLang) return
+      stop()
+      setReadingError(null)
+
+      const pickVoiceFor = (langCode: string) => {
+        const match = voices.find((v) => baseLang(v.lang) === baseLang(langCode))
+        if (match) setVoiceURI(match.uri)
+      }
+
+      // Original, or an already-translated language: switch instantly.
+      if (code === "en" || translations[code]) {
+        setReadingLang(code)
+        if (code !== "en") pickVoiceFor(code)
+        return
+      }
+
+      setTranslating(true)
+      try {
+        const res = await translateText(content, code)
+        if (res.error) {
+          setReadingError(res.error)
+          return
+        }
+        setTranslations((prev) => ({ ...prev, [code]: res.translated }))
+        setReadingLang(code)
+        pickVoiceFor(code)
+      } catch {
+        setReadingError(
+          "Could not translate this text right now. Please try again shortly.",
+        )
+      } finally {
+        setTranslating(false)
+      }
+    },
+    [readingLang, translations, content, voices, stop, setVoiceURI],
+  )
 
   // Debounced persistence of the resume position.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -90,8 +145,10 @@ export function ListenPlayer({
   )
 
   useEffect(() => {
-    if (status === "playing") persistProgress(currentWord)
-  }, [currentWord, status, persistProgress])
+    // Only persist resume position for the original text; translated word
+    // indices don't map back to the stored document.
+    if (status === "playing" && readingLang === "en") persistProgress(currentWord)
+  }, [currentWord, status, persistProgress, readingLang])
 
   useEffect(() => {
     return () => {
@@ -184,7 +241,7 @@ export function ListenPlayer({
         <>
           <ReaderPanel
             title={title}
-            text={content}
+            text={activeContent}
             words={words}
             currentWord={currentWord}
             onWordClick={seekToWord}
@@ -198,6 +255,11 @@ export function ListenPlayer({
             rate={rate}
             voices={voices}
             voiceURI={voiceURI}
+            readingLang={readingLang}
+            translating={translating}
+            canTranslate={premium}
+            readingError={readingError}
+            onReadingLangChange={handleReadingLangChange}
             onPlayPause={handlePlayPause}
             onStop={stop}
             onSkip={skip}

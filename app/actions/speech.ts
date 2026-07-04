@@ -11,6 +11,44 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
+const TTS_MODEL = "openai/tts-1"
+
+function isRateLimit(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /rate.?limit|429|GatewayRateLimit/i.test(msg)
+}
+
+/**
+ * Synthesize speech with exponential backoff on rate-limit errors. The free
+ * AI Gateway tier throttles bursts of TTS requests, so we retry with growing
+ * delays (1s, 2s, 4s, 8s) to ride out transient limits. We disable the SDK's
+ * own retries so our backoff fully controls the timing.
+ */
+async function synthWithRetry(
+  text: string,
+  voice: PremiumVoiceId,
+  tries = 5,
+): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await generateSpeech({
+        model: TTS_MODEL,
+        text,
+        voice,
+        outputFormat: "mp3",
+        maxRetries: 0,
+      })
+    } catch (err) {
+      lastErr = err
+      if (!isRateLimit(err) || attempt === tries - 1) throw err
+      const delay = 1000 * 2 ** attempt
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
+}
+
 type SpeechResponse =
   | { audio: string; mediaType: string }
   | { error: string }
@@ -36,18 +74,19 @@ export async function generatePremiumSpeech(
     : "alloy"
 
   try {
-    const result = await generateSpeech({
-      model: "openai/tts-1",
-      text: trimmed,
-      voice: selectedVoice,
-      outputFormat: "mp3",
-    })
+    const result = await synthWithRetry(trimmed, selectedVoice)
     return {
       audio: result.audio.base64,
       mediaType: result.audio.mediaType ?? "audio/mpeg",
     }
   } catch (err) {
     console.log("[v0] premium speech error:", err instanceof Error ? err.message : err)
+    if (isRateLimit(err)) {
+      return {
+        error:
+          "Audio is in high demand right now. Please wait a moment and press play again.",
+      }
+    }
     return { error: "Could not generate audio right now. Please try again." }
   }
 }
@@ -88,12 +127,7 @@ export async function generateDownloadableAudio(
   try {
     const buffers: Uint8Array[] = []
     for (const chunk of chunks) {
-      const result = await generateSpeech({
-        model: "openai/tts-1",
-        text: chunk,
-        voice: selectedVoice,
-        outputFormat: "mp3",
-      })
+      const result = await synthWithRetry(chunk, selectedVoice)
       buffers.push(base64ToBytes(result.audio.base64))
     }
 
