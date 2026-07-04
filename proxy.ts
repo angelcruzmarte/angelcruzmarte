@@ -31,8 +31,11 @@ export function proxy(req: NextRequest) {
 
   // In production, keep the admin panel off the primary domain: bounce any
   // /admin* request over to the admin subdomain with a clean path.
+  // Gated by ADMIN_SUBDOMAIN_ENABLED so the redirect only turns on once the
+  // admin.<root> subdomain is verified in DNS — avoiding any lockout window.
   if (
     process.env.VERCEL_ENV === "production" &&
+    process.env.ADMIN_SUBDOMAIN_ENABLED === "1" &&
     (pathname === "/admin" || pathname.startsWith("/admin/"))
   ) {
     const root = process.env.VERCEL_PROJECT_PRODUCTION_URL?.replace(
