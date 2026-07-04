@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -222,27 +223,31 @@ function BuyElsewhereMenu({
         <ChevronDown className="ml-auto h-4 w-4 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>Buy from</DropdownMenuLabel>
-        {buyLinks.map((store) => (
-          <DropdownMenuItem
-            key={store.id}
-            render={<a href={store.url} target="_blank" rel="noreferrer" />}
-          >
-            <ExternalLink className="h-4 w-4" />
-            {store.label}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Buy from</DropdownMenuLabel>
+          {buyLinks.map((store) => (
+            <DropdownMenuItem
+              key={store.id}
+              render={<a href={store.url} target="_blank" rel="noreferrer" />}
+            >
+              <ExternalLink className="h-4 w-4" />
+              {store.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Borrow</DropdownMenuLabel>
-        {borrowLinks.map((store) => (
-          <DropdownMenuItem
-            key={store.id}
-            render={<a href={store.url} target="_blank" rel="noreferrer" />}
-          >
-            <Library className="h-4 w-4" />
-            {store.label}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Borrow</DropdownMenuLabel>
+          {borrowLinks.map((store) => (
+            <DropdownMenuItem
+              key={store.id}
+              render={<a href={store.url} target="_blank" rel="noreferrer" />}
+            >
+              <Library className="h-4 w-4" />
+              {store.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )
