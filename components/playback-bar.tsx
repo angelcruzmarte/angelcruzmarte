@@ -31,7 +31,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { baseLang, friendlyVoiceName, isHumanLikeVoice } from "@/lib/voices"
+import {
+  baseLang,
+  friendlyVoiceName,
+  isHumanLikeVoice,
+  voiceQualityScore,
+} from "@/lib/voices"
 import { READING_LANGUAGES } from "@/lib/languages"
 import type { SpeechVoice } from "@/hooks/use-speech"
 
@@ -84,9 +89,14 @@ export function PlaybackBar({
 }: Props) {
   const isPlaying = status === "playing"
 
-  // Only expose natural, human-like voices.
+  // Only expose natural, human-like voices, ordered by expected clarity so the
+  // clearest, most premium-sounding options appear first.
   const humanVoices = useMemo(
-    () => voices.filter((v) => isHumanLikeVoice(v.name)),
+    () =>
+      voices
+        .filter((v) => isHumanLikeVoice(v.name))
+        .slice()
+        .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a)),
     [voices],
   )
 

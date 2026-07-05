@@ -57,6 +57,49 @@ export function isHumanLikeVoice(name: string): boolean {
   return true
 }
 
+// High-quality, natural-sounding named voices bundled by the major platforms
+// (Apple, Google, Microsoft). Preferring these gives the clearest device audio.
+const HIGH_QUALITY_NAMES = [
+  "samantha",
+  "ava",
+  "siri",
+  "allison",
+  "susan",
+  "zoe",
+  "evan",
+  "nathan",
+  "tom",
+  "aaron",
+  "serena",
+  "daniel",
+  "karen",
+  "moira",
+  "tessa",
+  "google",
+  "natural",
+  "neural",
+]
+
+/**
+ * Scores a device (Web Speech API) voice by expected clarity/quality so we can
+ * default to the best-sounding option. Higher is better. We reward voices the
+ * OS labels as "enhanced"/"premium", known natural named voices, and network
+ * (cloud) voices, which are typically far clearer than compact local ones.
+ */
+export function voiceQualityScore(voice: {
+  name: string
+  localService?: boolean
+}): number {
+  const n = (voice.name || "").toLowerCase()
+  let score = 0
+  if (/\b(enhanced|premium|neural|natural)\b/.test(n)) score += 5
+  if (HIGH_QUALITY_NAMES.some((k) => n.includes(k))) score += 3
+  // Network/cloud voices tend to sound clearer than compact on-device ones.
+  if (voice.localService === false) score += 2
+  if (n.includes("compact")) score -= 2
+  return score
+}
+
 /** Base language code, e.g. "en-US" -> "en". */
 export function baseLang(lang: string): string {
   return (lang || "").split("-")[0].toLowerCase()
