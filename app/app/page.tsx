@@ -37,6 +37,20 @@ const aiTiles = [
 export default async function AppHome() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
+  // Everyone who reaches this page is entitled (the layout gate sends anyone
+  // without a trial/subscription to /subscribe) or is an admin.
+  const unlocked = subscribed || user?.role === "admin"
+  const isTrialing = user?.subscriptionStatus === "trialing"
+  const trialDaysLeft =
+    isTrialing && user?.currentPeriodEnd
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(user.currentPeriodEnd).getTime() - Date.now()) /
+              86_400_000,
+          ),
+        )
+      : 0
   const docs = await getDocuments()
   const totalWords = docs.reduce((sum, d) => sum + d.wordCount, 0)
   const minutesSaved = Math.round((totalWords / 200) * 0.6)
@@ -45,7 +59,28 @@ export default async function AppHome() {
     <div className="space-y-8 px-4 py-6 sm:px-6">
       <SavedStat minutesSaved={minutesSaved} docCount={docs.length} />
 
-      {subscribed ? (
+      {isTrialing ? (
+        <Link
+          href="/account"
+          className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 transition-colors hover:bg-primary/10"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">
+              Free trial active &mdash;{" "}
+              {trialDaysLeft} {trialDaysLeft === 1 ? "day" : "days"} left
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              Everything is unlocked. Manage your plan anytime.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+            Manage
+          </span>
+        </Link>
+      ) : subscribed ? (
         <div className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -66,14 +101,14 @@ export default async function AppHome() {
             <Lock className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">You&apos;re on the Free plan</p>
+            <p className="text-sm font-semibold">Start your free trial</p>
             <p className="truncate text-xs text-muted-foreground">
-              Upgrade to unlock AI Summary, Podcast, and Quiz.
+              7 days free &mdash; unlock everything VOXYFI can do.
             </p>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
             <Sparkles className="h-3 w-3" aria-hidden="true" />
-            Upgrade
+            Start
           </span>
         </Link>
       )}
@@ -90,7 +125,7 @@ export default async function AppHome() {
       <section>
         <div className="mb-3 flex items-center gap-2">
           <h2 className="text-2xl font-bold tracking-tight">Create with AI</h2>
-          {!subscribed && (
+          {!unlocked && (
             <Link
               href="/subscribe"
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -102,11 +137,11 @@ export default async function AppHome() {
         </div>
         <div className="grid grid-cols-3 gap-3">
           {aiTiles.map((tile) => (
-            <TileLink key={tile.label} {...tile} locked={!subscribed} />
+            <TileLink key={tile.label} {...tile} locked={!unlocked} />
           ))}
         </div>
         <div className="mt-4">
-          <QuickCreate subscribed={subscribed} />
+          <QuickCreate subscribed={unlocked} />
         </div>
       </section>
 

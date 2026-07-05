@@ -18,6 +18,10 @@ export default async function AppLayout({
   if (!user) redirect("/sign-in")
   if (!user.onboardingComplete) redirect("/onboarding")
   const subscribed = hasActiveSubscription(user)
+  // The entire app requires an active trial or subscription. Anyone without
+  // one is sent to the paywall to start their 7-day free trial. Admins are
+  // exempt so they can always reach the app to manage it.
+  if (!subscribed && user.role !== "admin") redirect("/subscribe")
 
   return (
     <PlayerProvider>
