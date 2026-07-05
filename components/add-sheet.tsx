@@ -15,14 +15,26 @@ import {
   Cloud,
   CloudCog,
   ChevronDown,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useCloudImport } from "@/hooks/use-cloud-import"
+import {
+  isCloudProviderConfigured,
+  type CloudProviderId,
+} from "@/lib/cloud-providers"
 
 type Item = {
   label: string
   icon: React.ElementType
   href?: string
   soon?: boolean
+}
+
+type AppItem = {
+  id: CloudProviderId
+  label: string
+  icon: React.ElementType
 }
 
 const addItems: Item[] = [
@@ -38,10 +50,10 @@ const createItems: Item[] = [
   { label: "Summary", icon: FileText, href: "/app/create/summary" },
 ]
 
-const appItems: Item[] = [
-  { label: "Google Drive", icon: HardDrive, soon: true },
-  { label: "Dropbox", icon: Cloud, soon: true },
-  { label: "Microsoft OneDrive", icon: CloudCog, soon: true },
+const appItems: AppItem[] = [
+  { id: "google-drive", label: "Google Drive", icon: HardDrive },
+  { id: "dropbox", label: "Dropbox", icon: Cloud },
+  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog },
 ]
 
 export function AddSheet({
@@ -53,6 +65,10 @@ export function AddSheet({
 }) {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
+  const { importFrom, status, activeProvider, error } = useCloudImport((id) => {
+    onClose()
+    router.push(`/app/listen/${id}`)
+  })
 
   // Drive enter/exit animation.
   useEffect(() => {
@@ -136,9 +152,30 @@ export function AddSheet({
 
         <SectionLabel>Apps</SectionLabel>
         <div className="px-3">
-          {appItems.map((item) => (
-            <Row key={item.label} item={item} onClick={() => go(item.href, item.soon)} />
-          ))}
+          {appItems.map((item) => {
+            const configured = isCloudProviderConfigured(item.id)
+            const busy =
+              activeProvider === item.id && status !== "idle"
+            return (
+              <AppRow
+                key={item.id}
+                item={item}
+                configured={configured}
+                busy={busy}
+                busyLabel={status === "importing" ? "Importing…" : "Opening…"}
+                onClick={() => {
+                  if (configured) importFrom(item.id)
+                }}
+              />
+            )
+          })}
+          {error && (
+            <p className="px-2 pt-1 text-sm text-destructive">{error}</p>
+          )}
+          <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">
+            Providers marked “Set up” need a developer key added to the app
+            before they can be used.
+          </p>
         </div>
       </div>
     </div>
@@ -172,6 +209,51 @@ function Row({ item, onClick }: { item: Item; onClick: () => void }) {
       {item.soon && (
         <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
           Soon
+        </span>
+      )}
+    </button>
+  )
+}
+
+function AppRow({
+  item,
+  configured,
+  busy,
+  busyLabel,
+  onClick,
+}: {
+  item: AppItem
+  configured: boolean
+  busy: boolean
+  busyLabel: string
+  onClick: () => void
+}) {
+  const Icon = item.icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!configured || busy}
+      className={cn(
+        "flex w-full items-center gap-4 rounded-2xl px-2 py-3 text-left transition-colors",
+        configured ? "hover:bg-secondary" : "cursor-not-allowed opacity-55",
+      )}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground">
+        {busy ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <Icon className="h-5 w-5" strokeWidth={1.75} />
+        )}
+      </span>
+      <span className="flex-1 text-lg font-semibold">{item.label}</span>
+      {busy ? (
+        <span className="text-xs font-medium text-muted-foreground">
+          {busyLabel}
+        </span>
+      ) : configured ? null : (
+        <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
+          Set up
         </span>
       )}
     </button>
