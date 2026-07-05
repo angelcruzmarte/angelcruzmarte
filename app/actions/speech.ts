@@ -1,5 +1,7 @@
 "use server"
 
+import { createHash } from "node:crypto"
+import { head, put } from "@vercel/blob"
 import { chunkText } from "@/lib/chunk-text"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
@@ -67,9 +69,102 @@ async function synthWithRetry(
   throw lastErr
 }
 
-type SpeechResponse =
-  | { audio: string; mediaType: string }
-  | { error: string }
+// --- Persistent audio cache (Vercel Blob) -----------------------------------
+//
+// Each unique (voice + exact text) is synthesized only ONCE, then stored in
+// Blob and served by its public URL forever after. This is the key to
+// reliability: once a section has been generated, replays and other users never
+// call the rate-limited TTS API again, so the "high demand" error disappears
+// for anything that has been played before.
+
+function cacheKey(text: string, voice: string): string {
+  const hash = createHash("sha256").update(`${voice}\u0000${text}`).digest("hex")
+  return `voxyfi-audio/${voice}/${hash}.mp3`
+}
+
+/** Returns the public URL of a cached clip, or null if it isn't cached yet. */
+async function getCachedUrl(pathname: string): Promise<string | null> {
+  try {
+    const meta = await head(pathname)
+    return meta?.url ?? null
+  } catch {
+    // head() throws BlobNotFoundError when the object doesn't exist.
+    return null
+  }
+}
+
+// Dedupe concurrent generation of the same clip within a server instance so two
+// simultaneous requests don't both hit the TTS API for the same section.
+const inflightUrl = new Map<string, Promise<string>>()
+
+/**
+ * Returns a public URL for the spoken audio of `text` in `voice`, generating
+ * and caching it on first use. Cache hits never touch the TTS API.
+ */
+async function getOrCreateAudioUrl(
+  text: string,
+  voice: PremiumVoiceId,
+): Promise<string> {
+  const pathname = cacheKey(text, voice)
+  const cached = await getCachedUrl(pathname)
+  if (cached) return cached
+
+  const running = inflightUrl.get(pathname)
+  if (running) return running
+
+  const task = (async () => {
+    const result = await synthWithRetry(text, voice)
+    const bytes = Buffer.from(result.audio.base64, "base64")
+    const blob = await put(pathname, bytes, {
+      access: "public",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: "audio/mpeg",
+      // Audio for a given text never changes — let browsers/CDN cache it hard.
+      cacheControlMaxAge: 60 * 60 * 24 * 365,
+    })
+    return blob.url
+  })()
+
+  inflightUrl.set(pathname, task)
+  try {
+    return await task
+  } finally {
+    inflightUrl.delete(pathname)
+  }
+}
+
+/**
+ * Returns the raw MP3 bytes for `text` in `voice`, using the Blob cache. Used by
+ * the download path so repeat downloads and already-played sections are instant.
+ */
+async function getOrCreateAudioBytes(
+  text: string,
+  voice: PremiumVoiceId,
+): Promise<Uint8Array> {
+  const pathname = cacheKey(text, voice)
+  const cached = await getCachedUrl(pathname)
+  if (cached) {
+    try {
+      const res = await fetch(cached)
+      if (res.ok) return new Uint8Array(await res.arrayBuffer())
+    } catch {
+      // Fall through to regeneration if the cached object can't be fetched.
+    }
+  }
+  const result = await synthWithRetry(text, voice)
+  const buffer = Buffer.from(result.audio.base64, "base64")
+  await put(pathname, buffer, {
+    access: "public",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "audio/mpeg",
+    cacheControlMaxAge: 60 * 60 * 24 * 365,
+  })
+  return new Uint8Array(buffer)
+}
+
+type SpeechResponse = { url: string } | { error: string }
 
 export async function generatePremiumSpeech(
   text: string,
@@ -92,11 +187,8 @@ export async function generatePremiumSpeech(
     : "alloy"
 
   try {
-    const result = await synthWithRetry(trimmed, selectedVoice)
-    return {
-      audio: result.audio.base64,
-      mediaType: result.audio.mediaType ?? "audio/mpeg",
-    }
+    const url = await getOrCreateAudioUrl(trimmed, selectedVoice)
+    return { url }
   } catch (err) {
     console.log("[v0] premium speech error:", err instanceof Error ? err.message : err)
     if (isRateLimit(err)) {
@@ -145,8 +237,7 @@ export async function generateDownloadableAudio(
   try {
     const buffers: Uint8Array[] = []
     for (const chunk of chunks) {
-      const result = await synthWithRetry(chunk, selectedVoice)
-      buffers.push(base64ToBytes(result.audio.base64))
+      buffers.push(await getOrCreateAudioBytes(chunk, selectedVoice))
     }
 
     const total = buffers.reduce((sum, b) => sum + b.length, 0)
@@ -168,10 +259,6 @@ export async function generateDownloadableAudio(
     )
     return { error: "Could not generate the download right now. Try again." }
   }
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  return new Uint8Array(Buffer.from(base64, "base64"))
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

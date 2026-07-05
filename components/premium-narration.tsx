@@ -31,15 +31,6 @@ const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 // playback is never blocked — this only caps background work on huge documents.
 const BACKGROUND_TRANSLATE_CAP = 40
 
-function base64ToUrl(base64: string, mediaType: string) {
-  const byteChars = atob(base64)
-  const bytes = new Uint8Array(byteChars.length)
-  for (let i = 0; i < byteChars.length; i++) {
-    bytes[i] = byteChars.charCodeAt(i)
-  }
-  return URL.createObjectURL(new Blob([bytes], { type: mediaType }))
-}
-
 function countWords(s: string) {
   return s.match(/\S+/g)?.length ?? 0
 }
@@ -52,7 +43,7 @@ export function PremiumNarration({
   title: string
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  // Cache of generated object URLs keyed by `${lang}:${voice}:${chunkIndex}`.
+  // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
   const cacheRef = useRef<Map<string, string>>(new Map())
 
   const [voice, setVoice] = useState<string>(PREMIUM_VOICES[0].id)
@@ -112,15 +103,6 @@ export function PremiumNarration({
     lang === "en"
       ? sourceChunks.length
       : sections[lang]?.reduce((n, s) => (s ? n + 1 : n), 0) ?? 0
-
-  // Revoke cached audio URLs on unmount.
-  useEffect(() => {
-    const cache = cacheRef.current
-    return () => {
-      cache.forEach((url) => URL.revokeObjectURL(url))
-      cache.clear()
-    }
-  }, [])
 
   const stop = useCallback(() => {
     const audio = audioRef.current
@@ -224,9 +206,10 @@ export function PremiumNarration({
         setError(res.error)
         return null
       }
-      const url = base64ToUrl(res.audio, res.mediaType)
-      cacheRef.current.set(key, url)
-      return url
+      // res.url is a persistent, publicly cached MP3 URL — the browser caches it
+      // too, so replays are instant and never re-hit the TTS API.
+      cacheRef.current.set(key, res.url)
+      return res.url
     },
     [sourceChunks, voice, lang, translateSection],
   )
