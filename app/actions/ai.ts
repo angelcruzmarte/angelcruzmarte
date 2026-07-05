@@ -147,6 +147,21 @@ export interface TranslationResult {
   error?: string
 }
 
+/**
+ * Removes accent marks / diacritics from translated text (á→a, é→e, ü→u, etc.)
+ * while preserving the Spanish letter "ñ", which is a distinct letter rather
+ * than an accent (dropping its tilde would change words like "año" → "ano").
+ */
+function stripAccents(text: string): string {
+  return text
+    .replace(/ñ/g, "\u0001")
+    .replace(/Ñ/g, "\u0002")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0001/g, "ñ")
+    .replace(/\u0002/g, "Ñ")
+}
+
 async function translateChunkOnce(chunk: string, language: string) {
   const { text } = await generateText({
     model: TRANSLATE_MODEL,
@@ -156,7 +171,7 @@ async function translateChunkOnce(chunk: string, language: string) {
       `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
       chunk,
   })
-  return text.trim()
+  return stripAccents(text.trim())
 }
 
 /** Translate one chunk with a single retry to ride out transient rate limits. */
