@@ -10,7 +10,7 @@ import { PremiumNarration } from "@/components/premium-narration"
 import { DownloadAudioButton } from "@/components/download-audio-button"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { baseLang } from "@/lib/voices"
+import { baseLang, voiceQualityScore } from "@/lib/voices"
 import { translateText } from "@/app/actions/ai"
 
 type Props = {
@@ -83,8 +83,11 @@ export function ListenPlayer({
       setReadingError(null)
 
       const pickVoiceFor = (langCode: string) => {
-        const match = voices.find((v) => baseLang(v.lang) === baseLang(langCode))
-        if (match) setVoiceURI(match.uri)
+        // Choose the clearest available voice for the target language.
+        const matches = voices
+          .filter((v) => baseLang(v.lang) === baseLang(langCode))
+          .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
+        if (matches[0]) setVoiceURI(matches[0].uri)
       }
 
       // Original, or an already-translated language: switch instantly.

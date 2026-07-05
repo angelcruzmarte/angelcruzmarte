@@ -11,7 +11,9 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
-const TTS_MODEL = "openai/tts-1"
+// Use OpenAI's high-definition TTS model for clearer, richer, premium-quality
+// narration (higher audio fidelity than the standard "tts-1").
+const TTS_MODEL = "openai/tts-1-hd"
 
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)

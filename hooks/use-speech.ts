@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { isHumanLikeVoice } from "@/lib/voices"
+import { isHumanLikeVoice, voiceQualityScore } from "@/lib/voices"
 
 export type Word = {
   text: string
@@ -89,13 +89,15 @@ export function useSpeech(text: string, initialWord = 0) {
       setVoices(mapped)
       setVoiceURIState((prev) => {
         if (prev) return prev
-        // Prefer natural, human-like voices for the default selection.
+        // Prefer natural, human-like voices, then rank by expected clarity so
+        // the default is the clearest, most premium-sounding device voice.
         const pool = raw.filter((v) => isHumanLikeVoice(v.name))
         const candidates = pool.length > 0 ? pool : raw
-        const preferred =
-          candidates.find((v) => v.default && v.lang.startsWith("en")) ??
-          candidates.find((v) => v.lang.startsWith("en")) ??
-          candidates[0]
+        const english = candidates.filter((v) => v.lang.startsWith("en"))
+        const ranked = (english.length > 0 ? english : candidates)
+          .slice()
+          .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
+        const preferred = ranked[0] ?? candidates[0]
         return preferred ? preferred.voiceURI : ""
       })
     }
@@ -123,6 +125,9 @@ export function useSpeech(text: string, initialWord = 0) {
 
     const utterance = new SpeechSynthesisUtterance(slice)
     utterance.rate = rateRef.current
+    // Natural pitch and full volume for the clearest, most intelligible output.
+    utterance.pitch = 1
+    utterance.volume = 1
     const voice = synth.getVoices().find((v) => v.voiceURI === voiceURIRef.current)
     if (voice) {
       utterance.voice = voice

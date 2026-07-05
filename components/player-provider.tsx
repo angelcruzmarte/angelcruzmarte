@@ -10,6 +10,7 @@ import {
   useState,
 } from "react"
 import { tokenize } from "@/hooks/use-speech"
+import { isHumanLikeVoice, voiceQualityScore } from "@/lib/voices"
 
 export type PlayerTrack = {
   id: number
@@ -67,8 +68,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const utterance = new SpeechSynthesisUtterance(slice)
     utterance.rate = rateRef.current
+    // Natural pitch and full volume for the clearest, most intelligible output.
+    utterance.pitch = 1
+    utterance.volume = 1
+    // Prefer natural, human-like English voices ranked by expected clarity so
+    // narration uses the clearest, most premium-sounding device voice.
+    const english = synth
+      .getVoices()
+      .filter((v) => v.lang.startsWith("en") && isHumanLikeVoice(v.name))
     const preferred =
-      synth.getVoices().find((v) => v.default && v.lang.startsWith("en")) ??
+      english.slice().sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))[0] ??
       synth.getVoices().find((v) => v.lang.startsWith("en"))
     if (preferred) {
       utterance.voice = preferred
