@@ -11,6 +11,12 @@ import {
 } from "react"
 import { tokenize } from "@/hooks/use-speech"
 import { isHumanLikeVoice, voiceQualityScore } from "@/lib/voices"
+import {
+  trackerAddWords,
+  trackerPause,
+  trackerStart,
+  trackerStop,
+} from "@/lib/listening-tracker"
 
 export type PlayerTrack = {
   id: number
@@ -93,6 +99,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (w[i].start <= globalIndex) idx = i
         else break
       }
+      // Count forward progress (in words) toward listening stats.
+      const prev = currentWordRef.current
+      if (idx > prev) trackerAddWords(idx - prev)
       currentWordRef.current = idx
       setCurrentWord(idx)
     }
@@ -102,6 +111,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         internalStopRef.current = false
         return
       }
+      // Reached the end of the track: stop the timer and flush stats.
+      trackerPause()
       statusRef.current = "idle"
       setStatus("idle")
       currentWordRef.current = -1
@@ -112,6 +123,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setStatus("playing")
     currentWordRef.current = clamped
     setCurrentWord(clamped)
+    trackerStart()
 
     setTimeout(() => {
       internalStopRef.current = false
@@ -138,6 +150,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       synth.pause()
       statusRef.current = "paused"
       setStatus("paused")
+      trackerPause()
     } else if (statusRef.current === "paused") {
       synth.resume()
       statusRef.current = "playing"
@@ -162,6 +175,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return
     internalStopRef.current = true
     window.speechSynthesis.cancel()
+    trackerStop()
     statusRef.current = "idle"
     setStatus("idle")
     currentWordRef.current = -1

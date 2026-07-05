@@ -51,6 +51,7 @@ export default async function AppLayout({
             email={user.email}
             isAdmin={user.role === "admin"}
             isSubscribed={subscribed}
+            image={user.image}
           />
         </div>
       </header>

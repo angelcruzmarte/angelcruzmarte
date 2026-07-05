@@ -8,6 +8,8 @@ import {
   User as UserIcon,
   Sparkles,
   ArrowUp,
+  BarChart3,
+  CreditCard,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -27,9 +29,10 @@ type Props = {
   email: string
   isAdmin: boolean
   isSubscribed?: boolean
+  image?: string | null
 }
 
-export function UserMenu({ name, email, isAdmin, isSubscribed }: Props) {
+export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
   const router = useRouter()
 
   async function handleSignOut() {
@@ -58,7 +61,16 @@ export function UserMenu({ name, email, isAdmin, isSubscribed }: Props) {
           isSubscribed ? "Account menu (Premium)" : "Account menu (Free plan)"
         }
       >
-        <span className="text-sm font-semibold">{initials || "U"}</span>
+        {image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={image || "/placeholder.svg"}
+            alt=""
+            className="h-full w-full rounded-full object-cover"
+          />
+        ) : (
+          <span className="text-sm font-semibold">{initials || "U"}</span>
+        )}
         {isSubscribed && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background">
             <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
@@ -97,8 +109,16 @@ export function UserMenu({ name, email, isAdmin, isSubscribed }: Props) {
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem render={<Link href="/account" />}>
+        <DropdownMenuItem render={<Link href="/app/profile" />}>
           <UserIcon className="mr-2 h-4 w-4" />
+          Profile
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/app/stats" />}>
+          <BarChart3 className="mr-2 h-4 w-4" />
+          Statistics
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/account" />}>
+          <CreditCard className="mr-2 h-4 w-4" />
           Account &amp; billing
         </DropdownMenuItem>
         {isAdmin && (

@@ -12,6 +12,11 @@ import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { baseLang, voiceQualityScore } from "@/lib/voices"
 import { translateText } from "@/app/actions/ai"
+import {
+  trackerAddWords,
+  trackerPause,
+  trackerStart,
+} from "@/lib/listening-tracker"
 
 type Props = {
   title: string
@@ -152,6 +157,29 @@ export function ListenPlayer({
     // indices don't map back to the stored document.
     if (status === "playing" && readingLang === "en") persistProgress(currentWord)
   }, [currentWord, status, persistProgress, readingLang])
+
+  // Feed listening statistics: run a timer while playing and count word
+  // advances as the highlight moves forward. This covers the device-voice path;
+  // the premium AI player uses the shared player-provider engine.
+  useEffect(() => {
+    if (status === "playing") trackerStart()
+    else trackerPause()
+  }, [status])
+
+  const lastTrackedWord = useRef(-1)
+  useEffect(() => {
+    if (status !== "playing") return
+    const prev = lastTrackedWord.current
+    if (currentWord > prev) trackerAddWords(currentWord - prev)
+    lastTrackedWord.current = currentWord
+  }, [currentWord, status])
+
+  // Flush stats when leaving the page.
+  useEffect(() => {
+    return () => {
+      trackerPause()
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
