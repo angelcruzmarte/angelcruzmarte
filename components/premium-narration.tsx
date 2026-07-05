@@ -21,11 +21,15 @@ import { cn } from "@/lib/utils"
 import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
-import { translateText } from "@/app/actions/ai"
+import { translatePassage } from "@/app/actions/ai"
 import { PREMIUM_VOICES } from "@/lib/voices"
 import { READING_LANGUAGES } from "@/lib/languages"
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
+// Upper bound on how many sections we pre-translate in the background. Sections
+// beyond this are still translated on demand the moment they are played, so
+// playback is never blocked — this only caps background work on huge documents.
+const BACKGROUND_TRANSLATE_CAP = 40
 
 function base64ToUrl(base64: string, mediaType: string) {
   const byteChars = atob(base64)
@@ -60,27 +64,54 @@ export function PremiumNarration({
   const [error, setError] = useState<string | null>(null)
   const [currentWord, setCurrentWord] = useState(-1)
 
-  // Translation state.
+  // Narration sections come from the ORIGINAL text so their boundaries stay
+  // stable across languages. Translations are stored per section and filled in
+  // progressively, so switching language and starting playback feels instant.
+  const sourceChunks = useMemo(() => chunkForNarration(text), [text])
+
+  // Translation state. `sections[lang][i]` holds the translated text for source
+  // section `i` (undefined until it has been translated).
   const [lang, setLang] = useState<string>("en")
-  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [sections, setSections] = useState<
+    Record<string, (string | undefined)[]>
+  >({})
   const [translating, setTranslating] = useState(false)
-  const [truncatedNote, setTruncatedNote] = useState(false)
 
-  const activeText = lang === "en" ? text : translations[lang] ?? text
+  // Refs mirror state for use inside async loops without stale closures.
+  const sectionsRef = useRef(sections)
+  sectionsRef.current = sections
+  const langRef = useRef(lang)
+  langRef.current = lang
+  // Dedupe concurrent translation requests for the same section.
+  const inflightRef = useRef<Map<string, Promise<string>>>(new Map())
 
-  // Words for the reader (highlighting) and the chunks fed to the TTS model,
-  // together with the cumulative word offset at which each chunk begins.
+  // Effective section text for the current language (falls back to source when
+  // a section has not been translated yet).
+  const chunks = useMemo(() => {
+    if (lang === "en") return sourceChunks
+    const arr = sections[lang]
+    return sourceChunks.map((c, i) => arr?.[i] ?? c)
+  }, [lang, sourceChunks, sections])
+
+  const activeText = useMemo(() => chunks.join("\n\n"), [chunks])
+
+  // Words for the reader (highlighting) + cumulative word offset per section.
   const words = useMemo(() => tokenize(activeText), [activeText])
-  const { chunks, offsets } = useMemo(() => {
-    const cs = chunkForNarration(activeText)
+  const offsets = useMemo(() => {
     const offs: number[] = []
     let acc = 0
-    for (const c of cs) {
+    for (const c of chunks) {
       offs.push(acc)
       acc += countWords(c)
     }
-    return { chunks: cs, offsets: offs }
-  }, [activeText])
+    return offs
+  }, [chunks])
+
+  // Number of sections translated so far for the current language (for the note).
+  const doneCount =
+    lang === "en"
+      ? sourceChunks.length
+      : sections[lang]?.reduce((n, s) => (s ? n + 1 : n), 0) ?? 0
 
   // Revoke cached audio URLs on unmount.
   useEffect(() => {
@@ -102,12 +133,93 @@ export function PremiumNarration({
     setCurrentWord(-1)
   }, [])
 
+  // Translate a single source section into `targetLang`, caching the result and
+  // deduplicating in-flight requests. Returns the translated (or source) text.
+  const translateSection = useCallback(
+    (targetLang: string, i: number): Promise<string> => {
+      if (targetLang === "en") return Promise.resolve(sourceChunks[i])
+      const existing = sectionsRef.current[targetLang]?.[i]
+      if (existing) return Promise.resolve(existing)
+      const key = `${targetLang}:${i}`
+      const running = inflightRef.current.get(key)
+      if (running) return running
+      const p = (async () => {
+        const t = await translatePassage(sourceChunks[i], targetLang)
+        setSections((prev) => {
+          const arr = prev[targetLang]
+            ? prev[targetLang].slice()
+            : new Array<string | undefined>(sourceChunks.length).fill(undefined)
+          arr[i] = t
+          return { ...prev, [targetLang]: arr }
+        })
+        return t
+      })()
+      inflightRef.current.set(key, p)
+      void p.finally(() => inflightRef.current.delete(key))
+      return p
+    },
+    [sourceChunks],
+  )
+
+  // Progressively translate sections in the background (bounded concurrency),
+  // starting from `startAt` so the section about to play is ready first.
+  const translateInBackground = useCallback(
+    async (targetLang: string, startAt: number) => {
+      if (targetLang === "en") return
+      const total = sourceChunks.length
+      const order: number[] = []
+      for (let i = startAt; i < total && order.length < BACKGROUND_TRANSLATE_CAP; i++) {
+        order.push(i)
+      }
+      for (let i = 0; i < startAt && order.length < BACKGROUND_TRANSLATE_CAP; i++) {
+        order.push(i)
+      }
+      setTranslating(true)
+      let hadError = false
+      let cursor = 0
+      const worker = async () => {
+        while (cursor < order.length) {
+          const idx = order[cursor++]
+          if (langRef.current !== targetLang) return // user switched away
+          try {
+            await translateSection(targetLang, idx)
+          } catch {
+            hadError = true // leave source fallback for this section
+          }
+        }
+      }
+      try {
+        await Promise.all([worker(), worker()])
+        if (hadError && langRef.current === targetLang) {
+          setError(
+            "Some sections couldn't be translated due to high demand — showing the original text for those. Playback still works.",
+          )
+        }
+      } finally {
+        if (langRef.current === targetLang) setTranslating(false)
+      }
+    },
+    [sourceChunks, translateSection],
+  )
+
   const loadChunk = useCallback(
     async (i: number): Promise<string | null> => {
       const key = `${lang}:${voice}:${i}`
       const cached = cacheRef.current.get(key)
       if (cached) return cached
-      const res = await generatePremiumSpeech(chunks[i], voice)
+      // Ensure this section is translated (on demand) before generating audio.
+      let sectionText = sourceChunks[i]
+      if (lang !== "en") {
+        try {
+          sectionText = await translateSection(lang, i)
+        } catch {
+          setError(
+            "Translation is temporarily unavailable — playing the original text for this section.",
+          )
+          sectionText = sourceChunks[i]
+        }
+      }
+      const res = await generatePremiumSpeech(sectionText, voice)
       if ("error" in res) {
         setError(res.error)
         return null
@@ -116,7 +228,7 @@ export function PremiumNarration({
       cacheRef.current.set(key, url)
       return url
     },
-    [chunks, voice, lang],
+    [sourceChunks, voice, lang, translateSection],
   )
 
   const playChunk = useCallback(
@@ -209,41 +321,28 @@ export function PremiumNarration({
   )
 
   const handleLangChange = useCallback(
-    async (value: string | null) => {
+    (value: string | null) => {
       const next = value ?? "en"
       if (next === lang) return
       stop()
       setError(null)
-      setTruncatedNote(false)
-      // Original or an already-translated language: switch instantly.
-      if (next === "en" || translations[next]) {
-        setLang(next)
+      // Switch language instantly — the reader shows the source text and each
+      // section is translated on demand / in the background from here.
+      setLang(next)
+      if (next === "en") {
+        setTranslating(false)
         return
       }
-      setTranslating(true)
-      try {
-        const res = await translateText(text, next)
-        if (res.error) {
-          setError(res.error)
-          return
-        }
-        setTranslations((prev) => ({ ...prev, [next]: res.translated }))
-        setTruncatedNote(res.truncated)
-        setLang(next)
-      } catch {
-        setError(
-          "Could not translate this text right now. Please try again shortly.",
-        )
-      } finally {
-        setTranslating(false)
-      }
+      void translateInBackground(next, 0)
     },
-    [lang, translations, text, stop],
+    [lang, stop, translateInBackground],
   )
 
   const progress =
     chunks.length > 0 ? Math.round((index / chunks.length) * 100) : 0
-  const busy = status === "loading" || translating
+  const busy = status === "loading"
+  const showTranslateProgress =
+    lang !== "en" && translating && doneCount < chunks.length
 
   return (
     <>
@@ -297,9 +396,7 @@ export function PremiumNarration({
               />
             </div>
             <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-              {translating
-                ? "Translating…"
-                : `Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+              {`Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
             </p>
           </div>
 
@@ -338,11 +435,7 @@ export function PremiumNarration({
         {/* Language / translation control */}
         <div className="mt-3 flex items-center gap-2">
           <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <Select
-            value={lang}
-            onValueChange={handleLangChange}
-            disabled={translating}
-          >
+          <Select value={lang} onValueChange={handleLangChange}>
             <SelectTrigger className="h-9 w-full max-w-[220px]">
               <SelectValue />
             </SelectTrigger>
@@ -354,8 +447,11 @@ export function PremiumNarration({
               ))}
             </SelectContent>
           </Select>
-          {translating && (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          {showTranslateProgress && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Translating {doneCount}/{chunks.length}
+            </span>
           )}
         </div>
 
@@ -364,15 +460,10 @@ export function PremiumNarration({
             {error}
           </p>
         )}
-        {truncatedNote && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            This document is long — only the first portion was translated.
-          </p>
-        )}
         <p className="mt-3 text-xs text-muted-foreground">
-          Studio-quality voices generated on demand. Playback starts quickly and
-          the text follows along as it reads. Choose a language to listen in a
-          translation.
+          Studio-quality voices generated on demand. Playback starts instantly —
+          pick a language and each section is translated as it plays, with the
+          rest translating in the background.
         </p>
       </div>
 
