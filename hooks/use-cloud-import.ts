@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react"
 import {
   cloudConfig,
   GOOGLE_EXPORT_MIME,
+  GOOGLE_DRIVE_MIME_TYPES,
   isCloudProviderConfigured,
   type CloudProviderId,
 } from "@/lib/cloud-providers"
@@ -17,16 +18,16 @@ type PickResult = {
 
 type Status = "idle" | "picking" | "importing"
 
-const DROPBOX_EXTENSIONS = [".pdf", ".docx", ".epub", ".txt", ".md", ".markdown"]
+// A file listed from the user's Google Drive.
+export type DriveFile = {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime?: string
+  size?: string
+}
 
-const GOOGLE_MIME_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/epub+zip",
-  "text/plain",
-  "text/markdown",
-  "application/vnd.google-apps.document",
-].join(",")
+const DROPBOX_EXTENSIONS = [".pdf", ".docx", ".epub", ".txt", ".md", ".markdown"]
 
 // Loads an external script once and resolves when it's ready.
 function loadScript(
@@ -113,20 +114,18 @@ async function pickOneDrive(): Promise<PickResult | null> {
   })
 }
 
-// --- Google Drive Picker ----------------------------------------------------
-async function pickGoogleDrive(): Promise<PickResult | null> {
-  await Promise.all([
-    loadScript("https://apis.google.com/js/api.js"),
-    loadScript("https://accounts.google.com/gsi/client"),
-  ])
+// --- Google Drive (custom browser, no developer API key needed) -------------
+// We request a read-only OAuth token via Google Identity Services and then call
+// the Drive REST API directly with that token. This deliberately avoids the
+// Google Picker, which requires a classic "AIza" browser API key that newer
+// Google Cloud projects can no longer issue.
+async function getGoogleToken(): Promise<string> {
+  await loadScript("https://accounts.google.com/gsi/client")
   const g = (window as any).google
-  const gapi = (window as any).gapi
-  if (!g?.accounts?.oauth2 || !gapi) {
-    throw new Error("Google Picker failed to load.")
+  if (!g?.accounts?.oauth2) {
+    throw new Error("Google sign-in failed to load.")
   }
-
-  // 1) Get a read-only access token via Google Identity Services.
-  const token: string = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const client = g.accounts.oauth2.initTokenClient({
       client_id: cloudConfig.googleClientId,
       scope: "https://www.googleapis.com/auth/drive.readonly",
@@ -134,62 +133,59 @@ async function pickGoogleDrive(): Promise<PickResult | null> {
         if (resp?.access_token) resolve(resp.access_token)
         else reject(new Error("Google sign-in was cancelled."))
       },
+      error_callback: () =>
+        reject(new Error("Google sign-in was cancelled.")),
     })
     client.requestAccessToken()
   })
+}
 
-  // 2) Load the picker module.
-  await new Promise<void>((resolve) => gapi.load("picker", () => resolve()))
-
-  // 3) Show the picker and resolve with the chosen document.
-  return new Promise((resolve, reject) => {
-    try {
-      const view = new g.picker.DocsView(g.picker.ViewId.DOCS)
-        .setIncludeFolders(false)
-        .setMimeTypes(GOOGLE_MIME_TYPES)
-      const builder = new g.picker.PickerBuilder()
-        .setOAuthToken(token)
-        .setDeveloperKey(cloudConfig.googleApiKey)
-        .addView(view)
-      // Associating the Cloud project number improves developer-key validation.
-      if (cloudConfig.googleAppId) builder.setAppId(cloudConfig.googleAppId)
-      const picker = builder
-        .setCallback((data: any) => {
-          const action = data?.[g.picker.Response.ACTION]
-          if (action === g.picker.Action.PICKED) {
-            const doc = data[g.picker.Response.DOCUMENTS]?.[0]
-            if (!doc) return resolve(null)
-            const id = doc[g.picker.Document.ID]
-            const name = doc[g.picker.Document.NAME] ?? "document"
-            const mimeType = doc[g.picker.Document.MIME_TYPE] ?? ""
-            const isGoogleDoc = mimeType.startsWith("application/vnd.google-apps")
-            const url = isGoogleDoc
-              ? `https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=${encodeURIComponent(GOOGLE_EXPORT_MIME)}`
-              : `https://www.googleapis.com/drive/v3/files/${id}?alt=media`
-            resolve({
-              url,
-              name: isGoogleDoc && !/\.\w+$/.test(name) ? `${name}.docx` : name,
-              auth: `Bearer ${token}`,
-              mimeType: isGoogleDoc ? GOOGLE_EXPORT_MIME : mimeType,
-            })
-          } else if (action === g.picker.Action.CANCEL) {
-            resolve(null)
-          }
-        })
-        .build()
-      picker.setVisible(true)
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error("Google Picker error."))
-    }
+async function listGoogleDriveFiles(token: string): Promise<DriveFile[]> {
+  const q = `(${GOOGLE_DRIVE_MIME_TYPES.map((m) => `mimeType='${m}'`).join(
+    " or ",
+  )}) and trashed=false`
+  const params = new URLSearchParams({
+    q,
+    fields: "files(id,name,mimeType,modifiedTime,size)",
+    orderBy: "modifiedTime desc",
+    pageSize: "100",
+    spaces: "drive",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   })
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) {
+    throw new Error("Could not list your Google Drive files.")
+  }
+  const data = (await res.json()) as { files?: DriveFile[] }
+  return data.files ?? []
+}
+
+// Turns a chosen Drive file + token into an importable download request.
+function driveFileToPick(file: DriveFile, token: string): PickResult {
+  const isGoogleDoc = file.mimeType.startsWith("application/vnd.google-apps")
+  const url = isGoogleDoc
+    ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=${encodeURIComponent(
+        GOOGLE_EXPORT_MIME,
+      )}`
+    : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+  const name =
+    isGoogleDoc && !/\.\w+$/.test(file.name) ? `${file.name}.docx` : file.name
+  return {
+    url,
+    name,
+    auth: `Bearer ${token}`,
+    mimeType: isGoogleDoc ? GOOGLE_EXPORT_MIME : file.mimeType,
+  }
 }
 
 async function pick(provider: CloudProviderId): Promise<PickResult | null> {
   switch (provider) {
     case "dropbox":
       return pickDropbox()
-    case "google-drive":
-      return pickGoogleDrive()
     case "onedrive":
       return pickOneDrive()
     default:
@@ -205,6 +201,29 @@ export function useCloudImport(onDone: (id: number) => void) {
   const [error, setError] = useState<string | null>(null)
   const busyRef = useRef(false)
 
+  // Google Drive custom browser state.
+  const [driveOpen, setDriveOpen] = useState(false)
+  const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null)
+  const tokenRef = useRef<string | null>(null)
+
+  // Shared: send a picked file to the server importer.
+  const runImport = useCallback(
+    async (picked: PickResult) => {
+      setStatus("importing")
+      const res = await fetch("/api/documents/import-cloud", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(picked),
+      })
+      const data = (await res.json()) as { id?: number; error?: string }
+      if (!res.ok || !data.id) {
+        throw new Error(data.error ?? "Could not import that file.")
+      }
+      onDone(data.id)
+    },
+    [onDone],
+  )
+
   const importFrom = useCallback(
     async (provider: CloudProviderId) => {
       if (busyRef.current) return
@@ -212,9 +231,35 @@ export function useCloudImport(onDone: (id: number) => void) {
         setError("This provider isn't set up yet.")
         return
       }
-      busyRef.current = true
       setError(null)
       setActiveProvider(provider)
+
+      // Google Drive: sign in, list files, and open our own browser.
+      if (provider === "google-drive") {
+        busyRef.current = true
+        setStatus("picking")
+        setDriveOpen(true)
+        setDriveFiles(null)
+        try {
+          const token = await getGoogleToken()
+          tokenRef.current = token
+          const files = await listGoogleDriveFiles(token)
+          setDriveFiles(files)
+        } catch (e) {
+          setError(
+            e instanceof Error ? e.message : "Could not open Google Drive.",
+          )
+          setDriveOpen(false)
+          setStatus("idle")
+          setActiveProvider(null)
+        } finally {
+          busyRef.current = false
+        }
+        return
+      }
+
+      // Dropbox / OneDrive: use each provider's own picker.
+      busyRef.current = true
       setStatus("picking")
       try {
         const picked = await pick(provider)
@@ -224,21 +269,7 @@ export function useCloudImport(onDone: (id: number) => void) {
           busyRef.current = false
           return
         }
-        setStatus("importing")
-        const res = await fetch("/api/documents/import-cloud", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(picked),
-        })
-        const data = (await res.json()) as { id?: number; error?: string }
-        if (!res.ok || !data.id) {
-          setError(data.error ?? "Could not import that file.")
-          setStatus("idle")
-          setActiveProvider(null)
-          busyRef.current = false
-          return
-        }
-        onDone(data.id)
+        await runImport(picked)
       } catch (e) {
         setError(
           e instanceof Error ? e.message : "Could not import from the cloud.",
@@ -249,8 +280,49 @@ export function useCloudImport(onDone: (id: number) => void) {
         busyRef.current = false
       }
     },
-    [onDone],
+    [runImport],
   )
 
-  return { importFrom, status, activeProvider, error, setError }
+  // Google Drive: import the file the user tapped in our browser.
+  const selectDriveFile = useCallback(
+    async (file: DriveFile) => {
+      const token = tokenRef.current
+      if (!token || busyRef.current) return
+      busyRef.current = true
+      setError(null)
+      try {
+        await runImport(driveFileToPick(file, token))
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : "Could not import that file.",
+        )
+        setStatus("picking")
+      } finally {
+        busyRef.current = false
+      }
+    },
+    [runImport],
+  )
+
+  const closeDrive = useCallback(() => {
+    setDriveOpen(false)
+    setDriveFiles(null)
+    setStatus("idle")
+    setActiveProvider(null)
+    tokenRef.current = null
+    busyRef.current = false
+  }, [])
+
+  return {
+    importFrom,
+    status,
+    activeProvider,
+    error,
+    setError,
+    // Google Drive browser
+    driveOpen,
+    driveFiles,
+    selectDriveFile,
+    closeDrive,
+  }
 }
