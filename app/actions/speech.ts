@@ -11,41 +11,57 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
-// Use OpenAI's high-definition TTS model for clearer, richer, premium-quality
-// narration (higher audio fidelity than the standard "tts-1").
-const TTS_MODEL = "openai/tts-1-hd"
+// Premium quality first, with an automatic fallback. "tts-1-hd" gives the
+// clearest, richest audio, but it is throttled harder on the AI Gateway free
+// tier, so if it is rate-limited we fall back to the standard "tts-1" model,
+// which has far more headroom. This keeps playback instant instead of erroring.
+const TTS_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
 
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
-  return /rate.?limit|429|GatewayRateLimit/i.test(msg)
+  return /rate.?limit|429|GatewayRateLimit|quota|overloaded|capacity/i.test(msg)
+}
+
+async function synthOnce(model: string, text: string, voice: PremiumVoiceId) {
+  return generateSpeech({
+    model,
+    text,
+    voice,
+    outputFormat: "mp3",
+    maxRetries: 0,
+  })
 }
 
 /**
- * Synthesize speech with exponential backoff on rate-limit errors. The free
- * AI Gateway tier throttles bursts of TTS requests, so we retry with growing
- * delays (1s, 2s, 4s, 8s) to ride out transient limits. We disable the SDK's
- * own retries so our backoff fully controls the timing.
+ * Synthesize speech, preferring the HD model but falling back to the standard
+ * model the moment HD is rate-limited. Within each model we retry a couple of
+ * times with short exponential backoff to ride out transient throttling. This
+ * guarantees audio is produced quickly rather than surfacing a "high demand"
+ * error. We disable the SDK's own retries so our timing fully controls it.
  */
 async function synthWithRetry(
   text: string,
   voice: PremiumVoiceId,
-  tries = 5,
 ): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
   let lastErr: unknown
-  for (let attempt = 0; attempt < tries; attempt++) {
-    try {
-      return await generateSpeech({
-        model: TTS_MODEL,
-        text,
-        voice,
-        outputFormat: "mp3",
-        maxRetries: 0,
-      })
-    } catch (err) {
-      lastErr = err
-      if (!isRateLimit(err) || attempt === tries - 1) throw err
-      const delay = 1000 * 2 ** attempt
-      await new Promise((r) => setTimeout(r, delay))
+  for (let m = 0; m < TTS_MODELS.length; m++) {
+    const model = TTS_MODELS[m]
+    const isLastModel = m === TTS_MODELS.length - 1
+    // Give the fallback (standard) model more retries since it's our safety net.
+    const tries = isLastModel ? 4 : 2
+    for (let attempt = 0; attempt < tries; attempt++) {
+      try {
+        return await synthOnce(model, text, voice)
+      } catch (err) {
+        lastErr = err
+        // Non-rate-limit errors are real failures; surface them immediately.
+        if (!isRateLimit(err)) throw err
+        const isLastAttempt = attempt === tries - 1
+        // On the last attempt for a non-final model, break to fall back fast.
+        if (isLastAttempt) break
+        const delay = 700 * 2 ** attempt
+        await new Promise((r) => setTimeout(r, delay))
+      }
     }
   }
   throw lastErr

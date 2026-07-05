@@ -243,11 +243,19 @@ export function PremiumNarration({
       setStatus("loading")
       setIndex(i)
       setCurrentWord(offsets[i] ?? 0)
-      const url = await loadChunk(i)
+      // Try to load audio; if the first attempt is throttled, automatically
+      // retry a couple of times with a short delay so the user doesn't have to
+      // press play again themselves.
+      let url = await loadChunk(i)
+      for (let attempt = 0; !url && attempt < 2; attempt++) {
+        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
+        url = await loadChunk(i)
+      }
       if (!url) {
         setStatus("idle")
         return
       }
+      setError(null)
       const audio = audioRef.current
       if (!audio) return
       audio.src = url
