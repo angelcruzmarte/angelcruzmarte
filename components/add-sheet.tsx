@@ -35,6 +35,8 @@ type AppItem = {
   id: CloudProviderId
   label: string
   icon: React.ElementType
+  // Providers we don't support yet — shown but disabled with a "Soon" badge.
+  comingSoon?: boolean
 }
 
 const addItems: Item[] = [
@@ -52,8 +54,8 @@ const createItems: Item[] = [
 
 const appItems: AppItem[] = [
   { id: "google-drive", label: "Google Drive", icon: HardDrive },
-  { id: "dropbox", label: "Dropbox", icon: Cloud },
-  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog },
+  { id: "dropbox", label: "Dropbox", icon: Cloud, comingSoon: true },
+  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog, comingSoon: true },
 ]
 
 export function AddSheet({
@@ -153,9 +155,9 @@ export function AddSheet({
         <SectionLabel>Apps</SectionLabel>
         <div className="px-3">
           {appItems.map((item) => {
-            const configured = isCloudProviderConfigured(item.id)
-            const busy =
-              activeProvider === item.id && status !== "idle"
+            const configured =
+              !item.comingSoon && isCloudProviderConfigured(item.id)
+            const busy = activeProvider === item.id && status !== "idle"
             return (
               <AppRow
                 key={item.id}
@@ -172,10 +174,6 @@ export function AddSheet({
           {error && (
             <p className="px-2 pt-1 text-sm text-destructive">{error}</p>
           )}
-          <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">
-            Providers marked “Set up” need a developer key added to the app
-            before they can be used.
-          </p>
         </div>
       </div>
     </div>
@@ -253,7 +251,7 @@ function AppRow({
         </span>
       ) : configured ? null : (
         <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
-          Set up
+          {item.comingSoon ? "Soon" : "Set up"}
         </span>
       )}
     </button>
