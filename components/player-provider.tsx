@@ -11,6 +11,7 @@ import {
 } from "react"
 import { tokenize } from "@/hooks/use-speech"
 import { isHumanLikeVoice, voiceQualityScore } from "@/lib/voices"
+import { recordListening } from "@/app/actions/stats"
 
 export type PlayerTrack = {
   id: number
@@ -51,7 +52,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const statusRef = useRef<Status>("idle")
   const internalStopRef = useRef(false)
 
+  // ----- Listening analytics tracking -----
+  // Accumulate un-flushed seconds + words, then persist them periodically and
+  // on pause/stop/unmount so the Statistics screen reflects real usage.
+  const pendingSecondsRef = useRef(0)
+  const pendingWordsRef = useRef(0)
+  const maxWordRef = useRef(-1)
+  const lastTickRef = useRef<number | null>(null)
+
   const totalWords = wordsRef.current.length
+
+  const localDay = useCallback(() => {
+    const d = new Date()
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${y}-${m}-${day}`
+  }, [])
+
+  // Add elapsed wall-clock time since the last tick to the pending counter.
+  const accrueTime = useCallback(() => {
+    if (lastTickRef.current != null) {
+      const elapsed = (Date.now() - lastTickRef.current) / 1000
+      // Ignore absurd gaps (e.g. tab was backgrounded for a long time).
+      if (elapsed > 0 && elapsed < 120) {
+        pendingSecondsRef.current += elapsed
+      }
+    }
+    lastTickRef.current = statusRef.current === "playing" ? Date.now() : null
+  }, [])
+
+  // Persist accumulated listening to the DB and reset counters.
+  const flush = useCallback(() => {
+    accrueTime()
+    const seconds = Math.round(pendingSecondsRef.current)
+    const words = pendingWordsRef.current
+    if (seconds <= 0 && words <= 0) return
+    pendingSecondsRef.current = 0
+    pendingWordsRef.current = 0
+    void recordListening({ seconds, words, day: localDay() }).catch(() => {})
+  }, [accrueTime, localDay])
 
   const speakFrom = useCallback((index: number) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return
@@ -94,6 +134,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         else break
       }
       currentWordRef.current = idx
+      // Count each newly-reached word exactly once (monotonic high-water mark)
+      // for the "words listened" statistic.
+      if (idx > maxWordRef.current) {
+        pendingWordsRef.current += idx - maxWordRef.current
+        maxWordRef.current = idx
+      }
       setCurrentWord(idx)
     }
 
@@ -104,6 +150,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }
       statusRef.current = "idle"
       setStatus("idle")
+      flush()
       currentWordRef.current = -1
       setCurrentWord(-1)
     }
@@ -111,13 +158,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     statusRef.current = "playing"
     setStatus("playing")
     currentWordRef.current = clamped
+    // Reset the word high-water mark to where playback resumes so we only count
+    // words as they are freshly narrated from this point forward.
+    maxWordRef.current = clamped - 1
+    lastTickRef.current = Date.now()
     setCurrentWord(clamped)
 
     setTimeout(() => {
       internalStopRef.current = false
       synth.speak(utterance)
     }, 60)
-  }, [])
+  }, [flush])
 
   const loadAndPlay = useCallback(
     (next: PlayerTrack) => {
@@ -138,14 +189,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       synth.pause()
       statusRef.current = "paused"
       setStatus("paused")
+      flush()
     } else if (statusRef.current === "paused") {
       synth.resume()
       statusRef.current = "playing"
       setStatus("playing")
+      lastTickRef.current = Date.now()
     } else {
       speakFrom(currentWordRef.current >= 0 ? currentWordRef.current : 0)
     }
-  }, [speakFrom])
+  }, [speakFrom, flush])
 
   const rewindWords = useCallback(
     (n: number) => {
@@ -164,9 +217,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     window.speechSynthesis.cancel()
     statusRef.current = "idle"
     setStatus("idle")
+    flush()
     currentWordRef.current = -1
     setCurrentWord(-1)
-  }, [])
+  }, [flush])
 
   const close = useCallback(() => {
     stop()
@@ -198,14 +252,36 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [])
 
-  // Cancel speech on unmount.
+  // Cancel speech on unmount and persist any pending listening time.
   useEffect(() => {
     return () => {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel()
       }
+      flush()
     }
-  }, [])
+  }, [flush])
+
+  // Persist listening periodically while playing, and when the tab is hidden or
+  // the page is being unloaded, so stats survive navigation and app close.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const interval = window.setInterval(() => {
+      if (statusRef.current === "playing") flush()
+    }, 15000)
+
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flush()
+    }
+    document.addEventListener("visibilitychange", onHide)
+    window.addEventListener("pagehide", flush)
+
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", onHide)
+      window.removeEventListener("pagehide", flush)
+    }
+  }, [flush])
 
   const value = useMemo<PlayerContextValue>(
     () => ({
