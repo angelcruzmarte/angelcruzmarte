@@ -1,7 +1,8 @@
 import Image from "next/image"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
-import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import { getCurrentUser } from "@/lib/session"
 import { PLANS, formatPrice } from "@/lib/plans"
 import { SiteHeader } from "@/components/site-header"
 import { LogoMark } from "@/components/logo-mark"
@@ -10,7 +11,11 @@ import { Card } from "@/components/ui/card"
 
 export default async function HomePage() {
   const user = await getCurrentUser()
-  const subscribed = hasActiveSubscription(user)
+
+  // Signed-in users skip the marketing page and go straight to the app.
+  if (user) {
+    redirect("/app")
+  }
 
   const primaryHref = user ? "/app" : "/sign-up"
   const primaryLabel = user ? "Open the app" : "Start listening free"
