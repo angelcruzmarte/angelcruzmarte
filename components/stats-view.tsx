@@ -9,6 +9,7 @@ import {
   BarChart,
   CartesianGrid,
   ReferenceLine,
+  ResponsiveContainer,
   XAxis,
   YAxis,
 } from "recharts"
@@ -19,7 +20,6 @@ import {
   type StatRange,
   type StatsSummary,
 } from "@/lib/stats-shared"
-import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
 import { cn } from "@/lib/utils"
 
 const RANGES: { id: StatRange; label: string }[] = [
@@ -154,7 +154,7 @@ function StatChart({
   const maxValue = Math.max(goal ?? 0, ...data.map((d) => d.value), 1)
 
   return (
-    <ChartContainer config={chartConfig} className="aspect-auto h-full w-full">
+    <ResponsiveContainer width="100%" height="100%">
       <BarChart
         data={data}
         margin={{ top: 8, right: 8, bottom: 4, left: 0 }}
@@ -178,7 +178,6 @@ function StatChart({
           tickLine={false}
           axisLine={false}
           width={44}
-          allowDecimals={false}
           domain={[0, Math.ceil(maxValue)]}
           tickFormatter={(v: number) =>
             kind === "time" ? formatAxisMinutes(v) : formatCount(v)
@@ -199,13 +198,9 @@ function StatChart({
           maxBarSize={40}
         />
       </BarChart>
-    </ChartContainer>
+    </ResponsiveContainer>
   )
 }
-
-const chartConfig = {
-  value: { label: "Value", color: "var(--chart-1)" },
-} satisfies ChartConfig
 
 type Bucket = { label: string; seconds: number; words: number }
 
