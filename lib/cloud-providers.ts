@@ -14,10 +14,17 @@
 export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 
 // Reference each var statically so Next.js inlines it into the client bundle.
+const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ""
+
 export const cloudConfig = {
   dropboxAppKey: process.env.NEXT_PUBLIC_DROPBOX_APP_KEY ?? "",
   googleApiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY ?? "",
-  googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
+  googleClientId,
+  // The Google Cloud project number is the numeric prefix of the OAuth client
+  // ID. Passing it to the picker via setAppId makes developer-key validation
+  // more reliable. Can be overridden with NEXT_PUBLIC_GOOGLE_APP_ID.
+  googleAppId:
+    process.env.NEXT_PUBLIC_GOOGLE_APP_ID ?? googleClientId.split("-")[0] ?? "",
   onedriveClientId: process.env.NEXT_PUBLIC_ONEDRIVE_CLIENT_ID ?? "",
 }
 

@@ -147,10 +147,13 @@ async function pickGoogleDrive(): Promise<PickResult | null> {
       const view = new g.picker.DocsView(g.picker.ViewId.DOCS)
         .setIncludeFolders(false)
         .setMimeTypes(GOOGLE_MIME_TYPES)
-      const picker = new g.picker.PickerBuilder()
+      const builder = new g.picker.PickerBuilder()
         .setOAuthToken(token)
         .setDeveloperKey(cloudConfig.googleApiKey)
         .addView(view)
+      // Associating the Cloud project number improves developer-key validation.
+      if (cloudConfig.googleAppId) builder.setAppId(cloudConfig.googleAppId)
+      const picker = builder
         .setCallback((data: any) => {
           const action = data?.[g.picker.Response.ACTION]
           if (action === g.picker.Action.PICKED) {
