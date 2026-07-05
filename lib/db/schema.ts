@@ -27,6 +27,8 @@ export const user = pgTable("user", {
   hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
   // Whether the user has completed the first-run onboarding flow.
   onboardingComplete: boolean("onboardingComplete").notNull().default(false),
+  // Shareable referral code (generated on demand).
+  referralCode: text("referralCode"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
@@ -155,6 +157,25 @@ export const bookPurchase = pgTable(
     uniqUserBook: unique().on(t.userId, t.bookId),
   }),
 )
+
+// Per-user daily aggregate of listening time (seconds) and words listened.
+export const listeningStat = pgTable(
+  "listening_stat",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    // Calendar day (local) the listening happened, stored as YYYY-MM-DD.
+    day: text("day").notNull(),
+    seconds: integer("seconds").notNull().default(0),
+    words: integer("words").notNull().default(0),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserDay: unique().on(t.userId, t.day),
+  }),
+)
+
+export type ListeningStat = typeof listeningStat.$inferSelect
 
 export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect
