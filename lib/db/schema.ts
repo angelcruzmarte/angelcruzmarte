@@ -16,6 +16,8 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("emailVerified").notNull().default(false),
   image: text("image"),
+  // Unique, user-chosen @handle (lowercase). Distinct from the display name.
+  username: text("username").unique(),
   role: text("role").notNull().default("user"),
   // Stripe subscription fields
   stripeCustomerId: text("stripeCustomerId"),
