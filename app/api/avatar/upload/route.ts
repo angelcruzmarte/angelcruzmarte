@@ -43,12 +43,12 @@ export async function POST(req: Request) {
   try {
     const ext = file.name.split(".").pop() || "jpg"
     const blob = await put(`avatars/${current.id}-${Date.now()}.${ext}`, file, {
-      access: "private",
+      access: "public",
+      addRandomSuffix: true,
     })
 
-    // Store a stable delivery URL that streams the private blob through our
-    // authenticated serving route, so <img src> works everywhere.
-    const imageUrl = `/api/avatar?pathname=${encodeURIComponent(blob.pathname)}`
+    // Public blob URLs are directly usable in <img src> everywhere.
+    const imageUrl = blob.url
     await db
       .update(userTable)
       .set({ image: imageUrl, updatedAt: new Date() })

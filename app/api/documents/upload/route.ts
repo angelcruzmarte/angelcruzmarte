@@ -85,11 +85,14 @@ export async function POST(req: Request) {
       const blob = await put(
         `documents/${user.id}/${Date.now()}.${ext}`,
         buffer,
-        { access: "private", contentType: file.type || undefined },
+        {
+          access: "public",
+          addRandomSuffix: true,
+          contentType: file.type || undefined,
+        },
       )
-      originalUrl = `/api/documents/original?pathname=${encodeURIComponent(
-        blob.pathname,
-      )}`
+      // Public blob URL is directly renderable in the reader.
+      originalUrl = blob.url
       originalMime = file.type || null
     }
 
