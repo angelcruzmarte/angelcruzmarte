@@ -14,6 +14,7 @@ import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
 import { PremiumNarration } from "@/components/premium-narration"
+import { ReaderAiTools } from "@/components/reader-ai-tools"
 import { DownloadAudioButton } from "@/components/download-audio-button"
 import {
   OriginalDocumentView,
@@ -291,6 +292,146 @@ export function ListenPlayer({
     )
   }
 
+  // Speechify-style immersive experience: the real document page is the hero
+  // surface and a compact player + AI tools dock to the bottom of the screen.
+  const immersive = hasOriginal && view === "original"
+  const aiTools = premium ? <ReaderAiTools text={content} /> : null
+
+  const modeToggle = premium ? (
+    <div className="flex shrink-0 gap-0.5 rounded-full border border-border bg-muted/50 p-0.5">
+      <button
+        type="button"
+        onClick={() => {
+          stop()
+          setMode("premium")
+        }}
+        className={cn(
+          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+          mode === "premium"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+        AI
+      </button>
+      <button
+        type="button"
+        onClick={() => setMode("standard")}
+        className={cn(
+          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+          mode === "standard"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <AudioLines className="h-3.5 w-3.5" />
+        Device
+      </button>
+    </div>
+  ) : null
+
+  const viewToggle = hasOriginal ? (
+    <div className="flex shrink-0 gap-0.5 rounded-full border border-border bg-muted/50 p-0.5">
+      <button
+        type="button"
+        onClick={() => setView("original")}
+        className={cn(
+          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+          view === "original"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <FileText className="h-3.5 w-3.5" />
+        Page
+      </button>
+      <button
+        type="button"
+        onClick={() => setView("text")}
+        className={cn(
+          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+          view === "text"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <AlignLeft className="h-3.5 w-3.5" />
+        Text
+      </button>
+    </div>
+  ) : null
+
+  if (immersive) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col">
+        <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md sm:px-6">
+          <Link
+            href={backHref}
+            aria-label={backLabel}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "h-9 w-9 shrink-0",
+            )}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
+            {title}
+          </h1>
+          {modeToggle}
+          {viewToggle}
+        </header>
+
+        <main className="flex-1 pb-40 sm:pb-36">
+          <OriginalDocumentView
+            src={originalSrc}
+            mime={originalMime}
+            title={title}
+            immersive
+          />
+        </main>
+
+        {premium && mode === "premium" ? (
+          <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+            <PremiumNarration
+              text={content}
+              title={title}
+              sourceLang={sourceLang}
+              showReader={false}
+              immersive
+              topSlot={aiTools}
+            />
+          </div>
+        ) : (
+          <PlaybackBar
+            status={status}
+            progress={progress}
+            totalWords={words.length}
+            currentWord={currentWord}
+            rate={rate}
+            voices={voices}
+            voiceURI={voiceURI}
+            translating={translating}
+            canTranslate={canTranslate}
+            isTranslated={readingLang !== "original"}
+            deviceLangLabel={deviceLang ? languageLabel(deviceLang) : ""}
+            sourceLangLabel={sourceNorm ? languageLabel(sourceNorm) : ""}
+            readingError={readingError}
+            onToggleTranslation={toggleTranslation}
+            onPlayPause={handlePlayPause}
+            onStop={stop}
+            onSkip={skip}
+            onSeek={seekToWord}
+            onRateChange={setRate}
+            onVoiceChange={setVoiceURI}
+            topSlot={aiTools}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-6 sm:px-6">
@@ -306,76 +447,20 @@ export function ListenPlayer({
         )}
       </div>
 
-      {premium && (
-        <div className="mx-auto mt-4 flex max-w-3xl gap-1 rounded-full border border-border bg-muted/50 p-1 px-4 sm:px-6">
-          <button
-            type="button"
-            onClick={() => {
-              stop()
-              setMode("premium")
-            }}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              mode === "premium"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Sparkles className="h-4 w-4" />
-            AI voice
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("standard")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              mode === "standard"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <AudioLines className="h-4 w-4" />
-            Device voice
-          </button>
+      {(modeToggle || viewToggle) && (
+        <div className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-center gap-2 px-4 sm:px-6">
+          {modeToggle}
+          {viewToggle}
         </div>
       )}
 
-      {/* Original document vs. clean text toggle (PDFs / image scans only). */}
-      {hasOriginal && (
-        <div className="mx-auto mt-4 flex max-w-3xl gap-1 rounded-full border border-border bg-muted/50 p-1 px-4 sm:px-6">
-          <button
-            type="button"
-            onClick={() => setView("original")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              view === "original"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <FileText className="h-4 w-4" />
-            Original
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("text")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              view === "text"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <AlignLeft className="h-4 w-4" />
-            Text
-          </button>
+      {/* AI tools docked into the reader, matching the immersive experience. */}
+      {aiTools && (
+        <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+          <div className="rounded-2xl border border-border bg-card p-1.5">
+            {aiTools}
+          </div>
         </div>
-      )}
-
-      {/* Original document pages (real PDF/scan). Shown above the reader so
-          audio controls below still drive narration of the extracted text. */}
-      {hasOriginal && view === "original" && (
-        <OriginalDocumentView src={originalSrc} mime={originalMime} title={title} />
       )}
 
       {premium && mode === "premium" && (

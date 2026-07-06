@@ -1,7 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Pause, Play, Loader2, Square, Sparkles, Languages } from "lucide-react"
+import {
+  Pause,
+  Play,
+  Loader2,
+  Square,
+  Sparkles,
+  Languages,
+  SkipBack,
+  SkipForward,
+  Gauge,
+  Check,
+} from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Select,
@@ -43,6 +54,8 @@ export function PremiumNarration({
   title,
   sourceLang,
   showReader = true,
+  immersive = false,
+  topSlot,
 }: {
   text: string
   title: string
@@ -50,6 +63,10 @@ export function PremiumNarration({
   sourceLang?: string | null
   /** When false, the internal text reader is hidden (e.g. showing original). */
   showReader?: boolean
+  /** Immersive mode: render only a compact, always-on docked player card. */
+  immersive?: boolean
+  /** Content rendered above the transport controls in immersive mode. */
+  topSlot?: React.ReactNode
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
@@ -373,6 +390,144 @@ export function PremiumNarration({
   const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
   const deviceLabel = deviceLang ? languageLabel(deviceLang) : ""
   const isTranslated = lang !== ORIGINAL
+
+  if (immersive) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
+        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        <audio
+          ref={audioRef}
+          onEnded={handleEnded}
+          onTimeUpdate={handleTimeUpdate}
+          className="hidden"
+        />
+
+        {topSlot && (
+          <div className="mb-2 border-b border-border pb-2">{topSlot}</div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <img
+            src={selectedVoice.image || "/placeholder.svg"}
+            alt={`${selectedVoice.name} voice`}
+            className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-primary/20"
+          />
+
+          <Button
+            onClick={() => playChunk(Math.max(0, index - 1))}
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            aria-label="Previous section"
+            disabled={index <= 0}
+          >
+            <SkipBack className="h-5 w-5" />
+          </Button>
+
+          <Button
+            onClick={handlePlayPause}
+            size="icon"
+            className="h-12 w-12 shrink-0 rounded-full"
+            aria-label={status === "playing" ? "Pause" : "Play"}
+            disabled={busy}
+          >
+            {busy ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : status === "playing" ? (
+              <Pause className="h-5 w-5" />
+            ) : (
+              <Play className="h-5 w-5 translate-x-0.5" />
+            )}
+          </Button>
+
+          <Button
+            onClick={() => playChunk(Math.min(chunks.length - 1, index + 1))}
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0"
+            aria-label="Next section"
+            disabled={index >= chunks.length - 1}
+          >
+            <SkipForward className="h-5 w-5" />
+          </Button>
+
+          <div className="min-w-0 flex-1">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
+              <Sparkles className="h-3 w-3 text-primary" />
+              {status === "loading"
+                ? "Loading…"
+                : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+            </p>
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                buttonVariants({ variant: "secondary" }),
+                "h-9 shrink-0 gap-1.5 px-3 tabular-nums",
+              )}
+            >
+              <Gauge className="h-4 w-4" />
+              {rate}x
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-28">
+              {RATES.map((r) => (
+                <DropdownMenuItem
+                  key={r}
+                  onClick={() => setRate(r)}
+                  className="justify-between tabular-nums"
+                >
+                  {r}x
+                  <Check
+                    className={cn(
+                      "h-4 w-4",
+                      rate === r ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {canTranslate && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+              <Languages className="h-3.5 w-3.5" />
+              {isTranslated ? `Translated to ${deviceLabel}` : `In ${languageLabel(sourceNorm)}`}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={toggleTranslation}
+            >
+              {isTranslated ? `Original` : `Translate`}
+            </Button>
+            {showTranslateProgress && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {doneCount}/{chunks.length}
+              </span>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>

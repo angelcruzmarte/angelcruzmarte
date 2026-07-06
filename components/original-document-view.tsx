@@ -18,13 +18,51 @@ export function OriginalDocumentView({
   src,
   mime,
   title,
+  immersive = false,
 }: {
   src: string
   mime?: string | null
   title: string
+  /** Fills the viewport as the primary reading surface (Speechify-style). */
+  immersive?: boolean
 }) {
   const [loaded, setLoaded] = useState(false)
   const isPdf = mime === "application/pdf" || /\.pdf(\?|$)/i.test(src)
+
+  if (immersive) {
+    return (
+      <section
+        className="mx-auto h-full max-w-3xl px-3 pt-3 sm:px-6"
+        aria-label="Original document"
+      >
+        <div className="relative h-[calc(100dvh-11rem)] overflow-hidden rounded-2xl border border-border bg-muted/30">
+          {!loaded && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {isPdf ? (
+            <iframe
+              src={`${src}#view=FitH`}
+              title={`${title} — original document`}
+              onLoad={() => setLoaded(true)}
+              className="h-full w-full bg-white"
+            />
+          ) : (
+            <div className="h-full overflow-auto bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src || "/placeholder.svg"}
+                alt={`${title} — original scan`}
+                onLoad={() => setLoaded(true)}
+                className="mx-auto h-auto w-full max-w-2xl rounded-lg"
+              />
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="mx-auto mt-4 max-w-3xl px-4 sm:px-6" aria-label="Original document">

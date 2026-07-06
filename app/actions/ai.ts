@@ -325,6 +325,31 @@ export async function extractTextFromImage(
   return text.trim()
 }
 
+/**
+ * Answers a reader's question grounded in the document they are listening to.
+ * Used by the in-reader "Chat" tool. Keeps answers concise and faithful to the
+ * provided context, and says so when the answer isn't in the document.
+ */
+export async function askDocument(
+  context: string,
+  question: string,
+): Promise<string> {
+  await requirePremium()
+  const q = (question ?? "").trim()
+  if (!q) throw new Error("Please enter a question.")
+  const ctx = (context ?? "").trim().slice(0, MAX_INPUT)
+  const { text } = await generateText({
+    model: MODEL,
+    prompt:
+      "You are a helpful reading assistant. Answer the user's question using " +
+      "the document below as your primary source. Be concise and clear. If the " +
+      "answer isn't in the document, say so briefly and answer from general " +
+      "knowledge if you can.\n\n" +
+      `DOCUMENT:\n${ctx}\n\nQUESTION: ${q}`,
+  })
+  return text.trim()
+}
+
 /** Quick free-form generation for the "Type anything" box on Home. */
 export async function quickGenerate(prompt: string): Promise<string> {
   await requirePremium()

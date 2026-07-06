@@ -68,6 +68,10 @@ type Props = {
   onSeek: (index: number) => void
   onRateChange: (value: number) => void
   onVoiceChange: (uri: string) => void
+  /** When true, render only the card (no fixed dock) so a parent can position it. */
+  embedded?: boolean
+  /** Optional content rendered above the controls (e.g. the AI tools row). */
+  topSlot?: React.ReactNode
 }
 
 export function PlaybackBar({
@@ -91,6 +95,8 @@ export function PlaybackBar({
   onSeek,
   onRateChange,
   onVoiceChange,
+  embedded = false,
+  topSlot,
 }: Props) {
   const isPlaying = status === "playing"
 
@@ -129,10 +135,12 @@ export function PlaybackBar({
     }
   }, [humanVoices, voiceURI, onVoiceChange])
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
-        {/* Progress scrubber */}
+  const card = (
+    <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
+      {topSlot && (
+        <div className="mb-2 border-b border-border pb-2">{topSlot}</div>
+      )}
+      {/* Progress scrubber */}
         <div className="flex items-center gap-3">
           <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
             {progress}%
@@ -300,6 +308,13 @@ export function PlaybackBar({
           </div>
         </div>
       </div>
+  )
+
+  if (embedded) return card
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+      {card}
     </div>
   )
 }
