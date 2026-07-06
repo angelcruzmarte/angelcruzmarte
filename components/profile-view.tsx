@@ -19,11 +19,13 @@ import { authClient } from "@/lib/auth-client"
 import type { LifetimeStats } from "@/lib/stats-shared"
 import { ProfileAvatar } from "@/components/profile-avatar"
 import { DisplayNameEditor } from "@/components/display-name-editor"
+import { UsernameEditor } from "@/components/username-editor"
 import { ReferralCard } from "@/components/referral-card"
 import { cn } from "@/lib/utils"
 
 type Props = {
   name: string
+  username: string | null
   email: string
   image?: string | null
   isAdmin: boolean
@@ -35,6 +37,7 @@ type Props = {
 
 export function ProfileView({
   name,
+  username,
   email,
   image,
   isAdmin,
@@ -63,6 +66,9 @@ export function ProfileView({
           <ProfileAvatar name={name} image={image} />
           <div className="text-center">
             <DisplayNameEditor name={name} />
+            <div className="mt-1">
+              <UsernameEditor username={username} />
+            </div>
             <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
               <Mail className="h-3.5 w-3.5" aria-hidden="true" />
               {email}

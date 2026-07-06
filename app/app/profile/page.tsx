@@ -21,6 +21,7 @@ export default async function ProfilePage() {
   return (
     <ProfileView
       name={user.name}
+      username={user.username}
       email={user.email}
       image={user.image}
       isAdmin={user.role === "admin"}
