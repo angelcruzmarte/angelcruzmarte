@@ -46,6 +46,12 @@ type Props = {
   documentId?: number
   /** Whether to show the premium offline MP3 download control. */
   allowDownload?: boolean
+  /** Blob URL of the original uploaded file (PDF/image), if preserved. */
+  originalUrl?: string | null
+  /** MIME type of the original file. */
+  originalMime?: string | null
+  /** Detected language (ISO/BCP-47) of the document content. */
+  sourceLang?: string | null
 }
 
 export function ListenPlayer({
@@ -58,19 +64,53 @@ export function ListenPlayer({
   bookId,
   documentId,
   allowDownload = false,
+  originalUrl,
+  originalMime,
+  sourceLang,
 }: Props) {
   const [mode, setMode] = useState<"standard" | "premium">(
     premium ? "premium" : "standard",
   )
 
-  // Reading/translation language for the device-voice path. "en" = original.
-  const [readingLang, setReadingLang] = useState("en")
+  // Whether we can render the real uploaded pages (PDFs / image scans).
+  const hasOriginal =
+    Boolean(originalUrl) && isViewableOriginal(originalMime)
+  // Default to showing the original document when one is available, matching
+  // the "show the original document" request; users can flip to clean text.
+  const [view, setView] = useState<"original" | "text">(
+    hasOriginal ? "original" : "text",
+  )
+  // `originalUrl` already points at the ownership-checked serving route.
+  const originalSrc = originalUrl ?? ""
+
+  // Reading/translation language for the device-voice path. "original" narrates
+  // the document as-is; any other value is a target language we translate INTO.
+  const [readingLang, setReadingLang] = useState("original")
   const [translations, setTranslations] = useState<Record<string, string>>({})
   const [translating, setTranslating] = useState(false)
   const [readingError, setReadingError] = useState<string | null>(null)
 
+  // Reader's device/browser language, normalized to a two-letter code.
+  const [deviceLang, setDeviceLang] = useState("")
+  useEffect(() => {
+    setDeviceLang(normalizeLang(navigator.language))
+  }, [])
+
+  const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
+  // Offer translation only when the document language is known, the device
+  // language is supported, and the two differ.
+  const canTranslate =
+    premium &&
+    Boolean(sourceNorm) &&
+    Boolean(deviceLang) &&
+    isSupportedLang(deviceLang) &&
+    deviceLang !== sourceNorm
+
   const activeContent = useMemo(
-    () => (readingLang === "en" ? content : translations[readingLang] ?? content),
+    () =>
+      readingLang === "original"
+        ? content
+        : translations[readingLang] ?? content,
     [readingLang, translations, content],
   )
 
@@ -91,26 +131,28 @@ export function ListenPlayer({
     setVoiceURI,
   } = useSpeech(activeContent, initialWord)
 
-  // Translate the document for device narration and pick a matching device
-  // voice. Only English (original) is available without a subscription.
-  const handleReadingLangChange = useCallback(
+  const pickVoiceFor = useCallback(
+    (langCode: string) => {
+      // Choose the clearest available device voice for the target language.
+      const matches = voices
+        .filter((v) => baseLang(v.lang) === baseLang(langCode))
+        .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
+      if (matches[0]) setVoiceURI(matches[0].uri)
+    },
+    [voices, setVoiceURI],
+  )
+
+  // Translate the document into a target language for device narration and pick
+  // a matching device voice. Translation is a premium capability.
+  const translateTo = useCallback(
     async (code: string) => {
-      if (code === readingLang) return
       stop()
       setReadingError(null)
 
-      const pickVoiceFor = (langCode: string) => {
-        // Choose the clearest available voice for the target language.
-        const matches = voices
-          .filter((v) => baseLang(v.lang) === baseLang(langCode))
-          .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
-        if (matches[0]) setVoiceURI(matches[0].uri)
-      }
-
-      // Original, or an already-translated language: switch instantly.
-      if (code === "en" || translations[code]) {
+      // Already translated: switch instantly.
+      if (translations[code]) {
         setReadingLang(code)
-        if (code !== "en") pickVoiceFor(code)
+        pickVoiceFor(code)
         return
       }
 
@@ -132,8 +174,31 @@ export function ListenPlayer({
         setTranslating(false)
       }
     },
-    [readingLang, translations, content, voices, stop, setVoiceURI],
+    [translations, content, stop, pickVoiceFor],
   )
+
+  // Toggle between the document's original language and an automatic
+  // translation into the reader's device language. No manual language menu.
+  const toggleTranslation = useCallback(() => {
+    if (readingLang === "original") {
+      void translateTo(deviceLang)
+    } else {
+      stop()
+      setReadingLang("original")
+      setVoiceURI("") // let the browser default voice handle the source language
+    }
+  }, [readingLang, deviceLang, translateTo, stop, setVoiceURI])
+
+  // Automatically translate into the device language once, the first time we
+  // detect it differs from the document's language.
+  const autoTranslatedRef = useRef(false)
+  useEffect(() => {
+    if (autoTranslatedRef.current) return
+    if (canTranslate) {
+      autoTranslatedRef.current = true
+      void translateTo(deviceLang)
+    }
+  }, [canTranslate, deviceLang, translateTo])
 
   // Debounced persistence of the resume position.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -167,7 +232,8 @@ export function ListenPlayer({
   useEffect(() => {
     // Only persist resume position for the original text; translated word
     // indices don't map back to the stored document.
-    if (status === "playing" && readingLang === "en") persistProgress(currentWord)
+    if (status === "playing" && readingLang === "original")
+      persistProgress(currentWord)
   }, [currentWord, status, persistProgress, readingLang])
 
   // Feed listening statistics: run a timer while playing and count word
@@ -274,21 +340,66 @@ export function ListenPlayer({
         </div>
       )}
 
+      {/* Original document vs. clean text toggle (PDFs / image scans only). */}
+      {hasOriginal && (
+        <div className="mx-auto mt-4 flex max-w-3xl gap-1 rounded-full border border-border bg-muted/50 p-1 px-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setView("original")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              view === "original"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <FileText className="h-4 w-4" />
+            Original
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("text")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              view === "text"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <AlignLeft className="h-4 w-4" />
+            Text
+          </button>
+        </div>
+      )}
+
+      {/* Original document pages (real PDF/scan). Shown above the reader so
+          audio controls below still drive narration of the extracted text. */}
+      {hasOriginal && view === "original" && (
+        <OriginalDocumentView src={originalSrc} mime={originalMime} title={title} />
+      )}
+
       {premium && mode === "premium" && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
-          <PremiumNarration text={content} title={title} />
+          <PremiumNarration
+            text={content}
+            title={title}
+            sourceLang={sourceLang}
+            showReader={view === "text"}
+          />
         </div>
       )}
 
       {mode === "standard" && (
         <>
-          <ReaderPanel
-            title={title}
-            text={activeContent}
-            words={words}
-            currentWord={currentWord}
-            onWordClick={seekToWord}
-          />
+          {view === "text" && (
+            <ReaderPanel
+              title={title}
+              text={activeContent}
+              words={words}
+              currentWord={currentWord}
+              onWordClick={seekToWord}
+            />
+          )}
 
           <PlaybackBar
             status={status}
@@ -298,11 +409,13 @@ export function ListenPlayer({
             rate={rate}
             voices={voices}
             voiceURI={voiceURI}
-            readingLang={readingLang}
             translating={translating}
-            canTranslate={premium}
+            canTranslate={canTranslate}
+            isTranslated={readingLang !== "original"}
+            deviceLangLabel={deviceLang ? languageLabel(deviceLang) : ""}
+            sourceLangLabel={sourceNorm ? languageLabel(sourceNorm) : ""}
             readingError={readingError}
-            onReadingLangChange={handleReadingLangChange}
+            onToggleTranslation={toggleTranslation}
             onPlayPause={handlePlayPause}
             onStop={stop}
             onSkip={skip}

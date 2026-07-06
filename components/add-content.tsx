@@ -256,13 +256,13 @@ function FileImport({
             : (fileName ?? "Choose a document")}
         </span>
         <span className="text-xs text-muted-foreground">
-          Supports PDF, DOCX, EPUB, TXT, and MD (up to 15MB)
+          Supports PDF, DOCX, EPUB, TXT, MD, and image scans (up to 15MB)
         </span>
       </button>
       <input
         ref={inputRef}
         type="file"
-        accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
+        accept=".txt,.md,.markdown,.pdf,.docx,.epub,.png,.jpg,.jpeg,.webp,.gif,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip,image/png,image/jpeg,image/webp,image/gif"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

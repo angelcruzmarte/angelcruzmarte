@@ -1,6 +1,7 @@
 "use server"
 
 import { auth } from "@/lib/auth"
+import { detectLanguage } from "@/app/actions/ai"
 import { db } from "@/lib/db"
 import { document } from "@/lib/db/schema"
 import { and, desc, eq } from "drizzle-orm"
@@ -50,6 +51,17 @@ export async function createDocument(input: {
   const content = input.content.trim()
   if (!content) throw new Error("Content is required")
 
+  // Detect the document language (for automatic translation on playback) when
+  // the caller didn't already provide it, e.g. pasted text and imported links.
+  let sourceLang = input.sourceLang ?? null
+  if (!sourceLang) {
+    try {
+      sourceLang = await detectLanguage(content)
+    } catch {
+      sourceLang = null
+    }
+  }
+
   const [doc] = await db
     .insert(document)
     .values({
@@ -60,7 +72,7 @@ export async function createDocument(input: {
       sourceUrl: input.sourceUrl ?? null,
       originalUrl: input.originalUrl ?? null,
       originalMime: input.originalMime ?? null,
-      sourceLang: input.sourceLang ?? null,
+      sourceLang,
       wordCount: countWords(content),
     })
     .returning()

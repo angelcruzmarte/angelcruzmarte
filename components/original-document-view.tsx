@@ -15,16 +15,16 @@ export function isViewableOriginal(mime?: string | null): boolean {
  * extracted text. PDFs render in a native iframe; images render inline.
  */
 export function OriginalDocumentView({
-  url,
+  src,
   mime,
   title,
 }: {
-  url: string
+  src: string
   mime?: string | null
   title: string
 }) {
   const [loaded, setLoaded] = useState(false)
-  const isPdf = mime === "application/pdf" || /\.pdf(\?|$)/i.test(url)
+  const isPdf = mime === "application/pdf" || /\.pdf(\?|$)/i.test(src)
 
   return (
     <section className="mx-auto mt-4 max-w-3xl px-4 sm:px-6" aria-label="Original document">
@@ -36,7 +36,7 @@ export function OriginalDocumentView({
         )}
         {isPdf ? (
           <iframe
-            src={`${url}#view=FitH`}
+            src={`${src}#view=FitH`}
             title={`${title} — original document`}
             onLoad={() => setLoaded(true)}
             className="h-[72vh] w-full bg-white"
@@ -45,7 +45,7 @@ export function OriginalDocumentView({
           <div className="max-h-[72vh] overflow-auto bg-white p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={url || "/placeholder.svg"}
+              src={src || "/placeholder.svg"}
               alt={`${title} — original scan`}
               onLoad={() => setLoaded(true)}
               className="mx-auto h-auto w-full max-w-2xl rounded-lg"

@@ -296,6 +296,35 @@ export async function detectLanguage(input: string): Promise<string | null> {
   }
 }
 
+/**
+ * Extracts readable text from an image scan (photo of a page, screenshot, etc.)
+ * using the multimodal model. Returns the transcribed text, or throws when the
+ * image can't be read.
+ */
+export async function extractTextFromImage(
+  dataUrl: string,
+): Promise<string> {
+  const { text } = await generateText({
+    model: MODEL,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              "Transcribe all readable text from this image exactly as it " +
+              "appears, preserving paragraph breaks and reading order. " +
+              "Return only the transcribed text with no commentary.",
+          },
+          { type: "image", image: dataUrl },
+        ],
+      },
+    ],
+  })
+  return text.trim()
+}
+
 /** Quick free-form generation for the "Type anything" box on Home. */
 export async function quickGenerate(prompt: string): Promise<string> {
   await requirePremium()

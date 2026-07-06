@@ -1,5 +1,5 @@
 import { createDocument } from "@/app/actions/documents"
-import { detectLanguage } from "@/app/actions/ai"
+import { extractTextFromImage } from "@/app/actions/ai"
 import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
 import { put } from "@vercel/blob"
@@ -24,6 +24,11 @@ const VIEWABLE_MIME = new Set([
 function isViewable(name: string, type: string): boolean {
   if (VIEWABLE_MIME.has(type)) return true
   return /\.(pdf|png|jpe?g|webp|gif)$/i.test(name)
+}
+
+function isImage(name: string, type: string): boolean {
+  if (type.startsWith("image/")) return true
+  return /\.(png|jpe?g|webp|gif)$/i.test(name)
 }
 
 export async function POST(req: Request) {
@@ -52,11 +57,25 @@ export async function POST(req: Request) {
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer())
-    const { title, text } = await parseDocumentBuffer(
-      file.name,
-      file.type,
-      buffer,
-    )
+
+    let title: string
+    let text: string
+    if (isImage(file.name, file.type)) {
+      // Scanned page / photo: run OCR via the multimodal model.
+      const mime = file.type || "image/png"
+      const dataUrl = `data:${mime};base64,${buffer.toString("base64")}`
+      text = await extractTextFromImage(dataUrl)
+      title = file.name.replace(/\.[^.]+$/, "") || "Scanned document"
+      if (!text || text.trim().split(/\s+/).filter(Boolean).length < 3) {
+        throw new Error(
+          "Couldn't read any text from that image. Try a clearer photo or scan.",
+        )
+      }
+    } else {
+      const parsed = await parseDocumentBuffer(file.name, file.type, buffer)
+      title = parsed.title
+      text = parsed.text
+    }
 
     // Preserve the original file (PDF/scan) so the reader can show real pages.
     let originalUrl: string | null = null
@@ -74,16 +93,14 @@ export async function POST(req: Request) {
       originalMime = file.type || null
     }
 
-    // Detect the document's language so playback can auto-translate later.
-    const sourceLang = await detectLanguage(text)
-
+    // Language is auto-detected inside createDocument so playback can
+    // auto-translate later.
     const doc = await createDocument({
       title,
       content: text,
       sourceType: "file",
       originalUrl,
       originalMime,
-      sourceLang,
     })
     return NextResponse.json({ id: doc.id })
   } catch (err) {

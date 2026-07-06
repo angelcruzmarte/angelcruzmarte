@@ -29,6 +29,9 @@ export default async function AppListenPage({
       allowDownload={premium}
       documentId={doc.id}
       initialWord={doc.lastWord}
+      originalUrl={doc.originalUrl}
+      originalMime={doc.originalMime}
+      sourceLang={doc.sourceLang}
     />
   )
 }
