@@ -1,14 +1,61 @@
-/** Premium voices offered to subscribers, mapped to OpenAI TTS voice IDs. */
+/**
+ * Premium voices offered to subscribers, mapped to OpenAI TTS voice IDs. Each
+ * has a persona (name + tagline) and a realistic portrait so the picker feels
+ * like a curated voice library.
+ */
 export const PREMIUM_VOICES = [
-  { id: "alloy", label: "Alloy — Balanced" },
-  { id: "nova", label: "Nova — Warm" },
-  { id: "shimmer", label: "Shimmer — Bright" },
-  { id: "echo", label: "Echo — Calm" },
-  { id: "onyx", label: "Onyx — Deep" },
-  { id: "fable", label: "Fable — Expressive" },
+  {
+    id: "alloy",
+    name: "Alloy",
+    tagline: "Balanced Narrator",
+    label: "Alloy — Balanced",
+    image: "/voices/alloy.png",
+  },
+  {
+    id: "nova",
+    name: "Nova",
+    tagline: "Warm Storyteller",
+    label: "Nova — Warm",
+    image: "/voices/nova.png",
+  },
+  {
+    id: "shimmer",
+    name: "Shimmer",
+    tagline: "Bright & Upbeat",
+    label: "Shimmer — Bright",
+    image: "/voices/shimmer.png",
+  },
+  {
+    id: "echo",
+    name: "Echo",
+    tagline: "Calm & Soothing",
+    label: "Echo — Calm",
+    image: "/voices/echo.png",
+  },
+  {
+    id: "onyx",
+    name: "Onyx",
+    tagline: "Deep & Authoritative",
+    label: "Onyx — Deep",
+    image: "/voices/onyx.png",
+  },
+  {
+    id: "fable",
+    name: "Fable",
+    tagline: "Expressive Performer",
+    label: "Fable — Expressive",
+    image: "/voices/fable.png",
+  },
 ] as const
 
 export type PremiumVoiceId = (typeof PREMIUM_VOICES)[number]["id"]
+
+export type PremiumVoice = (typeof PREMIUM_VOICES)[number]
+
+/** Look up a premium voice persona by id. */
+export function getPremiumVoice(id: string): PremiumVoice | undefined {
+  return PREMIUM_VOICES.find((v) => v.id === id)
+}
 
 // ---------------------------------------------------------------------------
 // Device (Web Speech API) voice helpers: present a friendly, human-first list

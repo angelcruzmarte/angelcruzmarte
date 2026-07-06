@@ -98,6 +98,13 @@ export const document = pgTable("document", {
   content: text("content").notNull(),
   sourceType: text("sourceType").notNull().default("text"),
   sourceUrl: text("sourceUrl"),
+  // Blob URL of the original uploaded file (PDF/image), preserved so the
+  // reader can render the real pages. Null for paste/type/link sources.
+  originalUrl: text("originalUrl"),
+  // MIME type of the original file (e.g. application/pdf, image/png).
+  originalMime: text("originalMime"),
+  // Detected BCP-47 language code of the document content (e.g. "en", "fr").
+  sourceLang: text("sourceLang"),
   wordCount: integer("wordCount").notNull().default(0),
   lastWord: integer("lastWord").notNull().default(0),
   createdAt: timestamp("createdAt").notNull().defaultNow(),

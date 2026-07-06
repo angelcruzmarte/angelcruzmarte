@@ -41,6 +41,9 @@ export async function createDocument(input: {
   content: string
   sourceType?: string
   sourceUrl?: string
+  originalUrl?: string | null
+  originalMime?: string | null
+  sourceLang?: string | null
 }) {
   const userId = await getUserId()
   const title = input.title.trim() || "Untitled"
@@ -55,6 +58,9 @@ export async function createDocument(input: {
       content,
       sourceType: input.sourceType ?? "text",
       sourceUrl: input.sourceUrl ?? null,
+      originalUrl: input.originalUrl ?? null,
+      originalMime: input.originalMime ?? null,
+      sourceLang: input.sourceLang ?? null,
       wordCount: countWords(content),
     })
     .returning()

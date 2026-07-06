@@ -2,15 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, TriangleAlert, Sparkles, AudioLines } from "lucide-react"
+import {
+  ArrowLeft,
+  TriangleAlert,
+  Sparkles,
+  AudioLines,
+  FileText,
+  AlignLeft,
+} from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
 import { PremiumNarration } from "@/components/premium-narration"
 import { DownloadAudioButton } from "@/components/download-audio-button"
+import {
+  OriginalDocumentView,
+  isViewableOriginal,
+} from "@/components/original-document-view"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { baseLang, voiceQualityScore } from "@/lib/voices"
+import { normalizeLang, isSupportedLang, languageLabel } from "@/lib/languages"
 import { translateText } from "@/app/actions/ai"
 import {
   trackerAddWords,

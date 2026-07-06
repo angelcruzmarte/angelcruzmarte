@@ -8,7 +8,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import {
   DropdownMenu,
@@ -22,8 +21,12 @@ import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
 import { translatePassage } from "@/app/actions/ai"
-import { PREMIUM_VOICES } from "@/lib/voices"
-import { READING_LANGUAGES } from "@/lib/languages"
+import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
+import {
+  normalizeLang,
+  isSupportedLang,
+  languageLabel,
+} from "@/lib/languages"
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 // Upper bound on how many sections we pre-translate in the background. Sections
@@ -38,9 +41,15 @@ function countWords(s: string) {
 export function PremiumNarration({
   text,
   title,
+  sourceLang,
+  showReader = true,
 }: {
   text: string
   title: string
+  /** Detected language of the document (BCP-47/ISO code), if known. */
+  sourceLang?: string | null
+  /** When false, the internal text reader is hidden (e.g. showing original). */
+  showReader?: boolean
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
@@ -60,13 +69,32 @@ export function PremiumNarration({
   // progressively, so switching language and starting playback feels instant.
   const sourceChunks = useMemo(() => chunkForNarration(text), [text])
 
-  // Translation state. `sections[lang][i]` holds the translated text for source
-  // section `i` (undefined until it has been translated).
-  const [lang, setLang] = useState<string>("en")
+  // Translation state. `lang` is either the sentinel "original" (narrate the
+  // document as-is) or a target language code we translate INTO. There is no
+  // manual language menu: we auto-detect the reader's device language and, when
+  // it differs from the document's language, offer/enable translation to it.
+  const ORIGINAL = "original"
+  const [lang, setLang] = useState<string>(ORIGINAL)
   const [sections, setSections] = useState<
     Record<string, (string | undefined)[]>
   >({})
   const [translating, setTranslating] = useState(false)
+
+  // Device/browser language (known only on the client). Normalized to a
+  // two-letter code, e.g. "en-US" -> "en".
+  const [deviceLang, setDeviceLang] = useState<string>("")
+  useEffect(() => {
+    setDeviceLang(normalizeLang(navigator.language))
+  }, [])
+
+  const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
+  // Translation is offered only when we know the document's language, the
+  // reader's device language is one we support, and the two differ.
+  const canTranslate =
+    Boolean(sourceNorm) &&
+    Boolean(deviceLang) &&
+    isSupportedLang(deviceLang) &&
+    deviceLang !== sourceNorm
 
   // Refs mirror state for use inside async loops without stale closures.
   const sectionsRef = useRef(sections)
@@ -79,7 +107,7 @@ export function PremiumNarration({
   // Effective section text for the current language (falls back to source when
   // a section has not been translated yet).
   const chunks = useMemo(() => {
-    if (lang === "en") return sourceChunks
+    if (lang === ORIGINAL) return sourceChunks
     const arr = sections[lang]
     return sourceChunks.map((c, i) => arr?.[i] ?? c)
   }, [lang, sourceChunks, sections])
@@ -100,7 +128,7 @@ export function PremiumNarration({
 
   // Number of sections translated so far for the current language (for the note).
   const doneCount =
-    lang === "en"
+    lang === ORIGINAL
       ? sourceChunks.length
       : sections[lang]?.reduce((n, s) => (s ? n + 1 : n), 0) ?? 0
 
@@ -119,7 +147,7 @@ export function PremiumNarration({
   // deduplicating in-flight requests. Returns the translated (or source) text.
   const translateSection = useCallback(
     (targetLang: string, i: number): Promise<string> => {
-      if (targetLang === "en") return Promise.resolve(sourceChunks[i])
+      if (targetLang === ORIGINAL) return Promise.resolve(sourceChunks[i])
       const existing = sectionsRef.current[targetLang]?.[i]
       if (existing) return Promise.resolve(existing)
       const key = `${targetLang}:${i}`
@@ -147,7 +175,7 @@ export function PremiumNarration({
   // starting from `startAt` so the section about to play is ready first.
   const translateInBackground = useCallback(
     async (targetLang: string, startAt: number) => {
-      if (targetLang === "en") return
+      if (targetLang === ORIGINAL) return
       const total = sourceChunks.length
       const order: number[] = []
       for (let i = startAt; i < total && order.length < BACKGROUND_TRANSLATE_CAP; i++) {
@@ -191,7 +219,7 @@ export function PremiumNarration({
       if (cached) return cached
       // Ensure this section is translated (on demand) before generating audio.
       let sectionText = sourceChunks[i]
-      if (lang !== "en") {
+      if (lang !== ORIGINAL) {
         try {
           sectionText = await translateSection(lang, i)
         } catch {
@@ -311,29 +339,40 @@ export function PremiumNarration({
     [stop],
   )
 
-  const handleLangChange = useCallback(
-    (value: string | null) => {
-      const next = value ?? "en"
-      if (next === lang) return
-      stop()
-      setError(null)
-      // Switch language instantly — the reader shows the source text and each
-      // section is translated on demand / in the background from here.
-      setLang(next)
-      if (next === "en") {
-        setTranslating(false)
-        return
-      }
-      void translateInBackground(next, 0)
-    },
-    [lang, stop, translateInBackground],
-  )
+  // Toggle between the document's original language and an automatic
+  // translation into the reader's device language. No manual language menu.
+  const toggleTranslation = useCallback(() => {
+    stop()
+    setError(null)
+    if (lang === ORIGINAL) {
+      setLang(deviceLang)
+      void translateInBackground(deviceLang, 0)
+    } else {
+      setLang(ORIGINAL)
+      setTranslating(false)
+    }
+  }, [lang, deviceLang, stop, translateInBackground])
+
+  // Automatically translate into the device language the first time we detect
+  // that it differs from the document's language.
+  const autoTranslatedRef = useRef(false)
+  useEffect(() => {
+    if (autoTranslatedRef.current) return
+    if (canTranslate) {
+      autoTranslatedRef.current = true
+      setLang(deviceLang)
+      void translateInBackground(deviceLang, 0)
+    }
+  }, [canTranslate, deviceLang, translateInBackground])
 
   const progress =
     chunks.length > 0 ? Math.round((index / chunks.length) * 100) : 0
   const busy = status === "loading"
   const showTranslateProgress =
-    lang !== "en" && translating && doneCount < chunks.length
+    lang !== ORIGINAL && translating && doneCount < chunks.length
+  const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
+  const deviceLabel = deviceLang ? languageLabel(deviceLang) : ""
+  const isTranslated = lang !== ORIGINAL
 
   return (
     <>
@@ -392,13 +431,39 @@ export function PremiumNarration({
           </div>
 
           <Select value={voice} onValueChange={handleVoiceChange}>
-            <SelectTrigger className="h-9 w-[150px]">
-              <SelectValue />
+            <SelectTrigger className="h-11 w-[184px] gap-2" aria-label="Voice">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <img
+                  src={selectedVoice.image || "/placeholder.svg"}
+                  alt=""
+                  className="h-7 w-7 shrink-0 rounded-full object-cover"
+                />
+                <span className="flex min-w-0 flex-col text-left leading-tight">
+                  <span className="truncate text-sm font-medium">
+                    {selectedVoice.name}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {selectedVoice.tagline}
+                  </span>
+                </span>
+              </span>
             </SelectTrigger>
             <SelectContent>
               {PREMIUM_VOICES.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.label}
+                <SelectItem key={v.id} value={v.id} className="py-2">
+                  <span className="flex items-center gap-2.5">
+                    <img
+                      src={v.image || "/placeholder.svg"}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-full object-cover"
+                    />
+                    <span className="flex flex-col leading-tight">
+                      <span className="text-sm font-medium">{v.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {v.tagline}
+                      </span>
+                    </span>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -423,28 +488,34 @@ export function PremiumNarration({
           </DropdownMenu>
         </div>
 
-        {/* Language / translation control */}
-        <div className="mt-3 flex items-center gap-2">
-          <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <Select value={lang} onValueChange={handleLangChange}>
-            <SelectTrigger className="h-9 w-full max-w-[220px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {READING_LANGUAGES.map((l) => (
-                <SelectItem key={l.code} value={l.code}>
-                  {l.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {showTranslateProgress && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Translating {doneCount}/{chunks.length}
+        {/* Automatic translation status + toggle (no manual language menu). */}
+        {canTranslate && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+              <Languages className="h-3.5 w-3.5" />
+              {isTranslated
+                ? `Auto-translated to ${deviceLabel}`
+                : `In ${languageLabel(sourceNorm)}`}
             </span>
-          )}
-        </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={toggleTranslation}
+            >
+              {isTranslated
+                ? `Show original (${languageLabel(sourceNorm)})`
+                : `Translate to ${deviceLabel}`}
+            </Button>
+            {showTranslateProgress && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Translating {doneCount}/{chunks.length}
+              </span>
+            )}
+          </div>
+        )}
 
         {error && (
           <p className="mt-3 text-sm text-destructive" role="alert">
@@ -452,25 +523,33 @@ export function PremiumNarration({
           </p>
         )}
         <p className="mt-3 text-xs text-muted-foreground">
-          Studio-quality voices generated on demand. Playback starts instantly —
-          pick a language and each section is translated as it plays, with the
-          rest translating in the background.
+          Studio-quality voices generated on demand. Playback starts instantly.
+          {canTranslate
+            ? " When a document isn't in your language, it's translated automatically as it plays."
+            : ""}
         </p>
       </div>
 
-      <ReaderPanel
-        title={title}
-        text={activeText}
-        words={words}
-        currentWord={currentWord}
-        onWordClick={handleWordClick}
-      />
+      {showReader && (
+        <ReaderPanel
+          title={title}
+          text={activeText}
+          words={words}
+          currentWord={currentWord}
+          onWordClick={handleWordClick}
+        />
+      )}
 
       {/* Floating controls so the user can always pause/stop without scrolling
           back up to the card on long documents. */}
       {status !== "idle" && (
         <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
+            <img
+              src={selectedVoice.image || "/placeholder.svg"}
+              alt={`${selectedVoice.name} voice`}
+              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-primary/20"
+            />
             <Button
               onClick={handlePlayPause}
               size="icon"

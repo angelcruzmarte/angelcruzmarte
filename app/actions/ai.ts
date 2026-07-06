@@ -265,6 +265,37 @@ export async function translatePassage(
   return translateChunk(source, languageName(targetLang))
 }
 
+/**
+ * Detects the primary language of a text sample and returns a two-letter
+ * (ISO 639-1) code, e.g. "en", "fr", "zh". Best-effort: returns null when it
+ * can't determine a language (empty input, model error/rate limit). Not
+ * premium-gated because it runs during upload for every document.
+ */
+export async function detectLanguage(input: string): Promise<string | null> {
+  const sample = (input ?? "").trim().slice(0, 2000)
+  if (sample.length < 12) return null
+  try {
+    const { object } = await generateObject({
+      model: TRANSLATE_MODEL,
+      schema: z.object({
+        code: z
+          .string()
+          .describe(
+            "The ISO 639-1 two-letter language code of the text (lowercase), e.g. en, es, fr, de, zh, ja, ar.",
+          ),
+      }),
+      prompt:
+        "Identify the primary natural language of the following text. " +
+        "Respond with only its ISO 639-1 two-letter code.\n\n" +
+        sample,
+    })
+    const code = object.code?.trim().toLowerCase().slice(0, 2)
+    return code && /^[a-z]{2}$/.test(code) ? code : null
+  } catch {
+    return null
+  }
+}
+
 /** Quick free-form generation for the "Type anything" box on Home. */
 export async function quickGenerate(prompt: string): Promise<string> {
   await requirePremium()
