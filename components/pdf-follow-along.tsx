@@ -317,16 +317,24 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           for (const e of entries) {
             if (e.isIntersecting) {
               const page = Number((e.target as HTMLElement).dataset.page)
+              // Render the visible page and pre-render the next one so scrolling
+              // (or narration outrunning the viewport) never shows a blank page.
               renderPage(page)
+              if (page + 1 <= (pdfDocRef.current?.numPages ?? 0)) {
+                renderPage(page + 1)
+              }
               onPageChange?.(page, pdfDocRef.current?.numPages ?? 0)
             }
           }
         },
-        { root: null, rootMargin: "400px 0px", threshold: 0.01 },
+        // Generous margin so upcoming pages are ready well before they scroll in.
+        { root: null, rootMargin: "1200px 0px", threshold: 0.01 },
       )
       hosts.forEach((h) => io.observe(h))
-      // Render the first page immediately.
-      renderPage(1)
+      // Render the first few pages immediately so it's clearly the whole
+      // document (not a single page) even before playback starts.
+      const eager = Math.min(3, pdfDocRef.current?.numPages ?? 1)
+      for (let p = 1; p <= eager; p++) renderPage(p)
       return () => io.disconnect()
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [status, numPages])
@@ -336,6 +344,10 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       if (status !== "ready") return
       const word = wordsRef.current[activeWord]
       if (!word) return
+      // Pre-render the next page so the follow-along scroll stays ahead of the
+      // reading position instead of pausing on a blank page.
+      const total = pdfDocRef.current?.numPages ?? 0
+      if (word.page + 1 <= total) renderPage(word.page + 1)
       if (!renderedPages.current.has(word.page)) {
         // Narration outran the lazy viewport — render that page now.
         renderPage(word.page).then(() => applyHighlight(activeWord))
