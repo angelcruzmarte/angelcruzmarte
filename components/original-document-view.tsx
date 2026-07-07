@@ -3,10 +3,20 @@
 import { useState } from "react"
 import { Loader2 } from "lucide-react"
 
-/** MIME types we can render as an "original document" surface. */
-export function isViewableOriginal(mime?: string | null): boolean {
-  if (!mime) return false
-  return mime === "application/pdf" || mime.startsWith("image/")
+/**
+ * Whether we can render the uploaded file as an "original document" surface.
+ * Falls back to the URL's extension when the stored MIME type is missing so
+ * older/edge-case uploads still get the real-page experience.
+ */
+export function isViewableOriginal(
+  mime?: string | null,
+  url?: string | null,
+): boolean {
+  if (mime && (mime === "application/pdf" || mime.startsWith("image/"))) {
+    return true
+  }
+  if (url && /\.(pdf|png|jpe?g|webp|gif)(\?|$)/i.test(url)) return true
+  return false
 }
 
 /**

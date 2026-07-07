@@ -55,6 +55,8 @@ type Props = {
   originalUrl?: string | null
   /** MIME type of the original file. */
   originalMime?: string | null
+  /** How the document was created ("file", "ai", "url", …). */
+  sourceType?: string | null
   /** Detected language (ISO/BCP-47) of the document content. */
   sourceLang?: string | null
 }
@@ -71,6 +73,7 @@ export function ListenPlayer({
   allowDownload = false,
   originalUrl,
   originalMime,
+  sourceType,
   sourceLang,
 }: Props) {
   const [mode, setMode] = useState<"standard" | "premium">(
@@ -79,7 +82,10 @@ export function ListenPlayer({
 
   // Whether we can render the real uploaded pages (PDFs / image scans).
   const hasOriginal =
-    Boolean(originalUrl) && isViewableOriginal(originalMime)
+    Boolean(originalUrl) && isViewableOriginal(originalMime, originalUrl)
+  // A file that was uploaded before we started preserving the original pages.
+  // These can't show the real-page follow-along until re-uploaded.
+  const needsReupload = sourceType === "file" && !originalUrl
   // Default to showing the original document when one is available, matching
   // the "show the original document" request; users can flip to clean text.
   const [view, setView] = useState<"original" | "text">(
@@ -515,6 +521,25 @@ export function ListenPlayer({
         <div className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-center gap-2 px-4 sm:px-6">
           {modeToggle}
           {viewToggle}
+        </div>
+      )}
+
+      {needsReupload && (
+        <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+          <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="text-pretty">
+              This document was added before the read-along page view was
+              available, so only the text is saved.{" "}
+              <Link
+                href="/app/upload"
+                className="font-medium text-primary underline underline-offset-2"
+              >
+                Re-upload the file
+              </Link>{" "}
+              to follow along on the original pages.
+            </p>
+          </div>
         </div>
       )}
 

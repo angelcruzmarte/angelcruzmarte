@@ -31,6 +31,25 @@ function isImage(name: string, type: string): boolean {
   return /\.(png|jpe?g|webp|gif)$/i.test(name)
 }
 
+/** Best-effort MIME from a file extension for browsers that omit file.type. */
+function mimeFromExt(ext: string): string | null {
+  switch (ext.toLowerCase()) {
+    case "pdf":
+      return "application/pdf"
+    case "png":
+      return "image/png"
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg"
+    case "webp":
+      return "image/webp"
+    case "gif":
+      return "image/gif"
+    default:
+      return null
+  }
+}
+
 export async function POST(req: Request) {
   const user = await getCurrentUser()
   if (!user) {
@@ -91,9 +110,11 @@ export async function POST(req: Request) {
           contentType: file.type || undefined,
         },
       )
-      // Public blob URL is directly renderable in the reader.
+      // Public blob URL is directly renderable in the reader. Fall back to the
+      // extension when the browser doesn't report a MIME type so the reader can
+      // still recognize (and render) the original pages.
       originalUrl = blob.url
-      originalMime = file.type || null
+      originalMime = file.type || mimeFromExt(ext)
     }
 
     // Language is auto-detected inside createDocument so playback can
