@@ -291,14 +291,29 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         for (let j = word.sentenceStart; j <= word.sentenceEnd; j++) {
           spanMap.current.get(j)?.classList.add("pdf-word-sentence")
         }
-        // Highlight the active word strongly + scroll into view.
+        // Highlight the active word strongly + auto-scroll the window so it
+        // stays in view. We compute an explicit window scroll target from the
+        // element's absolute position instead of scrollIntoView, which is
+        // unreliable for nested/absolute elements on mobile Safari.
         const span = spanMap.current.get(idx)
-        if (span) {
-          span.classList.add("pdf-word-active")
-          const now = Date.now()
-          if (now - lastManualScroll.current > 1200) {
-            span.scrollIntoView({ behavior: "smooth", block: "center" })
-          }
+        const now = Date.now()
+        if (now - lastManualScroll.current <= 1200) return
+        // Prefer the active word; fall back to the page host so we still track
+        // page-by-page even before the tiny word spans exist.
+        const target: HTMLElement | null =
+          span ??
+          container.querySelector<HTMLElement>(`[data-page="${word.page}"]`)
+        if (!target) return
+        const rect = target.getBoundingClientRect()
+        const absoluteTop = rect.top + window.scrollY
+        // Keep the reading position comfortably below the sticky header, around
+        // 38% down the viewport (Speechify-style).
+        const desired = absoluteTop - window.innerHeight * 0.38
+        const maxTop =
+          document.documentElement.scrollHeight - window.innerHeight
+        const top = Math.max(0, Math.min(desired, maxTop))
+        if (Math.abs(top - window.scrollY) > 4) {
+          window.scrollTo({ top, behavior: "smooth" })
         }
       },
       [],
