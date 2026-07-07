@@ -56,6 +56,7 @@ export function PremiumNarration({
   showReader = true,
   immersive = false,
   topSlot,
+  onActiveWord,
 }: {
   text: string
   title: string
@@ -67,6 +68,8 @@ export function PremiumNarration({
   immersive?: boolean
   /** Content rendered above the transport controls in immersive mode. */
   topSlot?: React.ReactNode
+  /** Reports the approximate active word position for external follow-along. */
+  onActiveWord?: (word: number, total: number) => void
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
@@ -142,6 +145,15 @@ export function PremiumNarration({
     }
     return offs
   }, [chunks])
+
+  // Surface the approximate active word so an external follow-along view (the
+  // PDF pages) can track playback position. The callback is held in a ref so an
+  // inline parent callback doesn't retrigger this effect every render.
+  const onActiveWordRef = useRef(onActiveWord)
+  onActiveWordRef.current = onActiveWord
+  useEffect(() => {
+    onActiveWordRef.current?.(currentWord, words.length)
+  }, [currentWord, words.length])
 
   // Number of sections translated so far for the current language (for the note).
   const doneCount =

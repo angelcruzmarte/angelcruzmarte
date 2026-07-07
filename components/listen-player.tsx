@@ -20,6 +20,10 @@ import {
   OriginalDocumentView,
   isViewableOriginal,
 } from "@/components/original-document-view"
+import {
+  PdfFollowAlong,
+  type PdfFollowAlongHandle,
+} from "@/components/pdf-follow-along"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { baseLang, voiceQualityScore } from "@/lib/voices"
@@ -83,6 +87,19 @@ export function ListenPlayer({
   )
   // `originalUrl` already points at the ownership-checked serving route.
   const originalSrc = originalUrl ?? ""
+  const isPdf =
+    originalMime === "application/pdf" || /\.pdf(\?|$)/i.test(originalSrc)
+
+  // Follow-along on the real PDF pages: text is extracted client-side from the
+  // PDF so device-voice highlighting maps 1:1 to the rendered word spans.
+  const [pdfText, setPdfText] = useState<string | null>(null)
+  const [pdfWordCount, setPdfWordCount] = useState(0)
+  const [pdfFailed, setPdfFailed] = useState(false)
+  const [pdfPage, setPdfPage] = useState({ current: 1, total: 0 })
+  // Premium AI narration reports an approximate word position we map by fraction.
+  const [premiumPos, setPremiumPos] = useState({ word: -1, total: 0 })
+  const usePdfFollow = isPdf && !pdfFailed && Boolean(originalSrc)
+  const pdfRef = useRef<PdfFollowAlongHandle>(null)
 
   // Reading/translation language for the device-voice path. "original" narrates
   // the document as-is; any other value is a target language we translate INTO.
@@ -110,9 +127,13 @@ export function ListenPlayer({
   const activeContent = useMemo(
     () =>
       readingLang === "original"
-        ? content
+        ? // Prefer the client-extracted PDF text so highlighting lines up with
+          // the rendered pages; fall back to server text until it's parsed.
+          usePdfFollow && pdfText
+          ? pdfText
+          : content
         : translations[readingLang] ?? content,
-    [readingLang, translations, content],
+    [readingLang, translations, content, usePdfFollow, pdfText],
   )
 
   const {
@@ -297,6 +318,22 @@ export function ListenPlayer({
   const immersive = hasOriginal && view === "original"
   const aiTools = premium ? <ReaderAiTools text={content} /> : null
 
+  // Which word to highlight on the rendered PDF pages.
+  // - Device voice reads the PDF text directly, so currentWord maps 1:1.
+  // - Premium AI has no word timing, so we map its approximate position onto
+  //   the PDF word list by fraction (still auto-scrolls through to the end).
+  const pdfActiveWord = (() => {
+    if (!usePdfFollow || readingLang !== "original") return -1
+    if (premium && mode === "premium") {
+      if (premiumPos.total <= 0 || pdfWordCount <= 0) return -1
+      return Math.min(
+        pdfWordCount - 1,
+        Math.round((premiumPos.word / premiumPos.total) * pdfWordCount),
+      )
+    }
+    return currentWord
+  })()
+
   const modeToggle = premium ? (
     <div className="flex shrink-0 gap-0.5 rounded-full border border-border bg-muted/50 p-0.5">
       <button
@@ -376,20 +413,46 @@ export function ListenPlayer({
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
-            {title}
-          </h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold">{title}</h1>
+            {usePdfFollow && pdfPage.total > 0 && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                Page {pdfPage.current} of {pdfPage.total}
+              </p>
+            )}
+          </div>
           {modeToggle}
           {viewToggle}
         </header>
 
-        <main className="flex-1 pb-40 sm:pb-36">
-          <OriginalDocumentView
-            src={originalSrc}
-            mime={originalMime}
-            title={title}
-            immersive
-          />
+        <main className="flex-1 pb-44 sm:pb-40">
+          {usePdfFollow ? (
+            <PdfFollowAlong
+              ref={pdfRef}
+              src={originalSrc}
+              activeWord={pdfActiveWord}
+              onWords={(text, count) => {
+                setPdfText(text)
+                setPdfWordCount(count)
+              }}
+              onWordClick={(i) => {
+                // Word taps seek the device-voice engine (exact mapping).
+                if (!(premium && mode === "premium")) seekToWord(i)
+              }}
+              onPageChange={(current, total) =>
+                setPdfPage({ current, total })
+              }
+              onError={() => setPdfFailed(true)}
+              className="mx-auto max-w-2xl"
+            />
+          ) : (
+            <OriginalDocumentView
+              src={originalSrc}
+              mime={originalMime}
+              title={title}
+              immersive
+            />
+          )}
         </main>
 
         {premium && mode === "premium" ? (
@@ -401,6 +464,7 @@ export function ListenPlayer({
               showReader={false}
               immersive
               topSlot={aiTools}
+              onActiveWord={(word, total) => setPremiumPos({ word, total })}
             />
           </div>
         ) : (

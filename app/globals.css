@@ -167,3 +167,15 @@
     animation: none !important;
   }
 }
+
+/* Follow-along highlighting drawn over the real PDF pages (Speechify-style). */
+.pdf-word {
+  transition: background-color 120ms ease;
+}
+.pdf-word-sentence {
+  background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+}
+.pdf-word-active {
+  background-color: color-mix(in oklch, var(--primary) 34%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
+}
