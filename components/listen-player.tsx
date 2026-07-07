@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import {
-  ArrowLeft,
-  TriangleAlert,
-  Sparkles,
-  AudioLines,
-  FileText,
-  AlignLeft,
-} from "lucide-react"
+import { ArrowLeft, TriangleAlert, FileText } from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
@@ -76,9 +69,9 @@ export function ListenPlayer({
   sourceType,
   sourceLang,
 }: Props) {
-  const [mode, setMode] = useState<"standard" | "premium">(
-    premium ? "premium" : "standard",
-  )
+  // The reader always uses the premium AI voice when the user has access; there
+  // is no device-voice option. Non-premium users fall back to device speech.
+  const mode = premium ? "premium" : "standard"
 
   // Whether we can render the real uploaded pages (PDFs / image scans).
   const hasOriginal =
@@ -86,11 +79,10 @@ export function ListenPlayer({
   // A file that was uploaded before we started preserving the original pages.
   // These can't show the real-page follow-along until re-uploaded.
   const needsReupload = sourceType === "file" && !originalUrl
-  // Default to showing the original document when one is available, matching
-  // the "show the original document" request; users can flip to clean text.
-  const [view, setView] = useState<"original" | "text">(
-    hasOriginal ? "original" : "text",
-  )
+  // When the original pages are available we always show them (Speechify-style
+  // page follow-along). There is no Page/Text toggle — plain text is only used
+  // as a fallback for documents without a viewable original.
+  const view = hasOriginal ? "original" : "text"
   // `originalUrl` already points at the ownership-checked serving route.
   const originalSrc = originalUrl ?? ""
   const isPdf =
@@ -340,71 +332,6 @@ export function ListenPlayer({
     return currentWord
   })()
 
-  const modeToggle = premium ? (
-    <div className="flex shrink-0 gap-0.5 rounded-full border border-border bg-muted/50 p-0.5">
-      <button
-        type="button"
-        onClick={() => {
-          stop()
-          setMode("premium")
-        }}
-        className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-          mode === "premium"
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <Sparkles className="h-3.5 w-3.5" />
-        AI
-      </button>
-      <button
-        type="button"
-        onClick={() => setMode("standard")}
-        className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-          mode === "standard"
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <AudioLines className="h-3.5 w-3.5" />
-        Device
-      </button>
-    </div>
-  ) : null
-
-  const viewToggle = hasOriginal ? (
-    <div className="flex shrink-0 gap-0.5 rounded-full border border-border bg-muted/50 p-0.5">
-      <button
-        type="button"
-        onClick={() => setView("original")}
-        className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-          view === "original"
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <FileText className="h-3.5 w-3.5" />
-        Page
-      </button>
-      <button
-        type="button"
-        onClick={() => setView("text")}
-        className={cn(
-          "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-          view === "text"
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <AlignLeft className="h-3.5 w-3.5" />
-        Text
-      </button>
-    </div>
-  ) : null
-
   if (immersive) {
     return (
       <div className="flex min-h-[100dvh] flex-col">
@@ -427,8 +354,6 @@ export function ListenPlayer({
               </p>
             )}
           </div>
-          {modeToggle}
-          {viewToggle}
         </header>
 
         <main className="flex-1 pb-44 sm:pb-40">
@@ -516,13 +441,6 @@ export function ListenPlayer({
           <DownloadAudioButton title={title} text={content} premium={premium} />
         )}
       </div>
-
-      {(modeToggle || viewToggle) && (
-        <div className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-center gap-2 px-4 sm:px-6">
-          {modeToggle}
-          {viewToggle}
-        </div>
-      )}
 
       {needsReupload && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
