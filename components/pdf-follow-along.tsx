@@ -48,6 +48,13 @@ type Props = {
   src: string
   /** Index (into the reported word list) currently being narrated, or -1. */
   activeWord: number
+  /**
+   * Monotonic 0..1 reading fraction. This is the primary, robust driver for
+   * scrolling the document top-to-bottom as it is read (word-span scrolling is
+   * unreliable on mobile Safari). When provided, the window scrolls to the
+   * matching fraction of the document height.
+   */
+  progress?: number | null
   /** Reports the extracted words (space-joined) once the PDF is parsed. */
   onWords?: (text: string, count: number) => void
   /** Fired when a word is tapped, to seek narration. */
@@ -61,7 +68,16 @@ type Props = {
 
 export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
   function PdfFollowAlong(
-    { src, activeWord, onWords, onWordClick, onPageChange, onError, className },
+    {
+      src,
+      activeWord,
+      progress,
+      onWords,
+      onWordClick,
+      onPageChange,
+      onError,
+      className,
+    },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -291,30 +307,9 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         for (let j = word.sentenceStart; j <= word.sentenceEnd; j++) {
           spanMap.current.get(j)?.classList.add("pdf-word-sentence")
         }
-        // Highlight the active word strongly + auto-scroll the window so it
-        // stays in view. We compute an explicit window scroll target from the
-        // element's absolute position instead of scrollIntoView, which is
-        // unreliable for nested/absolute elements on mobile Safari.
-        const span = spanMap.current.get(idx)
-        const now = Date.now()
-        if (now - lastManualScroll.current <= 1200) return
-        // Prefer the active word; fall back to the page host so we still track
-        // page-by-page even before the tiny word spans exist.
-        const target: HTMLElement | null =
-          span ??
-          container.querySelector<HTMLElement>(`[data-page="${word.page}"]`)
-        if (!target) return
-        const rect = target.getBoundingClientRect()
-        const absoluteTop = rect.top + window.scrollY
-        // Keep the reading position comfortably below the sticky header, around
-        // 38% down the viewport (Speechify-style).
-        const desired = absoluteTop - window.innerHeight * 0.38
-        const maxTop =
-          document.documentElement.scrollHeight - window.innerHeight
-        const top = Math.max(0, Math.min(desired, maxTop))
-        if (Math.abs(top - window.scrollY) > 4) {
-          window.scrollTo({ top, behavior: "smooth" })
-        }
+        // Highlight the active word strongly. Scrolling is handled centrally by
+        // the progress-driven effect so the two mechanisms never fight.
+        spanMap.current.get(idx)?.classList.add("pdf-word-active")
       },
       [],
     )
@@ -371,6 +366,45 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeWord, status])
+
+    // ---- Progress-driven scroll (primary, robust) ------------------------
+    // Scroll the window to the reading fraction of the whole document so it
+    // advances top-to-bottom as it is read. This does not depend on locating a
+    // specific word span, so it works reliably even on mobile Safari.
+    useEffect(() => {
+      if (status !== "ready") return
+      if (progress == null || Number.isNaN(progress)) return
+      const container = containerRef.current
+      if (!container) return
+      // Respect a recent manual scroll so we don't yank the user around.
+      if (Date.now() - lastManualScroll.current <= 1500) return
+
+      const frac = Math.max(0, Math.min(1, progress))
+      const containerTop =
+        container.getBoundingClientRect().top + window.scrollY
+      const containerHeight = container.scrollHeight
+      // Map the reading fraction onto the document body, offset so the current
+      // line sits ~30% down the viewport (leaving room under the sticky header).
+      const target =
+        containerTop + frac * containerHeight - window.innerHeight * 0.3
+      const maxTop =
+        document.documentElement.scrollHeight - window.innerHeight
+      const top = Math.max(0, Math.min(target, maxTop))
+
+      // Make sure the page around this fraction is rendered.
+      const total = pdfDocRef.current?.numPages ?? 0
+      if (total > 0) {
+        const approxPage = Math.min(total, Math.max(1, Math.ceil(frac * total)))
+        renderPage(approxPage)
+        if (approxPage + 1 <= total) renderPage(approxPage + 1)
+        onPageChange?.(approxPage, total)
+      }
+
+      if (Math.abs(top - window.scrollY) > 8) {
+        window.scrollTo({ top, behavior: "smooth" })
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [progress, status])
 
     // Track manual scrolling to avoid fighting the user.
     useEffect(() => {
