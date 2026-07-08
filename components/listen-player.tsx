@@ -332,19 +332,6 @@ export function ListenPlayer({
     return currentWord
   })()
 
-  // A monotonic 0..1 reading fraction used to scroll the document top-to-bottom
-  // as it is read. This is the *primary* scroll driver (robust) because finding
-  // a specific word span to scrollIntoView is unreliable on mobile Safari.
-  const pdfProgress = (() => {
-    if (!usePdfFollow || readingLang !== "original") return null
-    if (premium && mode === "premium") {
-      if (premiumPos.total <= 0) return null
-      return premiumPos.word / premiumPos.total
-    }
-    if (words.length <= 0 || currentWord < 0) return null
-    return currentWord / words.length
-  })()
-
   if (immersive) {
     return (
       <div className="flex min-h-[100dvh] flex-col">
@@ -375,7 +362,6 @@ export function ListenPlayer({
               ref={pdfRef}
               src={originalSrc}
               activeWord={pdfActiveWord}
-              progress={pdfProgress}
               onWords={(text, count) => {
                 setPdfText(text)
                 setPdfWordCount(count)
