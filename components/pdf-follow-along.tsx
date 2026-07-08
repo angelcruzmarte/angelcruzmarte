@@ -36,6 +36,28 @@ function ensurePromiseWithResolvers() {
   }
 }
 
+// Temporary diagnostic beacon: reports client-side PDF load outcomes to the
+// server so we can see what happens on real devices via Vercel logs.
+function pdfDiag(data: Record<string, unknown>) {
+  try {
+    const body = JSON.stringify({
+      ...data,
+      nativeWithResolvers:
+        typeof (Promise as unknown as { withResolvers?: unknown })
+          .withResolvers === "function",
+    })
+    // keepalive so it still sends if the page navigates away.
+    fetch("/api/pdf-diag", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // ignore
+  }
+}
+
 // pdfjs is loaded dynamically (client only) so it never runs on the server.
 // We use the "legacy" build, which is transpiled for older browsers (e.g. the
 // iOS in-app browsers many users open the app from).
