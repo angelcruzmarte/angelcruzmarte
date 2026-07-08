@@ -332,6 +332,14 @@ export function ListenPlayer({
     return currentWord
   })()
 
+  // Overall playback progress (0..1) for the robust, word-independent scroll
+  // engine. This guarantees the document scrolls through to the end as the
+  // premium voice plays, even if the two word lists don't align perfectly.
+  const premiumFraction =
+    premium && mode === "premium" && premiumPos.total > 0
+      ? Math.min(1, premiumPos.word / premiumPos.total)
+      : -1
+
   if (immersive) {
     return (
       <div className="flex min-h-[100dvh] flex-col">
@@ -362,6 +370,7 @@ export function ListenPlayer({
               ref={pdfRef}
               src={originalSrc}
               activeWord={pdfActiveWord}
+              scrollFraction={premiumFraction}
               onWords={(text, count) => {
                 setPdfText(text)
                 setPdfWordCount(count)

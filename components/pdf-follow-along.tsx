@@ -48,6 +48,12 @@ type Props = {
   src: string
   /** Index (into the reported word list) currently being narrated, or -1. */
   activeWord: number
+  /**
+   * Overall playback progress (0..1). When provided, the document auto-scrolls
+   * to this fraction of its height — a robust, word-independent way to follow
+   * along through the whole document to the end. Use -1 to disable.
+   */
+  scrollFraction?: number
   /** Reports the extracted words (space-joined) once the PDF is parsed. */
   onWords?: (text: string, count: number) => void
   /** Fired when a word is tapped, to seek narration. */
@@ -61,9 +67,21 @@ type Props = {
 
 export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
   function PdfFollowAlong(
-    { src, activeWord, onWords, onWordClick, onPageChange, onError, className },
+    {
+      src,
+      activeWord,
+      scrollFraction,
+      onWords,
+      onWordClick,
+      onPageChange,
+      onError,
+      className,
+    },
     ref,
   ) {
+    // Whether the parent is driving scroll by playback fraction (premium voice).
+    const fractionDriven =
+      typeof scrollFraction === "number" && scrollFraction >= 0
     const containerRef = useRef<HTMLDivElement>(null)
     const [status, setStatus] = useState<"loading" | "ready" | "error">(
       "loading",
@@ -275,6 +293,11 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     const activeWordRef = useRef(activeWord)
     activeWordRef.current = activeWord
 
+    // Whether scroll is driven by playback fraction (kept in a ref so the
+    // stable applyHighlight callback can read the latest value).
+    const fractionDrivenRef = useRef(fractionDriven)
+    fractionDrivenRef.current = fractionDriven
+
     const applyHighlight = useCallback(
       (idx: number) => {
         // Clear previous.
@@ -291,11 +314,15 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         for (let j = word.sentenceStart; j <= word.sentenceEnd; j++) {
           spanMap.current.get(j)?.classList.add("pdf-word-sentence")
         }
-        // Highlight the active word strongly + auto-scroll the window so it
-        // stays in view. We compute an explicit window scroll target from the
-        // element's absolute position instead of scrollIntoView, which is
-        // unreliable for nested/absolute elements on mobile Safari.
+        // Highlight the active word strongly.
         const span = spanMap.current.get(idx)
+        span?.classList.add("pdf-word-active")
+        // When the parent drives scroll by playback fraction (premium voice),
+        // the highlight is visual only — the fraction effect owns scrolling.
+        if (fractionDrivenRef.current) return
+        // Otherwise (device voice) auto-scroll the window to keep the active
+        // word in view, using an explicit target (scrollIntoView is unreliable
+        // for nested/absolute elements on mobile Safari).
         const now = Date.now()
         if (now - lastManualScroll.current <= 1200) return
         // Prefer the active word; fall back to the page host so we still track
@@ -371,6 +398,38 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeWord, status])
+
+    // ---- Robust follow-along scroll driven by playback fraction -----------
+    // This is the primary "read along through the whole document" engine for
+    // the premium voice: it maps overall audio progress (0..1) to a position
+    // in the document and scrolls the window there. It does not depend on
+    // matching word lists or per-word span geometry, so it can't get stuck.
+    useEffect(() => {
+      if (status !== "ready" || !fractionDriven) return
+      const container = containerRef.current
+      if (!container) return
+      // Don't fight a user who just scrolled manually.
+      if (Date.now() - lastManualScroll.current <= 1500) return
+
+      const frac = Math.min(1, Math.max(0, scrollFraction as number))
+      // Ensure the target page is rendered so its real height is known.
+      const total = pdfDocRef.current?.numPages ?? numPages
+      const approxPage = Math.min(total, Math.floor(frac * total) + 1)
+      renderPage(approxPage)
+      if (approxPage + 1 <= total) renderPage(approxPage + 1)
+
+      const containerTop =
+        container.getBoundingClientRect().top + window.scrollY
+      const target =
+        containerTop + frac * container.offsetHeight - window.innerHeight * 0.32
+      const maxTop =
+        document.documentElement.scrollHeight - window.innerHeight
+      const top = Math.max(0, Math.min(target, maxTop))
+      if (Math.abs(top - window.scrollY) > 6) {
+        window.scrollTo({ top, behavior: "smooth" })
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scrollFraction, status, fractionDriven])
 
     // Track manual scrolling to avoid fighting the user.
     useEffect(() => {
