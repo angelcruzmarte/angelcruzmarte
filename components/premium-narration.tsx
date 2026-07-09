@@ -12,6 +12,7 @@ import {
   SkipForward,
   Gauge,
   Check,
+  ChevronDown,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -24,6 +25,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ReaderPanel } from "@/components/reader-panel"
@@ -372,13 +374,33 @@ export function PremiumNarration({
     if (audioRef.current) audioRef.current.playbackRate = rate
   }, [rate])
 
+  // When the user switches voice, stop the current audio and — if it was
+  // playing — resume the SAME section with the new voice. The actual replay
+  // happens in an effect below, once `voice` (and the voice-aware `playChunk`)
+  // has updated, so we don't play with a stale closure.
+  const pendingResumeRef = useRef<number | null>(null)
   const handleVoiceChange = useCallback(
     (v: string | null) => {
+      const next = v || PREMIUM_VOICES[0].id
+      if (next === voice) return
+      const wasActive = status === "playing" || status === "loading"
+      const resumeIndex = index
       stop()
-      setVoice(v || PREMIUM_VOICES[0].id)
+      setVoice(next)
+      if (wasActive) pendingResumeRef.current = resumeIndex
     },
-    [stop],
+    [stop, voice, status, index],
   )
+
+  // After a voice switch, resume playback of the pending section with the now
+  // updated (voice-aware) playChunk.
+  useEffect(() => {
+    if (pendingResumeRef.current == null) return
+    const i = pendingResumeRef.current
+    pendingResumeRef.current = null
+    void playChunk(i)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice])
 
   // Toggle between the document's original language and an automatic
   // translation into the reader's device language. No manual language menu.
@@ -431,11 +453,49 @@ export function PremiumNarration({
         )}
 
         <div className="flex items-center gap-3">
-          <img
-            src={selectedVoice.image || "/placeholder.svg"}
-            alt={`${selectedVoice.name} voice`}
-            className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-primary/20"
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`Voice: ${selectedVoice.name}. Tap to change.`}
+              className="group relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <img
+                src={selectedVoice.image || "/placeholder.svg"}
+                alt={`${selectedVoice.name} voice`}
+                className="h-11 w-11 rounded-full object-cover ring-2 ring-primary/20 transition group-hover:ring-primary/50"
+              />
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
+                <ChevronDown className="h-2.5 w-2.5" />
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Voice</DropdownMenuLabel>
+              {PREMIUM_VOICES.map((v) => (
+                <DropdownMenuItem
+                  key={v.id}
+                  onClick={() => handleVoiceChange(v.id)}
+                  className="gap-2.5 py-2"
+                >
+                  <img
+                    src={v.image || "/placeholder.svg"}
+                    alt=""
+                    className="h-9 w-9 shrink-0 rounded-full object-cover"
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                    <span className="text-sm font-medium">{v.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {v.tagline}
+                    </span>
+                  </span>
+                  <Check
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      voice === v.id ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button
             onClick={() => playChunk(Math.max(0, index - 1))}

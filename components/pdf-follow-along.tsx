@@ -156,6 +156,11 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     // where rapid smooth-scroll calls cancel each other and the page freezes.
     const scrollTargetRef = useRef<number | null>(null)
     const rafRef = useRef<number | null>(null)
+    // What the follow-along loop is aiming at (a word index and its page). The
+    // loop recomputes the pixel target from this LIVE each frame, so when a
+    // page's canvas finishes rendering and shifts layout, the scroll eases to
+    // the new position smoothly instead of snapping/jumping.
+    const scrollAimRef = useRef<{ wordIdx: number; page: number } | null>(null)
 
     useImperativeHandle(ref, () => ({
       scrollToPage: (page: number) => {
@@ -473,6 +478,7 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       // gate (the parent passes -1 when idle/paused). When idle, clear the
       // target so we never yank the user back to the top.
       if (status !== "ready" || !fractionDriven) {
+        scrollAimRef.current = null
         scrollTargetRef.current = null
         return
       }
@@ -492,41 +498,62 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         const frac = Math.min(1, Math.max(0, scrollFraction as number))
         targetPage = Math.min(total, Math.floor(frac * total) + 1)
       }
-      // Ensure the target page (and the next) are rendered for real heights.
+      // Ensure the target page (and the next) are rendered for real heights, so
+      // the word's span exists before we arrive — this prevents the small jump
+      // when crossing from one page to the next.
       renderPage(targetPage)
       if (targetPage + 1 <= total) renderPage(targetPage + 1)
 
-      // Aim at the exact word span when available, otherwise the top of the
-      // target page's host element (placeholders are full-size, so their
-      // position is accurate even before the canvas renders).
-      const span = spanMap.current.get(idx)
-      const host = container.querySelector<HTMLElement>(
-        `[data-page="${targetPage}"]`,
-      )
-      const aimEl = span ?? host
-      if (!aimEl) return
-      const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
-      // Keep the reading line ~35% down the viewport (Speechify-style).
-      const target = aimTop - window.innerHeight * 0.35
-      const maxTop =
-        document.documentElement.scrollHeight - window.innerHeight
-      scrollTargetRef.current = Math.max(0, Math.min(target, maxTop))
+      // Record what we're aiming at; the loop recomputes the pixel target from
+      // this live each frame so layout shifts (a page finishing render) are
+      // eased out rather than snapped.
+      scrollAimRef.current = { wordIdx: idx, page: targetPage }
 
       // Kick the easing loop if it isn't already running.
       if (rafRef.current == null) {
         const scroller =
           document.scrollingElement || document.documentElement
+        // Compute the current pixel target from the live position of the aim
+        // element (exact word span if available, otherwise the target page).
+        const computeGoal = (): number | null => {
+          const aim = scrollAimRef.current
+          const c = containerRef.current
+          if (!aim || !c) return null
+          const span = spanMap.current.get(aim.wordIdx)
+          const host = c.querySelector<HTMLElement>(
+            `[data-page="${aim.page}"]`,
+          )
+          const aimEl = span ?? host
+          if (!aimEl) return null
+          const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
+          // Keep the reading line ~35% down the viewport (Speechify-style).
+          const target = aimTop - window.innerHeight * 0.35
+          const maxTop =
+            document.documentElement.scrollHeight - window.innerHeight
+          return Math.max(0, Math.min(target, maxTop))
+        }
         const step = () => {
-          const goal = scrollTargetRef.current
-          // Stop the loop if there's no goal or the user just scrolled.
-          if (goal == null || Date.now() - lastManualScroll.current <= 1500) {
+          // Stop the loop if the user just scrolled manually.
+          if (
+            scrollAimRef.current == null ||
+            Date.now() - lastManualScroll.current <= 1500
+          ) {
             rafRef.current = null
+            return
+          }
+          const goal = computeGoal()
+          if (goal == null) {
+            // Aim element not ready yet (page still rendering) — keep the loop
+            // alive and try again next frame instead of bailing.
+            rafRef.current = requestAnimationFrame(step)
             return
           }
           const current = window.scrollY || scroller.scrollTop
           const delta = goal - current
           if (Math.abs(delta) <= 1.5) {
-            rafRef.current = null
+            // Arrived — idle but keep polling cheaply so late layout shifts
+            // (canvas finishing) are followed without a visible jump.
+            rafRef.current = requestAnimationFrame(step)
             return
           }
           // Ease ~12% of the remaining distance per frame for a smooth glide.
