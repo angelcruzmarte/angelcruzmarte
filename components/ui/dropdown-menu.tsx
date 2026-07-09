@@ -53,15 +53,20 @@ function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
   return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 }
 
+// NOTE: Rendered as a plain <div> rather than base-ui's MenuPrimitive.GroupLabel
+// on purpose. GroupLabel requires a surrounding <Menu.Group>/<Menu.RadioGroup>
+// context and throws ("MenuGroupContext is missing") when used as a standalone
+// label — which is how most call sites use it. A styled div gives the same
+// visual label without the context requirement.
 function DropdownMenuLabel({
   className,
   inset,
   ...props
-}: MenuPrimitive.GroupLabel.Props & {
+}: React.ComponentProps<"div"> & {
   inset?: boolean
 }) {
   return (
-    <MenuPrimitive.GroupLabel
+    <div
       data-slot="dropdown-menu-label"
       data-inset={inset}
       className={cn(

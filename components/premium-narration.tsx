@@ -25,7 +25,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ReaderPanel } from "@/components/reader-panel"
@@ -468,7 +467,9 @@ export function PremiumNarration({
               </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Voice</DropdownMenuLabel>
+              <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
+                Voice
+              </div>
               {PREMIUM_VOICES.map((v) => (
                 <DropdownMenuItem
                   key={v.id}
