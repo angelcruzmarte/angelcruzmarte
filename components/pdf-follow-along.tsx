@@ -112,7 +112,7 @@ type Props = {
   /** Reports the page currently in view / being read (1-based). */
   onPageChange?: (page: number, total: number) => void
   /** Called if the PDF cannot be rendered so the parent can fall back. */
-  onError?: () => void
+  onError?: (message: string) => void
   className?: string
 }
 
@@ -216,10 +216,14 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           onWords?.(words.map((w) => w.text).join(" "), words.length)
           setStatus("ready")
         } catch (err) {
-          console.log("[v0] PdfFollowAlong load error:", (err as Error).message)
+          const message =
+            err instanceof Error
+              ? `${err.name}: ${err.message}`
+              : String(err)
+          console.log("[v0] PdfFollowAlong load error:", message)
           if (!cancelled) {
             setStatus("error")
-            onError?.()
+            onError?.(message)
           }
         }
       }
