@@ -558,12 +558,15 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           <div
             key={i + 1}
             data-page={i + 1}
-            className="relative mx-auto mb-3 w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border"
-            style={{ minHeight: 200 }}
+            // Reserve a full US-Letter-sized box (aspect 8.5:11) so the total
+            // document height is stable and correct BEFORE each page's canvas
+            // renders. Without this, unrendered placeholders would be far
+            // shorter than rendered pages, making the follow-along scroll
+            // mapping wrong (it would barely move / appear stuck near the top).
+            // On render, host.style.height is set to the page's exact height.
+            className="relative mx-auto mb-3 flex aspect-[8.5/11] w-full max-w-2xl items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border"
           >
-            <div className="flex h-48 items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         )),
       [numPages],
