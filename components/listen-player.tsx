@@ -384,28 +384,16 @@ export function ListenPlayer({
               onPageChange={(current, total) =>
                 setPdfPage({ current, total })
               }
-              onError={(msg) => {
-                setPdfErr(msg ?? "unknown")
-                setPdfFailed(true)
-              }}
+              onError={() => setPdfFailed(true)}
               className="mx-auto max-w-2xl"
             />
           ) : (
-            <>
-              {isPdf && pdfErr && (
-                <div className="mx-auto mb-2 max-w-2xl px-3">
-                  <p className="rounded-md bg-destructive/10 px-3 py-2 text-center text-xs text-destructive">
-                    Reader diagnostic: {pdfErr}
-                  </p>
-                </div>
-              )}
-              <OriginalDocumentView
-                src={originalSrc}
-                mime={originalMime}
-                title={title}
-                immersive
-              />
-            </>
+            <OriginalDocumentView
+              src={originalSrc}
+              mime={originalMime}
+              title={title}
+              immersive
+            />
           )}
         </main>
 

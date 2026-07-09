@@ -150,6 +150,12 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     > | null>(null)
     // Guards against manual-scroll fighting the auto-scroll.
     const lastManualScroll = useRef(0)
+    // Target window scrollY for the follow-along loop, and the rAF handle.
+    // Using a single continuously-running easing loop (instead of repeated
+    // window.scrollTo({behavior:"smooth"}) calls) avoids the iOS Safari bug
+    // where rapid smooth-scroll calls cancel each other and the page freezes.
+    const scrollTargetRef = useRef<number | null>(null)
+    const rafRef = useRef<number | null>(null)
 
     useImperativeHandle(ref, () => ({
       scrollToPage: (page: number) => {
@@ -456,18 +462,20 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
 
     // ---- Robust follow-along scroll driven by playback fraction -----------
     // This is the primary "read along through the whole document" engine for
-    // the premium voice: it maps overall audio progress (0..1) to a position
-    // in the document and scrolls the window there. It does not depend on
-    // matching word lists or per-word span geometry, so it can't get stuck.
+    // the premium voice: it maps overall audio progress (0..1) to a target
+    // scroll position and a single rAF loop eases the window toward it. It does
+    // not depend on matching word lists or per-word span geometry, so it can't
+    // get stuck, and the continuous easing scrolls smoothly on iOS Safari.
     useEffect(() => {
-      if (status !== "ready" || !fractionDriven) return
+      if (status !== "ready" || !fractionDriven) {
+        scrollTargetRef.current = null
+        return
+      }
       const container = containerRef.current
       if (!container) return
-      // Don't fight a user who just scrolled manually.
-      if (Date.now() - lastManualScroll.current <= 1500) return
 
       const frac = Math.min(1, Math.max(0, scrollFraction as number))
-      // Ensure the target page is rendered so its real height is known.
+      // Ensure the target pages are rendered so real heights are known.
       const total = pdfDocRef.current?.numPages ?? numPages
       const approxPage = Math.min(total, Math.floor(frac * total) + 1)
       renderPage(approxPage)
@@ -479,12 +487,38 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         containerTop + frac * container.offsetHeight - window.innerHeight * 0.32
       const maxTop =
         document.documentElement.scrollHeight - window.innerHeight
-      const top = Math.max(0, Math.min(target, maxTop))
-      if (Math.abs(top - window.scrollY) > 6) {
-        window.scrollTo({ top, behavior: "smooth" })
+      scrollTargetRef.current = Math.max(0, Math.min(target, maxTop))
+
+      // Kick the easing loop if it isn't already running.
+      if (rafRef.current == null) {
+        const step = () => {
+          const goal = scrollTargetRef.current
+          // Stop the loop if there's no goal or the user just scrolled.
+          if (goal == null || Date.now() - lastManualScroll.current <= 1500) {
+            rafRef.current = null
+            return
+          }
+          const current = window.scrollY
+          const delta = goal - current
+          if (Math.abs(delta) <= 1.5) {
+            rafRef.current = null
+            return
+          }
+          // Ease ~12% of the remaining distance per frame for a smooth glide.
+          window.scrollTo(0, current + delta * 0.12)
+          rafRef.current = requestAnimationFrame(step)
+        }
+        rafRef.current = requestAnimationFrame(step)
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollFraction, status, fractionDriven])
+
+    // Cancel any pending scroll animation on unmount.
+    useEffect(() => {
+      return () => {
+        if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      }
+    }, [])
 
     // Track manual scrolling to avoid fighting the user.
     useEffect(() => {
