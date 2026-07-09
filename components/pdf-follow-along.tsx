@@ -327,7 +327,7 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
             }
           }
 
-          await page.render({ canvas, canvasContext: ctx, viewport }).promise
+          await page.render({ canvasContext: ctx, viewport }).promise
           host.innerHTML = ""
           host.appendChild(canvas)
           host.appendChild(layer)
