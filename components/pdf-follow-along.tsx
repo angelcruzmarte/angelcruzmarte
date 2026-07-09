@@ -460,13 +460,18 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeWord, status])
 
-    // ---- Robust follow-along scroll driven by playback fraction -----------
-    // This is the primary "read along through the whole document" engine for
-    // the premium voice: it maps overall audio progress (0..1) to a target
-    // scroll position and a single rAF loop eases the window toward it. It does
-    // not depend on matching word lists or per-word span geometry, so it can't
-    // get stuck, and the continuous easing scrolls smoothly on iOS Safari.
+    // ---- Robust follow-along scroll ---------------------------------------
+    // The primary "read along through the whole document" engine for the
+    // premium voice. It scrolls to the ACTUAL page/word currently being read
+    // (the PDF text layer knows each word's real page), NOT a uniform document
+    // -height fraction. That distinction matters: word-sparse pages (e.g. an
+    // ornate cover with ~10 words) would otherwise map a tiny word-fraction to
+    // the top of the document and keep the view pinned to page 1. A single rAF
+    // loop eases the window toward the target, which scrolls smoothly on iOS.
     useEffect(() => {
+      // `fractionDriven` doubles as the "premium voice is actively playing"
+      // gate (the parent passes -1 when idle/paused). When idle, clear the
+      // target so we never yank the user back to the top.
       if (status !== "ready" || !fractionDriven) {
         scrollTargetRef.current = null
         return
@@ -474,17 +479,35 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       const container = containerRef.current
       if (!container) return
 
-      const frac = Math.min(1, Math.max(0, scrollFraction as number))
-      // Ensure the target pages are rendered so real heights are known.
       const total = pdfDocRef.current?.numPages ?? numPages
-      const approxPage = Math.min(total, Math.floor(frac * total) + 1)
-      renderPage(approxPage)
-      if (approxPage + 1 <= total) renderPage(approxPage + 1)
+      const idx = activeWordRef.current
+      const word = wordsRef.current[idx]
 
-      const containerTop =
-        container.getBoundingClientRect().top + window.scrollY
-      const target =
-        containerTop + frac * container.offsetHeight - window.innerHeight * 0.32
+      // Figure out the target page: prefer the real page of the active word;
+      // fall back to a uniform fraction only if the word list isn't ready yet.
+      let targetPage: number
+      if (word) {
+        targetPage = word.page
+      } else {
+        const frac = Math.min(1, Math.max(0, scrollFraction as number))
+        targetPage = Math.min(total, Math.floor(frac * total) + 1)
+      }
+      // Ensure the target page (and the next) are rendered for real heights.
+      renderPage(targetPage)
+      if (targetPage + 1 <= total) renderPage(targetPage + 1)
+
+      // Aim at the exact word span when available, otherwise the top of the
+      // target page's host element (placeholders are full-size, so their
+      // position is accurate even before the canvas renders).
+      const span = spanMap.current.get(idx)
+      const host = container.querySelector<HTMLElement>(
+        `[data-page="${targetPage}"]`,
+      )
+      const aimEl = span ?? host
+      if (!aimEl) return
+      const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
+      // Keep the reading line ~35% down the viewport (Speechify-style).
+      const target = aimTop - window.innerHeight * 0.35
       const maxTop =
         document.documentElement.scrollHeight - window.innerHeight
       scrollTargetRef.current = Math.max(0, Math.min(target, maxTop))
@@ -517,7 +540,7 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         rafRef.current = requestAnimationFrame(step)
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scrollFraction, status, fractionDriven])
+    }, [activeWord, scrollFraction, status, fractionDriven])
 
     // Cancel any pending scroll animation on unmount.
     useEffect(() => {

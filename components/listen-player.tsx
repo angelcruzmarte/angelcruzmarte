@@ -93,8 +93,6 @@ export function ListenPlayer({
   const [pdfText, setPdfText] = useState<string | null>(null)
   const [pdfWordCount, setPdfWordCount] = useState(0)
   const [pdfFailed, setPdfFailed] = useState(false)
-  // Temporary diagnostic: the exact reason the page renderer fell back.
-  const [pdfErr, setPdfErr] = useState<string | null>(null)
   const [pdfPage, setPdfPage] = useState({ current: 1, total: 0 })
   // Premium AI narration reports an approximate word position we map by fraction.
   const [premiumPos, setPremiumPos] = useState({ word: -1, total: 0 })
