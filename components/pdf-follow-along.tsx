@@ -491,6 +491,8 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
 
       // Kick the easing loop if it isn't already running.
       if (rafRef.current == null) {
+        const scroller =
+          document.scrollingElement || document.documentElement
         const step = () => {
           const goal = scrollTargetRef.current
           // Stop the loop if there's no goal or the user just scrolled.
@@ -498,14 +500,18 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
             rafRef.current = null
             return
           }
-          const current = window.scrollY
+          const current = window.scrollY || scroller.scrollTop
           const delta = goal - current
           if (Math.abs(delta) <= 1.5) {
             rafRef.current = null
             return
           }
           // Ease ~12% of the remaining distance per frame for a smooth glide.
-          window.scrollTo(0, current + delta * 0.12)
+          const next = current + delta * 0.12
+          // Use both APIs: window.scrollTo is standard, while assigning
+          // scrollTop directly is honored more reliably by iOS in-app browsers.
+          window.scrollTo(0, next)
+          scroller.scrollTop = next
           rafRef.current = requestAnimationFrame(step)
         }
         rafRef.current = requestAnimationFrame(step)
