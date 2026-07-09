@@ -98,6 +98,9 @@ export function ListenPlayer({
   const [pdfPage, setPdfPage] = useState({ current: 1, total: 0 })
   // Premium AI narration reports an approximate word position we map by fraction.
   const [premiumPos, setPremiumPos] = useState({ word: -1, total: 0 })
+  // Whether the premium AI voice is actively playing (gates auto-scroll so it
+  // never yanks the user back to the top when paused/idle).
+  const [premiumPlaying, setPremiumPlaying] = useState(false)
   const usePdfFollow = isPdf && !pdfFailed && Boolean(originalSrc)
   const pdfRef = useRef<PdfFollowAlongHandle>(null)
 
@@ -338,7 +341,7 @@ export function ListenPlayer({
   // engine. This guarantees the document scrolls through to the end as the
   // premium voice plays, even if the two word lists don't align perfectly.
   const premiumFraction =
-    premium && mode === "premium" && premiumPos.total > 0
+    premium && mode === "premium" && premiumPlaying && premiumPos.total > 0
       ? Math.min(1, premiumPos.word / premiumPos.total)
       : -1
 
@@ -407,6 +410,7 @@ export function ListenPlayer({
               immersive
               topSlot={aiTools}
               onActiveWord={(word, total) => setPremiumPos({ word, total })}
+              onPlayingChange={setPremiumPlaying}
             />
           </div>
         ) : (

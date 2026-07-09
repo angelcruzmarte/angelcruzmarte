@@ -57,6 +57,7 @@ export function PremiumNarration({
   immersive = false,
   topSlot,
   onActiveWord,
+  onPlayingChange,
 }: {
   text: string
   title: string
@@ -70,6 +71,8 @@ export function PremiumNarration({
   topSlot?: React.ReactNode
   /** Reports the approximate active word position for external follow-along. */
   onActiveWord?: (word: number, total: number) => void
+  /** Reports whether audio is actively playing, for external auto-scroll. */
+  onPlayingChange?: (playing: boolean) => void
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
@@ -154,6 +157,15 @@ export function PremiumNarration({
   useEffect(() => {
     onActiveWordRef.current?.(currentWord, words.length)
   }, [currentWord, words.length])
+
+  // Surface whether audio is actively playing so the external follow-along view
+  // only auto-scrolls during playback (and never yanks the user back to the top
+  // when paused/idle). Held in a ref to avoid retriggering on inline callbacks.
+  const onPlayingChangeRef = useRef(onPlayingChange)
+  onPlayingChangeRef.current = onPlayingChange
+  useEffect(() => {
+    onPlayingChangeRef.current?.(status === "playing")
+  }, [status])
 
   // Number of sections translated so far for the current language (for the note).
   const doneCount =
