@@ -1,7 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
-import { book, bookPurchase } from "@/lib/db/schema"
+import { book, bookFavorite, bookPurchase } from "@/lib/db/schema"
 import { fetchAndParseGutenberg, gutenbergCoverUrl } from "@/lib/gutenberg"
 import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
@@ -291,4 +291,174 @@ export async function getPersonalizedBooks() {
     return Number(b.featured) - Number(a.featured)
   })
   return { books: ranked, personalized: true }
+}
+
+// ----- Favorites (wishlist) -----
+
+/** Returns the set of book ids the current user has favorited. */
+export async function getFavoriteBookIds(): Promise<Set<number>> {
+  const user = await getCurrentUser()
+  if (!user) return new Set()
+  const rows = await db
+    .select({ bookId: bookFavorite.bookId })
+    .from(bookFavorite)
+    .where(eq(bookFavorite.userId, user.id))
+  return new Set(rows.map((r) => r.bookId))
+}
+
+/** Full favorited book rows for the current user, newest first. */
+export async function getFavoriteBooks() {
+  const user = await getCurrentUser()
+  if (!user) return []
+  const favs = await db
+    .select()
+    .from(bookFavorite)
+    .where(eq(bookFavorite.userId, user.id))
+    .orderBy(desc(bookFavorite.createdAt))
+  if (favs.length === 0) return []
+  const ids = favs.map((f) => f.bookId)
+  const books = await db.select().from(book).where(inArray(book.id, ids))
+  const byId = new Map(books.map((b) => [b.id, b]))
+  return favs
+    .map((f) => byId.get(f.bookId))
+    .filter((b): b is NonNullable<typeof b> => Boolean(b))
+}
+
+/** True if the current user has favorited the given book. */
+export async function isBookFavorited(bookId: number): Promise<boolean> {
+  const user = await getCurrentUser()
+  if (!user) return false
+  const [row] = await db
+    .select({ id: bookFavorite.id })
+    .from(bookFavorite)
+    .where(
+      and(
+        eq(bookFavorite.userId, user.id),
+        eq(bookFavorite.bookId, bookId),
+      ),
+    )
+    .limit(1)
+  return Boolean(row)
+}
+
+/** Adds or removes a book from the user's favorites. Returns the new state. */
+export async function toggleFavorite(bookId: number) {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to save favorites." }
+
+  const [existing] = await db
+    .select({ id: bookFavorite.id })
+    .from(bookFavorite)
+    .where(
+      and(
+        eq(bookFavorite.userId, user.id),
+        eq(bookFavorite.bookId, bookId),
+      ),
+    )
+    .limit(1)
+
+  if (existing) {
+    await db.delete(bookFavorite).where(eq(bookFavorite.id, existing.id))
+    revalidatePath("/app/books")
+    return { favorited: false }
+  }
+
+  await db
+    .insert(bookFavorite)
+    .values({ userId: user.id, bookId })
+    .onConflictDoNothing({
+      target: [bookFavorite.userId, bookFavorite.bookId],
+    })
+  revalidatePath("/app/books")
+  return { favorited: true }
+}
+
+// ----- Multi-book cart checkout -----
+
+/**
+ * Starts a single Stripe Checkout for multiple books at once. Prices are read
+ * from the catalog server-side; books the user already owns are skipped.
+ */
+export async function createCartCheckout(bookIds: number[]) {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to buy books." }
+
+  const uniqueIds = Array.from(
+    new Set(bookIds.filter((n) => Number.isFinite(n) && n > 0)),
+  )
+  if (uniqueIds.length === 0) return { error: "Your cart is empty." }
+
+  const rows = await db.select().from(book).where(inArray(book.id, uniqueIds))
+  const ownedIds = await getOwnedBookIds()
+  const toBuy = rows.filter((b) => !ownedIds.has(b.id))
+
+  if (toBuy.length === 0) {
+    // Everything in the cart is already owned — nothing to charge.
+    return { url: `${getBaseUrl()}/app/library`, alreadyOwned: true }
+  }
+
+  const baseUrl = getBaseUrl()
+  const idsCsv = toBuy.map((b) => b.id).join(",")
+  const checkout = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer_email: user.email,
+    line_items: toBuy.map((b) => ({
+      quantity: 1,
+      price_data: {
+        currency: "usd",
+        unit_amount: b.priceInCents,
+        product_data: { name: b.title, description: `by ${b.author}` },
+      },
+    })),
+    metadata: { userId: user.id, bookIds: idsCsv, kind: "book-cart" },
+    payment_intent_data: {
+      metadata: { userId: user.id, bookIds: idsCsv, kind: "book-cart" },
+    },
+    success_url: `${baseUrl}/app/books?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/app/books?checkout=canceled`,
+  })
+
+  if (!checkout.url) return { error: "Could not start checkout. Try again." }
+  return { url: checkout.url }
+}
+
+/**
+ * Grants ownership of every book in a paid cart session (idempotent). Called
+ * from the webhook and, as a fallback, after the success redirect.
+ */
+export async function grantCartPurchase(
+  userId: string,
+  bookIds: number[],
+  stripeSessionId?: string,
+) {
+  for (const bookId of bookIds) {
+    if (Number.isFinite(bookId) && bookId > 0) {
+      await grantBookPurchase(userId, bookId, stripeSessionId)
+    }
+  }
+}
+
+/** Fallback reconciliation after a cart checkout redirect. */
+export async function confirmCartCheckout(sessionId: string) {
+  const user = await getCurrentUser()
+  if (!user) return { owned: false }
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    const paid =
+      session.payment_status === "paid" || session.status === "complete"
+    const belongsToUser = session.metadata?.userId === user.id
+    const ids = (session.metadata?.bookIds ?? "")
+      .split(",")
+      .map((s) => Number(s))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    if (paid && belongsToUser && ids.length > 0) {
+      await grantCartPurchase(user.id, ids, sessionId)
+      revalidatePath("/app/library")
+      revalidatePath("/app/books")
+      return { owned: true, bookIds: ids }
+    }
+  } catch (error) {
+    console.error("[v0] confirmCartCheckout failed:", error)
+  }
+  return { owned: false }
 }

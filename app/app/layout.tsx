@@ -3,6 +3,8 @@ import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AppTabBar } from "@/components/app-tab-bar"
 import { PlayerProvider } from "@/components/player-provider"
+import { CartProvider } from "@/components/cart-provider"
+import { CartDrawer } from "@/components/cart-drawer"
 import { MiniPlayer } from "@/components/mini-player"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +27,7 @@ export default async function AppLayout({
 
   return (
     <PlayerProvider>
+    <CartProvider>
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
         <Link href="/app" className="flex items-center gap-2">
@@ -64,7 +67,9 @@ export default async function AppLayout({
 
       <MiniPlayer />
       <AppTabBar />
+      <CartDrawer />
     </div>
+    </CartProvider>
     </PlayerProvider>
   )
 }

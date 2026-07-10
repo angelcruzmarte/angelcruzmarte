@@ -167,6 +167,22 @@ export const bookPurchase = pgTable(
   }),
 )
 
+// Per-user favorited (wishlisted) books.
+export const bookFavorite = pgTable(
+  "book_favorite",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    bookId: integer("bookId")
+      .notNull()
+      .references(() => book.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserBookFav: unique().on(t.userId, t.bookId),
+  }),
+)
+
 // Per-user daily aggregate of listening time (seconds) and words listened.
 export const listeningStat = pgTable(
   "listening_stat",
@@ -191,3 +207,4 @@ export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
 export type BookPurchase = typeof bookPurchase.$inferSelect
+export type BookFavorite = typeof bookFavorite.$inferSelect

@@ -1,4 +1,4 @@
-import { grantBookPurchase } from "@/app/actions/books"
+import { grantBookPurchase, grantCartPurchase } from "@/app/actions/books"
 import { db } from "@/lib/db"
 import { user as userTable } from "@/lib/db/schema"
 import { stripe } from "@/lib/stripe"
@@ -72,6 +72,18 @@ export async function POST(req: Request) {
             Number(session.metadata.bookId),
             session.id,
           )
+        } else if (
+          session.metadata?.kind === "book-cart" &&
+          session.metadata?.userId &&
+          session.metadata?.bookIds &&
+          (session.payment_status === "paid" || session.status === "complete")
+        ) {
+          // Multi-book cart purchase — grant lifetime ownership of each book.
+          const ids = session.metadata.bookIds
+            .split(",")
+            .map((s) => Number(s))
+            .filter((n) => Number.isFinite(n) && n > 0)
+          await grantCartPurchase(session.metadata.userId, ids, session.id)
         }
         break
       }

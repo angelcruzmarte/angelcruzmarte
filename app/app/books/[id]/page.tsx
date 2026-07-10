@@ -4,11 +4,13 @@ import { ArrowLeft, BadgeCheck, Sparkles } from "lucide-react"
 import {
   confirmBookCheckout,
   getBook,
+  isBookFavorited,
   ownsBook,
 } from "@/app/actions/books"
 import { formatPrice } from "@/lib/plans"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
+import { FavoriteButton } from "@/components/favorite-button"
 import { ListenPlayer } from "@/components/listen-player"
 import { buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,7 +35,10 @@ export default async function BookDetailPage({
     await confirmBookCheckout(session_id)
   }
 
-  const owned = await ownsBook(bookId)
+  const [owned, favorited] = await Promise.all([
+    ownsBook(bookId),
+    isBookFavorited(bookId),
+  ])
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -48,9 +53,14 @@ export default async function BookDetailPage({
       <div className="flex gap-4">
         <BookCover book={book} className="w-28 shrink-0" />
         <div className="min-w-0">
-          <Badge variant="secondary" className="mb-2">
-            {book.category}
-          </Badge>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <Badge variant="secondary">{book.category}</Badge>
+            <FavoriteButton
+              bookId={book.id}
+              initialFavorited={favorited}
+              className="h-9 w-9 border border-border bg-card"
+            />
+          </div>
           <h1 className="text-2xl font-bold leading-tight text-balance">
             {book.title}
           </h1>
