@@ -10,6 +10,7 @@ import {
 import { formatPrice } from "@/lib/plans"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
+import { BuyElsewhereButton } from "@/components/buy-elsewhere-button"
 import { FavoriteButton } from "@/components/favorite-button"
 import { ListenPlayer } from "@/components/listen-player"
 import { buttonVariants } from "@/components/ui/button"
@@ -81,6 +82,13 @@ export default async function BookDetailPage({
             owned={owned}
             className="mt-3 gap-2"
           />
+          {!owned && (
+            <BuyElsewhereButton
+              title={book.title}
+              author={book.author}
+              className="mt-2 w-full sm:w-auto"
+            />
+          )}
         </div>
       </div>
 
