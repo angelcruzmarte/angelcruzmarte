@@ -90,8 +90,8 @@ function ToolSheet({
         onClick={onClose}
         className="absolute inset-0 bg-foreground/40 backdrop-blur-sm"
       />
-      <div className="relative z-10 max-h-[85vh] overflow-hidden rounded-t-3xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+      <div className="relative z-10 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <Button
             variant="ghost"
@@ -103,7 +103,7 @@ function ToolSheet({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="max-h-[calc(85vh-4rem)] overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
           {tool === "chat" && <ChatPanel text={text} />}
           {tool === "summary" && <SummaryPanel text={text} />}
           {tool === "podcast" && <PodcastPanel text={text} />}
@@ -137,10 +137,11 @@ function SummaryPanel({ text }: { text: string }) {
     ;(async () => {
       try {
         const r = await generateSummary(text)
-        if (!cancelled) setResult(r)
-      } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Something went wrong.")
+        if (cancelled) return
+        if (r.error) setError(r.error)
+        else setResult(r)
+      } catch {
+        if (!cancelled) setError("Something went wrong. Please try again.")
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -184,11 +185,12 @@ function QuizPanel({ text }: { text: string }) {
     let cancelled = false
     ;(async () => {
       try {
-        const q = await generateQuiz(text)
-        if (!cancelled) setQuestions(q)
-      } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Something went wrong.")
+        const r = await generateQuiz(text)
+        if (cancelled) return
+        if (r.error) setError(r.error)
+        else setQuestions(r.questions)
+      } catch {
+        if (!cancelled) setError("Something went wrong. Please try again.")
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -269,10 +271,11 @@ function PodcastPanel({ text }: { text: string }) {
     ;(async () => {
       try {
         const r = await generatePodcast(text)
-        if (!cancelled) setResult(r)
-      } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Something went wrong.")
+        if (cancelled) return
+        if (r.error) setError(r.error)
+        else setResult(r)
+      } catch {
+        if (!cancelled) setError("Something went wrong. Please try again.")
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -405,10 +408,11 @@ function ChatPanel({ text }: { text: string }) {
     setMessages((m) => [...m, { role: "user", content: q }])
     setLoading(true)
     try {
-      const answer = await askDocument(text, q)
-      setMessages((m) => [...m, { role: "assistant", content: answer }])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.")
+      const r = await askDocument(text, q)
+      if (r.error) setError(r.error)
+      else setMessages((m) => [...m, { role: "assistant", content: r.answer }])
+    } catch {
+      setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }

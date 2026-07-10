@@ -317,7 +317,10 @@ export function ListenPlayer({
   // Speechify-style immersive experience: the real document page is the hero
   // surface and a compact player + AI tools dock to the bottom of the screen.
   const immersive = hasOriginal && view === "original"
-  const aiTools = premium ? <ReaderAiTools text={content} /> : null
+  // Use the best-available text (client-extracted PDF text when ready, else the
+  // server-extracted content). Some documents have empty server `content` (the
+  // original was rendered client-side), which would make the AI tools fail.
+  const aiTools = premium ? <ReaderAiTools text={activeContent} /> : null
 
   // Which word to highlight on the rendered PDF pages.
   // - Device voice reads the PDF text directly, so currentWord maps 1:1.

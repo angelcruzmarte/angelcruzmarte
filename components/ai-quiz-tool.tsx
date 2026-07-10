@@ -21,9 +21,11 @@ export function AIQuizTool() {
     setQuestions(null)
     setAnswers({})
     try {
-      setQuestions(await generateQuiz(input))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.")
+      const r = await generateQuiz(input)
+      if (r.error) setError(r.error)
+      else setQuestions(r.questions)
+    } catch {
+      setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }

@@ -36,13 +36,6 @@ export default function Error({
           Go to the app
         </Link>
       </div>
-      {/* Temporary diagnostic: show the exact error so we can fix the real
-          cause. Remove once resolved. */}
-      <pre className="mt-2 max-w-sm overflow-auto rounded-md bg-destructive/10 p-3 text-left text-[11px] leading-snug text-destructive whitespace-pre-wrap">
-        {error?.message || "no message"}
-        {error?.digest ? `\n[digest ${error.digest}]` : ""}
-        {error?.stack ? `\n\n${error.stack.split("\n").slice(0, 6).join("\n")}` : ""}
-      </pre>
     </main>
   )
 }

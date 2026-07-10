@@ -49,24 +49,48 @@ function clamp(text: string) {
 export interface SummaryResult {
   summary: string
   keyPoints: string[]
+  /** Present when the summary could not be produced (shown to the user). */
+  error?: string
+}
+
+/**
+ * Converts any AI/guard failure into a short, user-facing message. Thrown
+ * errors from server actions are sanitized to a generic "Server Components
+ * render" string in production, so tool actions must RETURN errors as data.
+ */
+function friendlyAiError(e: unknown, label: string): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  console.error(`[v0] ${label} failed:`, msg)
+  if (/sign in/i.test(msg)) return "Please sign in to use AI features."
+  if (/subscription/i.test(msg))
+    return "An active subscription is required to use AI features."
+  if (/text first|provide some text/i.test(msg))
+    return "We couldn't read any text from this document yet. Give it a moment after it opens, then try again."
+  if (/rate|quota|429|overloaded|capacity/i.test(msg))
+    return "The AI is busy right now. Please try again in a minute."
+  return "Something went wrong generating this. Please try again."
 }
 
 export async function generateSummary(input: string): Promise<SummaryResult> {
-  await requirePremium()
-  const text = clamp(input)
-  const { object } = await generateObject({
-    model: MODEL,
-    schema: z.object({
-      summary: z
-        .string()
-        .describe("A concise 2-3 sentence summary of the text."),
-      keyPoints: z
-        .array(z.string())
-        .describe("3 to 6 short bullet-point takeaways."),
-    }),
-    prompt: `Summarize the following text. Provide a short summary and the key takeaways.\n\n${text}`,
-  })
-  return object
+  try {
+    await requirePremium()
+    const text = clamp(input)
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: z.object({
+        summary: z
+          .string()
+          .describe("A concise 2-3 sentence summary of the text."),
+        keyPoints: z
+          .array(z.string())
+          .describe("3 to 6 short bullet-point takeaways."),
+      }),
+      prompt: `Summarize the following text. Provide a short summary and the key takeaways.\n\n${text}`,
+    })
+    return object
+  } catch (e) {
+    return { summary: "", keyPoints: [], error: friendlyAiError(e, "generateSummary") }
+  }
 }
 
 export interface QuizQuestion {
@@ -76,33 +100,42 @@ export interface QuizQuestion {
   explanation: string
 }
 
-export async function generateQuiz(input: string): Promise<QuizQuestion[]> {
-  await requirePremium()
-  const text = clamp(input)
-  const { object } = await generateObject({
-    model: MODEL,
-    schema: z.object({
-      questions: z
-        .array(
-          z.object({
-            question: z.string(),
-            options: z
-              .array(z.string())
-              .describe("Exactly 4 answer choices."),
-            correctIndex: z
-              .number()
-              .int()
-              .describe("0-based index of the correct option."),
-            explanation: z
-              .string()
-              .describe("A one-sentence explanation of the answer."),
-          }),
-        )
-        .describe("4 to 6 multiple-choice questions."),
-    }),
-    prompt: `Create a multiple-choice quiz that tests comprehension of the following text. Each question must have exactly 4 options with one correct answer.\n\n${text}`,
-  })
-  return object.questions
+export interface QuizResult {
+  questions: QuizQuestion[]
+  error?: string
+}
+
+export async function generateQuiz(input: string): Promise<QuizResult> {
+  try {
+    await requirePremium()
+    const text = clamp(input)
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: z.object({
+        questions: z
+          .array(
+            z.object({
+              question: z.string(),
+              options: z
+                .array(z.string())
+                .describe("Exactly 4 answer choices."),
+              correctIndex: z
+                .number()
+                .int()
+                .describe("0-based index of the correct option."),
+              explanation: z
+                .string()
+                .describe("A one-sentence explanation of the answer."),
+            }),
+          )
+          .describe("4 to 6 multiple-choice questions."),
+      }),
+      prompt: `Create a multiple-choice quiz that tests comprehension of the following text. Each question must have exactly 4 options with one correct answer.\n\n${text}`,
+    })
+    return { questions: object.questions }
+  } catch (e) {
+    return { questions: [], error: friendlyAiError(e, "generateQuiz") }
+  }
 }
 
 export interface PodcastSegment {
@@ -113,31 +146,36 @@ export interface PodcastSegment {
 export interface PodcastResult {
   title: string
   segments: PodcastSegment[]
+  error?: string
 }
 
 export async function generatePodcast(input: string): Promise<PodcastResult> {
-  await requirePremium()
-  const text = clamp(input)
-  const { object } = await generateObject({
-    model: MODEL,
-    schema: z.object({
-      title: z.string().describe("A catchy episode title."),
-      segments: z
-        .array(
-          z.object({
-            speaker: z
-              .string()
-              .describe('Either "Host" or "Guest".'),
-            line: z.string().describe("What this speaker says."),
-          }),
-        )
-        .describe(
-          "A natural back-and-forth conversation of 8 to 14 segments between Host and Guest discussing the text.",
-        ),
-    }),
-    prompt: `Turn the following text into an engaging two-person podcast conversation between a Host and a Guest. Keep it lively, insightful, and faithful to the source.\n\n${text}`,
-  })
-  return object
+  try {
+    await requirePremium()
+    const text = clamp(input)
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: z.object({
+        title: z.string().describe("A catchy episode title."),
+        segments: z
+          .array(
+            z.object({
+              speaker: z
+                .string()
+                .describe('Either "Host" or "Guest".'),
+              line: z.string().describe("What this speaker says."),
+            }),
+          )
+          .describe(
+            "A natural back-and-forth conversation of 8 to 14 segments between Host and Guest discussing the text.",
+          ),
+      }),
+      prompt: `Turn the following text into an engaging two-person podcast conversation between a Host and a Guest. Keep it lively, insightful, and faithful to the source.\n\n${text}`,
+    })
+    return object
+  } catch (e) {
+    return { title: "", segments: [], error: friendlyAiError(e, "generatePodcast") }
+  }
 }
 
 export interface TranslationResult {
@@ -330,24 +368,33 @@ export async function extractTextFromImage(
  * Used by the in-reader "Chat" tool. Keeps answers concise and faithful to the
  * provided context, and says so when the answer isn't in the document.
  */
+export interface ChatResult {
+  answer: string
+  error?: string
+}
+
 export async function askDocument(
   context: string,
   question: string,
-): Promise<string> {
-  await requirePremium()
-  const q = (question ?? "").trim()
-  if (!q) throw new Error("Please enter a question.")
-  const ctx = (context ?? "").trim().slice(0, MAX_INPUT)
-  const { text } = await generateText({
-    model: MODEL,
-    prompt:
-      "You are a helpful reading assistant. Answer the user's question using " +
-      "the document below as your primary source. Be concise and clear. If the " +
-      "answer isn't in the document, say so briefly and answer from general " +
-      "knowledge if you can.\n\n" +
-      `DOCUMENT:\n${ctx}\n\nQUESTION: ${q}`,
-  })
-  return text.trim()
+): Promise<ChatResult> {
+  try {
+    await requirePremium()
+    const q = (question ?? "").trim()
+    if (!q) return { answer: "", error: "Please enter a question." }
+    const ctx = (context ?? "").trim().slice(0, MAX_INPUT)
+    const { text } = await generateText({
+      model: MODEL,
+      prompt:
+        "You are a helpful reading assistant. Answer the user's question using " +
+        "the document below as your primary source. Be concise and clear. If the " +
+        "answer isn't in the document, say so briefly and answer from general " +
+        "knowledge if you can.\n\n" +
+        `DOCUMENT:\n${ctx}\n\nQUESTION: ${q}`,
+    })
+    return { answer: text.trim() }
+  } catch (e) {
+    return { answer: "", error: friendlyAiError(e, "askDocument") }
+  }
 }
 
 /** Quick free-form generation for the "Type anything" box on Home. */
