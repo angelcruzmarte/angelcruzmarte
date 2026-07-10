@@ -22,6 +22,41 @@ import { useCart, type CartItem } from "@/components/cart-provider"
 import { formatPrice } from "@/lib/plans"
 import { cn } from "@/lib/utils"
 
+// Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
+// Children's). Categories not listed here are appended alphabetically after.
+const CATEGORY_ORDER = [
+  // Fiction
+  "Mystery & Detective",
+  "Science Fiction",
+  "Fantasy",
+  "Horror",
+  "Adventure",
+  "Historical Fiction",
+  "Romance",
+  "Thriller & Suspense",
+  "Short Stories",
+  "Classics",
+  "Fiction",
+  "Poetry",
+  // Nonfiction
+  "Biography & Memoir",
+  "History",
+  "Philosophy",
+  "Psychology",
+  "Politics",
+  "Religion & Spirituality",
+  "Science",
+  "Mathematics",
+  "Economics",
+  "Self-Help",
+  "Travel",
+  "Nature & Environment",
+  "Cooking & Recipes",
+  // Children's
+  "Children's Fiction",
+  "Fairy Tales",
+]
+
 // A few pleasant cover colors for uploaded books (which have no artwork).
 const UPLOAD_COLORS = [
   "#3b3f8f",
@@ -75,8 +110,17 @@ export function BooksStore({
     if (featured.length > 0) {
       result.push({ title: "Featured", books: featured })
     }
-    for (const [category, list] of byCategory) {
-      result.push({ title: category, books: list })
+    // Order categories by the curated list, then any extras alphabetically.
+    const categories = Array.from(byCategory.keys()).sort((a, b) => {
+      const ia = CATEGORY_ORDER.indexOf(a)
+      const ib = CATEGORY_ORDER.indexOf(b)
+      if (ia !== -1 && ib !== -1) return ia - ib
+      if (ia !== -1) return -1
+      if (ib !== -1) return 1
+      return a.localeCompare(b)
+    })
+    for (const category of categories) {
+      result.push({ title: category, books: byCategory.get(category)! })
     }
     return result
   }, [books])
