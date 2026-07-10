@@ -57,6 +57,7 @@ export function PremiumNarration({
   showReader = true,
   immersive = false,
   topSlot,
+  paused = false,
   onActiveWord,
   onPlayingChange,
 }: {
@@ -70,6 +71,8 @@ export function PremiumNarration({
   immersive?: boolean
   /** Content rendered above the transport controls in immersive mode. */
   topSlot?: React.ReactNode
+  /** When true, force-pause playback (e.g. an AI tool panel is open). */
+  paused?: boolean
   /** Reports the approximate active word position for external follow-along. */
   onActiveWord?: (word: number, total: number) => void
   /** Reports whether audio is actively playing, for external auto-scroll. */
@@ -342,6 +345,16 @@ export function PremiumNarration({
   const handleEnded = useCallback(() => {
     void playChunk(index + 1)
   }, [index, playChunk])
+
+  // When an AI tool panel opens, force-pause narration so the two audio
+  // sources don't overlap. On close (`paused` back to false) we leave playback
+  // paused so the reader resumes intentionally with the Play button.
+  useEffect(() => {
+    if (!paused) return
+    const audio = audioRef.current
+    if (audio && !audio.paused) audio.pause()
+    setStatus((s) => (s === "playing" || s === "loading" ? "paused" : s))
+  }, [paused])
 
   // Approximate follow-along highlighting: map audio progress within the
   // current chunk onto its word range so the reader tracks and auto-scrolls.

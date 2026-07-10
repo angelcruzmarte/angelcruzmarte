@@ -35,31 +35,46 @@ const TOOLS: { id: Tool; label: string; Icon: typeof Sparkles }[] = [
 ]
 
 /**
- * Speechify-style AI tools row for the reader. Each chip opens a bottom sheet
- * that runs the corresponding AI action against the current document text.
+ * Speechify-style AI tools row for the reader. Each tab opens its own full
+ * panel that runs the corresponding AI action against the current document
+ * text. Opening a panel reports up via `onOpenChange` so the parent can pause
+ * narration; closing it returns to the reader.
  */
-export function ReaderAiTools({ text }: { text: string }) {
+export function ReaderAiTools({
+  text,
+  onOpenChange,
+}: {
+  text: string
+  onOpenChange?: (open: boolean) => void
+}) {
   const [active, setActive] = useState<Tool | null>(null)
+
+  function open(tool: Tool) {
+    setActive(tool)
+    onOpenChange?.(true)
+  }
+  function close() {
+    setActive(null)
+    onOpenChange?.(false)
+  }
 
   return (
     <>
-      <div className="flex items-center justify-around gap-1">
+      <div className="flex items-center justify-between gap-1">
         {TOOLS.map(({ id, label, Icon }) => (
           <button
             key={id}
             type="button"
-            onClick={() => setActive(id)}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+            onClick={() => open(id)}
+            className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
           >
-            <Icon className="h-4 w-4 text-primary" />
+            <Icon className="h-5 w-5 text-primary" />
             <span className="truncate">{label}</span>
           </button>
         ))}
       </div>
 
-      {active && (
-        <ToolSheet tool={active} text={text} onClose={() => setActive(null)} />
-      )}
+      {active && <ToolSheet tool={active} text={text} onClose={close} />}
     </>
   )
 }
@@ -83,32 +98,24 @@ function ToolSheet({
           : "Quiz"
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 bg-foreground/40 backdrop-blur-sm"
-      />
-      <div className="relative z-10 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full"
+          onClick={onClose}
+          aria-label="Close and return to reading"
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
           {tool === "chat" && <ChatPanel text={text} />}
           {tool === "summary" && <SummaryPanel text={text} />}
           {tool === "podcast" && <PodcastPanel text={text} />}
           {tool === "quiz" && <QuizPanel text={text} />}
-        </div>
       </div>
     </div>
   )
@@ -455,7 +462,7 @@ function ChatPanel({ text }: { text: string }) {
           e.preventDefault()
           void send()
         }}
-        className="sticky bottom-0 mt-3 flex items-center gap-2 bg-card pt-2"
+        className="sticky bottom-0 mt-3 flex items-center gap-2 bg-background pt-2"
       >
         <input
           value={input}

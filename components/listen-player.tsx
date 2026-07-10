@@ -99,6 +99,9 @@ export function ListenPlayer({
   // Whether the premium AI voice is actively playing (gates auto-scroll so it
   // never yanks the user back to the top when paused/idle).
   const [premiumPlaying, setPremiumPlaying] = useState(false)
+  // Whether an AI tool panel (Chat/Summary/Podcast/Quiz) is open. While open we
+  // pause narration; closing it returns to the reader.
+  const [toolOpen, setToolOpen] = useState(false)
   const usePdfFollow = isPdf && !pdfFailed && Boolean(originalSrc)
   const pdfRef = useRef<PdfFollowAlongHandle>(null)
 
@@ -320,7 +323,9 @@ export function ListenPlayer({
   // Use the best-available text (client-extracted PDF text when ready, else the
   // server-extracted content). Some documents have empty server `content` (the
   // original was rendered client-side), which would make the AI tools fail.
-  const aiTools = premium ? <ReaderAiTools text={activeContent} /> : null
+  const aiTools = premium ? (
+    <ReaderAiTools text={activeContent} onOpenChange={setToolOpen} />
+  ) : null
 
   // Which word to highlight on the rendered PDF pages.
   // - Device voice reads the PDF text directly, so currentWord maps 1:1.
@@ -410,6 +415,7 @@ export function ListenPlayer({
               showReader={false}
               immersive
               topSlot={aiTools}
+              paused={toolOpen}
               onActiveWord={(word, total) => setPremiumPos({ word, total })}
               onPlayingChange={setPremiumPlaying}
             />
