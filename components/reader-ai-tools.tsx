@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   AudioLines,
   Check,
@@ -97,8 +98,17 @@ function ToolSheet({
           ? "Podcast"
           : "Quiz"
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+  // Portal to <body> so the full-screen panel escapes the docked player card,
+  // whose `backdrop-blur` would otherwise become the containing block for this
+  // `position: fixed` element and clip it down to the small card.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+  if (!mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
         <h2 className="text-lg font-semibold">{title}</h2>
         <Button
@@ -111,13 +121,14 @@ function ToolSheet({
           <X className="h-5 w-5" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
-          {tool === "chat" && <ChatPanel text={text} />}
-          {tool === "summary" && <SummaryPanel text={text} />}
-          {tool === "podcast" && <PodcastPanel text={text} />}
-          {tool === "quiz" && <QuizPanel text={text} />}
+      <div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-5 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+        {tool === "chat" && <ChatPanel text={text} />}
+        {tool === "summary" && <SummaryPanel text={text} />}
+        {tool === "podcast" && <PodcastPanel text={text} />}
+        {tool === "quiz" && <QuizPanel text={text} />}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -426,7 +437,7 @@ function ChatPanel({ text }: { text: string }) {
   }
 
   return (
-    <div className="flex min-h-[40vh] flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex-1 space-y-3">
         {messages.length === 0 && !loading && (
           <p className="py-6 text-center text-sm text-muted-foreground">
