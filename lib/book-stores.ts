@@ -68,6 +68,18 @@ export const BOOK_STORES: BookStore[] = [
   },
 ]
 
+/**
+ * The single bookstore the app is connected to for one-tap buying (like
+ * Speechify). Bookshop.org carries essentially every in-print book, so users
+ * can buy any title without choosing a retailer.
+ */
+export function bookstoreUrl(title: string, author?: string | null) {
+  const query = encodeURIComponent(
+    [title, author].filter(Boolean).join(" ").trim(),
+  )
+  return `https://bookshop.org/search?keywords=${query}`
+}
+
 /** Returns store links for a specific book (title + author). */
 export function storeLinksFor(title: string, author: string) {
   const query = encodeURIComponent(

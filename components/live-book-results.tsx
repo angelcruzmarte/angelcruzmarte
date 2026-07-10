@@ -5,27 +5,15 @@ import { useRouter } from "next/navigation"
 import useSWRInfinite from "swr/infinite"
 import {
   BookOpen,
-  ChevronDown,
-  ExternalLink,
   Headphones,
-  Library,
   Loader2,
   Play,
   ShoppingCart,
   Upload,
 } from "lucide-react"
 import { addGutenbergBook } from "@/app/actions/books"
-import { storeLinksFor } from "@/lib/book-stores"
+import { bookstoreUrl } from "@/lib/book-stores"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 type StoreResult = {
   key: string
@@ -224,7 +212,7 @@ function LiveBookCard({ result }: { result: StoreResult }) {
           Add &amp; Listen
         </Button>
       ) : (
-        <BuyElsewhereMenu
+        <BuyControls
           title={result.title}
           author={result.author}
           importing={importing}
@@ -248,7 +236,7 @@ function LiveBookCard({ result }: { result: StoreResult }) {
   )
 }
 
-function BuyElsewhereMenu({
+function BuyControls({
   title,
   author,
   importing,
@@ -259,19 +247,19 @@ function BuyElsewhereMenu({
   importing: boolean
   onImport: () => void
 }) {
-  const links = storeLinksFor(title, author)
-  const buyLinks = links.filter((l) => l.kind === "buy")
-  const borrowLinks = links.filter((l) => l.kind === "borrow")
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
+    <div className="flex flex-col gap-1.5">
+      {/* One-tap buy from the connected bookstore (no store selection). */}
+      <Button
+        size="sm"
+        variant="secondary"
+        className="w-full gap-1.5"
+        disabled={importing}
         render={
-          <Button
-            size="sm"
-            variant="secondary"
-            className="w-full gap-1.5"
-            disabled={importing}
+          <a
+            href={bookstoreUrl(title, author)}
+            target="_blank"
+            rel="noopener noreferrer"
           />
         }
       >
@@ -280,45 +268,18 @@ function BuyElsewhereMenu({
         ) : (
           <ShoppingCart className="h-4 w-4" />
         )}
-        {importing ? "Importing…" : "Buy elsewhere"}
-        {!importing && <ChevronDown className="ml-auto h-4 w-4 opacity-70" />}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Buy from</DropdownMenuLabel>
-          {buyLinks.map((store) => (
-            <DropdownMenuItem
-              key={store.id}
-              render={<a href={store.url} target="_blank" rel="noreferrer" />}
-            >
-              <ExternalLink className="h-4 w-4" />
-              {store.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Borrow</DropdownMenuLabel>
-          {borrowLinks.map((store) => (
-            <DropdownMenuItem
-              key={store.id}
-              render={<a href={store.url} target="_blank" rel="noreferrer" />}
-            >
-              <Library className="h-4 w-4" />
-              {store.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Already bought it?</DropdownMenuLabel>
-          <DropdownMenuItem onClick={onImport}>
-            <Upload className="h-4 w-4" />
-            Import your file to listen
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        {importing ? "Importing…" : "Buy"}
+      </Button>
+      <button
+        type="button"
+        onClick={onImport}
+        disabled={importing}
+        className="flex items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Upload className="h-3 w-3" />
+        Already own it? Import file
+      </button>
+    </div>
   )
 }
 

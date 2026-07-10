@@ -16,6 +16,7 @@ import type { Book, Document } from "@/lib/db/schema"
 import { BookCover } from "@/components/book-cover"
 import { FavoriteButton } from "@/components/favorite-button"
 import { LiveBookResults } from "@/components/live-book-results"
+import type { Suggestion } from "@/app/api/store/suggest/route"
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
@@ -142,6 +143,40 @@ export function BooksStore({
   }, [query])
   const searching = debounced.length > 0
 
+  // Smart autocomplete: fetch title/author suggestions as the user types.
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setSuggestions([])
+      return
+    }
+    let cancelled = false
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/store/suggest?q=${encodeURIComponent(q)}`,
+        )
+        const data = (await res.json()) as { suggestions?: Suggestion[] }
+        if (!cancelled) setSuggestions(data.suggestions ?? [])
+      } catch {
+        if (!cancelled) setSuggestions([])
+      }
+    }, 180)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [query])
+
+  function pickSuggestion(s: Suggestion) {
+    const value = `${s.title} ${s.author}`.trim()
+    setQuery(value)
+    setDebounced(value)
+    setSuggestOpen(false)
+  }
+
   return (
     <div className="space-y-7">
       <CartReturnHandler />
@@ -211,20 +246,81 @@ export function BooksStore({
             type="search"
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setSuggestOpen(true)
+            }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setSuggestOpen(false)
+            }}
             placeholder="Search millions of books by title or author…"
             aria-label="Search the book store"
+            role="combobox"
+            aria-expanded={suggestOpen && suggestions.length > 0}
+            aria-autocomplete="list"
             className="h-11 w-full rounded-xl border border-border bg-card pl-9 pr-9 text-sm outline-none ring-primary/30 transition focus:ring-2"
           />
           {query && (
             <button
               type="button"
-              onClick={() => setQuery("")}
+              onClick={() => {
+                setQuery("")
+                setSuggestions([])
+              }}
               aria-label="Clear search"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
+          )}
+
+          {/* Autocomplete suggestions */}
+          {suggestOpen && suggestions.length > 0 && (
+            <ul className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+              {suggestions.map((s, i) => (
+                <li key={`${s.title}-${i}`}>
+                  <button
+                    type="button"
+                    // onMouseDown so it fires before the input's onBlur.
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      pickSuggestion(s)
+                    }}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                  >
+                    {s.coverUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={s.coverUrl || "/placeholder.svg"}
+                        alt=""
+                        aria-hidden
+                        className="h-10 w-7 shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-10 w-7 shrink-0 items-center justify-center rounded bg-secondary">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {s.title}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {s.author}
+                      </span>
+                    </span>
+                    {s.listenable && (
+                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        <Headphones className="h-3 w-3" />
+                        Listen
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
