@@ -141,8 +141,3 @@ export async function ensureStripeCoupon(
     return null
   }
 }
-
-/** Whether a promotion applies to the given plan id. */
-export function promotionAppliesTo(promo: Promotion, planId: string): boolean {
-  return promo.planScope === "all" || promo.planScope === planId
-}

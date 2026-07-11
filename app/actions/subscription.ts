@@ -9,7 +9,6 @@ import { getBaseUrl } from "@/lib/urls"
 import {
   ensureStripeCoupon,
   getActivePromotion,
-  promotionAppliesTo,
 } from "@/app/actions/promotions"
 import { eq } from "drizzle-orm"
 
@@ -98,7 +97,10 @@ export async function createSubscriptionCheckout(planId: string) {
   // Apply the currently-active promotion (if any) as a real Stripe discount.
   let discounts: { coupon: string }[] | undefined
   const activePromo = await getActivePromotion()
-  if (activePromo && promotionAppliesTo(activePromo, plan.id)) {
+  const promoApplies =
+    activePromo &&
+    (activePromo.planScope === "all" || activePromo.planScope === plan.id)
+  if (activePromo && promoApplies) {
     const couponId = await ensureStripeCoupon(activePromo)
     if (couponId) discounts = [{ coupon: couponId }]
   }
