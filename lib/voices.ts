@@ -20,7 +20,15 @@ export type PremiumVoice = {
   gender: "male" | "female" | "neutral"
   image: string
   category: string
-  /** Underlying OpenAI TTS engine id. Defaults to `id` when omitted. */
+  /**
+   * TTS provider. Defaults to "openai". "elevenlabs" personas are synthesized
+   * with the ElevenLabs API (ultra-realistic) and require ELEVENLABS_API_KEY.
+   */
+  provider?: "openai" | "elevenlabs"
+  /**
+   * Underlying engine id sent to the provider. For OpenAI this is the voice id
+   * (defaults to `id`); for ElevenLabs this is the ElevenLabs `voice_id`.
+   */
   engine?: string
   /** Style-steering instructions (gpt-4o-mini-tts only). */
   instructions?: string

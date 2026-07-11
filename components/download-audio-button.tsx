@@ -17,6 +17,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select"
 import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
+import { VoiceAvatar } from "@/components/voice-avatar"
 
 function base64ToBlobUrl(base64: string, mediaType: string) {
   const byteChars = atob(base64)
@@ -113,10 +114,11 @@ export function DownloadAudioButton({
           <Select value={voice} onValueChange={(v) => setVoice((v as string) ?? PREMIUM_VOICES[0].id)}>
             <SelectTrigger className="h-11 w-full gap-2">
               <span className="flex min-w-0 items-center gap-2.5">
-                <img
-                  src={selectedVoice.image || "/placeholder.svg"}
+                <VoiceAvatar
+                  name={selectedVoice.name}
+                  image={selectedVoice.image}
+                  size={28}
                   alt=""
-                  className="h-7 w-7 shrink-0 rounded-full object-cover"
                 />
                 <span className="flex min-w-0 flex-col text-left leading-tight">
                   <span className="truncate text-sm font-medium">
@@ -132,11 +134,7 @@ export function DownloadAudioButton({
               {PREMIUM_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id} className="py-2">
                   <span className="flex items-center gap-2.5">
-                    <img
-                      src={v.image || "/placeholder.svg"}
-                      alt=""
-                      className="h-9 w-9 shrink-0 rounded-full object-cover"
-                    />
+                    <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
                     <span className="flex flex-col leading-tight">
                       <span className="text-sm font-medium">{v.name}</span>
                       <span className="text-xs text-muted-foreground">

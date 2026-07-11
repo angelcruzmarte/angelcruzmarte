@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ReaderPanel } from "@/components/reader-panel"
+import { VoiceAvatar } from "@/components/voice-avatar"
 import { cn } from "@/lib/utils"
 import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
@@ -474,10 +475,12 @@ export function PremiumNarration({
               aria-label={`Voice: ${selectedVoice.name}. Tap to change.`}
               className="group relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <img
-                src={selectedVoice.image || "/placeholder.svg"}
-                alt={`${selectedVoice.name} voice`}
-                className="h-11 w-11 rounded-full object-cover ring-2 ring-primary/20 transition group-hover:ring-primary/50"
+              <VoiceAvatar
+                name={selectedVoice.name}
+                image={selectedVoice.image}
+                size={44}
+                ring
+                className="transition group-hover:ring-primary/50"
               />
               <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
                 <ChevronDown className="h-2.5 w-2.5" />
@@ -496,11 +499,7 @@ export function PremiumNarration({
                   onClick={() => handleVoiceChange(v.id)}
                   className="gap-2.5 py-2"
                 >
-                  <img
-                    src={v.image || "/placeholder.svg"}
-                    alt=""
-                    className="h-9 w-9 shrink-0 rounded-full object-cover"
-                  />
+                  <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
                   <span className="flex min-w-0 flex-1 flex-col leading-tight">
                     <span className="text-sm font-medium">{v.name}</span>
                     <span className="truncate text-xs text-muted-foreground">
@@ -693,10 +692,11 @@ export function PremiumNarration({
           <Select value={voice} onValueChange={handleVoiceChange}>
             <SelectTrigger className="h-11 w-[184px] gap-2" aria-label="Voice">
               <span className="flex min-w-0 items-center gap-2.5">
-                <img
-                  src={selectedVoice.image || "/placeholder.svg"}
+                <VoiceAvatar
+                  name={selectedVoice.name}
+                  image={selectedVoice.image}
+                  size={28}
                   alt=""
-                  className="h-7 w-7 shrink-0 rounded-full object-cover"
                 />
                 <span className="flex min-w-0 flex-col text-left leading-tight">
                   <span className="truncate text-sm font-medium">
@@ -712,11 +712,7 @@ export function PremiumNarration({
               {PREMIUM_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id} className="py-2">
                   <span className="flex items-center gap-2.5">
-                    <img
-                      src={v.image || "/placeholder.svg"}
-                      alt=""
-                      className="h-9 w-9 shrink-0 rounded-full object-cover"
-                    />
+                    <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
                     <span className="flex flex-col leading-tight">
                       <span className="text-sm font-medium">{v.name}</span>
                       <span className="text-xs text-muted-foreground">
@@ -805,10 +801,11 @@ export function PremiumNarration({
       {status !== "idle" && (
         <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
-            <img
-              src={selectedVoice.image || "/placeholder.svg"}
-              alt={`${selectedVoice.name} voice`}
-              className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-primary/20"
+            <VoiceAvatar
+              name={selectedVoice.name}
+              image={selectedVoice.image}
+              size={44}
+              ring
             />
             <Button
               onClick={handlePlayPause}
