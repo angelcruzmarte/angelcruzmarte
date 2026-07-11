@@ -5,7 +5,11 @@ import { head, put } from "@vercel/blob"
 import { chunkText } from "@/lib/chunk-text"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
-import { PREMIUM_VOICES, type PremiumVoiceId } from "@/lib/voices"
+import {
+  LEGACY_VOICE_IDS,
+  PREMIUM_VOICES,
+  type PremiumVoiceId,
+} from "@/lib/voices"
 
 const VALID_VOICES = new Set<string>(PREMIUM_VOICES.map((v) => v.id))
 // OpenAI TTS accepts up to ~4096 characters per request; stay safely under it.
@@ -13,11 +17,19 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
-// Premium quality first, with an automatic fallback. "tts-1-hd" gives the
-// clearest, richest audio, but it is throttled harder on the AI Gateway free
-// tier, so if it is rate-limited we fall back to the standard "tts-1" model,
-// which has far more headroom. This keeps playback instant instead of erroring.
-const TTS_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+// "gpt-4o-mini-tts" is the newest model and supports ALL 13 voices, so it is
+// the primary. The legacy "tts-1-hd"/"tts-1" models only support a 9-voice
+// subset but have more rate-limit headroom, so we use them as fallbacks — but
+// only for voices they actually support (see modelsForVoice).
+const MINI_MODEL = "openai/gpt-4o-mini-tts"
+const LEGACY_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+
+/** Ordered model fallback chain valid for the given voice. */
+function modelsForVoice(voice: PremiumVoiceId): string[] {
+  return LEGACY_VOICE_IDS.has(voice)
+    ? [MINI_MODEL, ...LEGACY_MODELS]
+    : [MINI_MODEL]
+}
 
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
@@ -46,9 +58,10 @@ async function synthWithRetry(
   voice: PremiumVoiceId,
 ): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
   let lastErr: unknown
-  for (let m = 0; m < TTS_MODELS.length; m++) {
-    const model = TTS_MODELS[m]
-    const isLastModel = m === TTS_MODELS.length - 1
+  const models = modelsForVoice(voice)
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m]
+    const isLastModel = m === models.length - 1
     // Give the fallback (standard) model more retries since it's our safety net.
     const tries = isLastModel ? 4 : 2
     for (let attempt = 0; attempt < tries; attempt++) {

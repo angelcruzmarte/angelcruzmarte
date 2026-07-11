@@ -1,7 +1,11 @@
 /**
  * Premium voices offered to subscribers, mapped to OpenAI TTS voice IDs. Each
- * has a persona (name + tagline) and a realistic portrait so the picker feels
- * like a curated voice library.
+ * has a persona (name + tagline), a gender hint, and a realistic portrait so
+ * the picker feels like a curated voice library.
+ *
+ * `legacy` marks voices supported by the older tts-1 / tts-1-hd models. Voices
+ * without it (ballad, verse, marin, cedar) require the gpt-4o-mini-tts model,
+ * which the speech action prefers and falls back from safely.
  */
 export const PREMIUM_VOICES = [
   {
@@ -9,48 +13,128 @@ export const PREMIUM_VOICES = [
     name: "Alloy",
     tagline: "Balanced Narrator",
     label: "Alloy — Balanced",
+    gender: "neutral",
     image: "/voices/alloy.png",
+    legacy: true,
   },
   {
     id: "nova",
     name: "Nova",
     tagline: "Warm Storyteller",
     label: "Nova — Warm",
+    gender: "female",
     image: "/voices/nova.png",
+    legacy: true,
   },
   {
     id: "shimmer",
     name: "Shimmer",
     tagline: "Bright & Upbeat",
     label: "Shimmer — Bright",
+    gender: "female",
     image: "/voices/shimmer.png",
+    legacy: true,
   },
   {
     id: "echo",
     name: "Echo",
     tagline: "Calm & Soothing",
     label: "Echo — Calm",
+    gender: "male",
     image: "/voices/echo.png",
+    legacy: true,
   },
   {
     id: "onyx",
     name: "Onyx",
     tagline: "Deep & Authoritative",
     label: "Onyx — Deep",
+    gender: "male",
     image: "/voices/onyx.png",
+    legacy: true,
   },
   {
     id: "fable",
     name: "Fable",
     tagline: "Expressive Performer",
     label: "Fable — Expressive",
+    gender: "neutral",
     image: "/voices/fable.png",
+    legacy: true,
+  },
+  {
+    id: "ash",
+    name: "Ash",
+    tagline: "Confident & Crisp",
+    label: "Ash — Confident",
+    gender: "male",
+    image: "/voices/ash.png",
+    legacy: true,
+  },
+  {
+    id: "coral",
+    name: "Coral",
+    tagline: "Friendly & Bright",
+    label: "Coral — Friendly",
+    gender: "female",
+    image: "/voices/coral.png",
+    legacy: true,
+  },
+  {
+    id: "sage",
+    name: "Sage",
+    tagline: "Wise & Measured",
+    label: "Sage — Wise",
+    gender: "female",
+    image: "/voices/sage.png",
+    legacy: true,
+  },
+  {
+    id: "ballad",
+    name: "Ballad",
+    tagline: "Smooth & Emotive",
+    label: "Ballad — Smooth",
+    gender: "male",
+    image: "/voices/ballad.png",
+    legacy: false,
+  },
+  {
+    id: "verse",
+    name: "Verse",
+    tagline: "Poetic & Dynamic",
+    label: "Verse — Poetic",
+    gender: "male",
+    image: "/voices/verse.png",
+    legacy: false,
+  },
+  {
+    id: "marin",
+    name: "Marin",
+    tagline: "Gentle & Clear",
+    label: "Marin — Gentle",
+    gender: "female",
+    image: "/voices/marin.png",
+    legacy: false,
+  },
+  {
+    id: "cedar",
+    name: "Cedar",
+    tagline: "Grounded & Rich",
+    label: "Cedar — Grounded",
+    gender: "male",
+    image: "/voices/cedar.png",
+    legacy: false,
   },
 ] as const
 
 export type PremiumVoiceId = (typeof PREMIUM_VOICES)[number]["id"]
 
 export type PremiumVoice = (typeof PREMIUM_VOICES)[number]
+
+/** Voice ids supported by the legacy tts-1 / tts-1-hd models. */
+export const LEGACY_VOICE_IDS = new Set<string>(
+  PREMIUM_VOICES.filter((v) => v.legacy).map((v) => v.id),
+)
 
 /** Look up a premium voice persona by id. */
 export function getPremiumVoice(id: string): PremiumVoice | undefined {

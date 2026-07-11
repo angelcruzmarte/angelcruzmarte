@@ -479,9 +479,12 @@ export function PremiumNarration({
                 <ChevronDown className="h-2.5 w-2.5" />
               </span>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent
+              align="start"
+              className="max-h-[min(60vh,26rem)] w-56 overflow-y-auto"
+            >
               <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
-                Voice
+                {PREMIUM_VOICES.length} voices
               </div>
               {PREMIUM_VOICES.map((v) => (
                 <DropdownMenuItem
@@ -701,7 +704,7 @@ export function PremiumNarration({
                 </span>
               </span>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[min(60vh,26rem)]">
               {PREMIUM_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id} className="py-2">
                   <span className="flex items-center gap-2.5">

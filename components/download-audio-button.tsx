@@ -128,7 +128,7 @@ export function DownloadAudioButton({
                 </span>
               </span>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[min(60vh,26rem)]">
               {PREMIUM_VOICES.map((v) => (
                 <SelectItem key={v.id} value={v.id} className="py-2">
                   <span className="flex items-center gap-2.5">
