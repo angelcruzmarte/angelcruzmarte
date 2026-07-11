@@ -7,10 +7,14 @@ import { PLANS, formatPrice } from "@/lib/plans"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
+type PromoInfo = { percentOff: number; planScope: string }
+
 export function SubscribePlans({
   trialEligible = false,
+  promo = null,
 }: {
   trialEligible?: boolean
+  promo?: PromoInfo | null
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -42,7 +46,14 @@ export function SubscribePlans({
   return (
     <div>
       <div className="grid gap-6 pt-3 sm:grid-cols-2">
-        {PLANS.map((plan) => (
+        {PLANS.map((plan) => {
+          const promoApplies =
+            promo &&
+            (promo.planScope === "all" || promo.planScope === plan.id)
+          const discounted = promoApplies
+            ? Math.round(plan.priceInCents * (1 - promo.percentOff / 100))
+            : null
+          return (
           <Card
             key={plan.id}
             className={
@@ -61,14 +72,24 @@ export function SubscribePlans({
               {plan.description}
             </p>
             <p className="mt-5 text-4xl font-semibold tracking-tight">
-              {formatPrice(plan.priceInCents)}
+              {discounted !== null && (
+                <span className="mr-2 align-middle text-xl font-normal text-muted-foreground line-through">
+                  {formatPrice(plan.priceInCents)}
+                </span>
+              )}
+              {formatPrice(discounted ?? plan.priceInCents)}
               <span className="text-base font-normal text-muted-foreground">
                 /{plan.interval}
               </span>
             </p>
+            {discounted !== null && (
+              <p className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                {promo!.percentOff}% off applied
+              </p>
+            )}
             {trialEligible && (
               <p className="mt-1.5 text-sm font-medium text-primary">
-                7 days free, then {formatPrice(plan.priceInCents)}/
+                7 days free, then {formatPrice(discounted ?? plan.priceInCents)}/
                 {plan.interval}
               </p>
             )}
@@ -94,7 +115,8 @@ export function SubscribePlans({
               {trialEligible ? "Start free trial" : "Subscribe"}
             </Button>
           </Card>
-        ))}
+          )
+        })}
       </div>
 
       {error && (

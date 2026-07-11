@@ -6,6 +6,11 @@ import { getPlan } from "@/lib/plans"
 import { getCurrentUser } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
+import {
+  ensureStripeCoupon,
+  getActivePromotion,
+  promotionAppliesTo,
+} from "@/app/actions/promotions"
 import { eq } from "drizzle-orm"
 
 /** Length of the one-time free trial, in days. */
@@ -90,11 +95,20 @@ export async function createSubscriptionCheckout(planId: string) {
     subscriptionData.trial_period_days = TRIAL_DAYS
   }
 
+  // Apply the currently-active promotion (if any) as a real Stripe discount.
+  let discounts: { coupon: string }[] | undefined
+  const activePromo = await getActivePromotion()
+  if (activePromo && promotionAppliesTo(activePromo, plan.id)) {
+    const couponId = await ensureStripeCoupon(activePromo)
+    if (couponId) discounts = [{ coupon: couponId }]
+  }
+
   const checkout = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     // Always collect a card, even for the trial, so it converts automatically.
     payment_method_collection: "always",
+    ...(discounts ? { discounts } : {}),
     line_items: [
       {
         quantity: 1,

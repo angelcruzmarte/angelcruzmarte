@@ -4,7 +4,14 @@ import { getRootDomain } from "@/lib/domains"
 
 // Admin-only top-level paths that map onto the /admin/* route tree when served
 // from the admin subdomain (so URLs stay clean, e.g. admin.voxyfi.com/finance).
-const ADMIN_SECTIONS = ["/finance", "/content", "/subscribers"]
+const ADMIN_SECTIONS = [
+  "/finance",
+  "/content",
+  "/subscribers",
+  "/users",
+  "/promotions",
+  "/funnel",
+]
 
 function isInternal(pathname: string): boolean {
   return (

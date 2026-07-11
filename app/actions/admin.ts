@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema"
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
+import { stripe } from "@/lib/stripe"
 import { count, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
@@ -212,6 +213,159 @@ export async function getFinanceData() {
       amount: s.price,
       createdAt: s.createdAt,
     })),
+  }
+}
+
+export type AdminUser = {
+  id: string
+  name: string
+  email: string
+  username: string | null
+  role: string
+  plan: string | null
+  subscriptionStatus: string | null
+  currentPeriodEnd: Date | null
+  hasUsedTrial: boolean
+  onboardingComplete: boolean
+  stripeCustomerId: string | null
+  createdAt: Date
+  isPaying: boolean
+}
+
+/** Full user directory with derived paying/free classification. */
+export async function getUsers(): Promise<AdminUser[]> {
+  await requireAdmin()
+  const rows = await db
+    .select({
+      id: userTable.id,
+      name: userTable.name,
+      email: userTable.email,
+      username: userTable.username,
+      role: userTable.role,
+      plan: userTable.plan,
+      subscriptionStatus: userTable.subscriptionStatus,
+      currentPeriodEnd: userTable.currentPeriodEnd,
+      hasUsedTrial: userTable.hasUsedTrial,
+      onboardingComplete: userTable.onboardingComplete,
+      stripeCustomerId: userTable.stripeCustomerId,
+      createdAt: userTable.createdAt,
+    })
+    .from(userTable)
+    .orderBy(desc(userTable.createdAt))
+  return rows.map((r) => ({
+    ...r,
+    isPaying: r.subscriptionStatus === "active",
+  }))
+}
+
+/** Single user's account details for the admin detail page. */
+export async function getUserById(userId: string): Promise<AdminUser | null> {
+  await requireAdmin()
+  const rows = await db
+    .select({
+      id: userTable.id,
+      name: userTable.name,
+      email: userTable.email,
+      username: userTable.username,
+      role: userTable.role,
+      plan: userTable.plan,
+      subscriptionStatus: userTable.subscriptionStatus,
+      currentPeriodEnd: userTable.currentPeriodEnd,
+      hasUsedTrial: userTable.hasUsedTrial,
+      onboardingComplete: userTable.onboardingComplete,
+      stripeCustomerId: userTable.stripeCustomerId,
+      createdAt: userTable.createdAt,
+    })
+    .from(userTable)
+    .where(eq(userTable.id, userId))
+    .limit(1)
+  const r = rows[0]
+  if (!r) return null
+  return { ...r, isPaying: r.subscriptionStatus === "active" }
+}
+
+export type UserBillingDetail = {
+  invoices: {
+    id: string
+    amount: number
+    currency: string
+    status: string | null
+    created: number
+    hostedUrl: string | null
+    pdfUrl: string | null
+    description: string | null
+  }[]
+  renewalDate: number | null
+  cancelAtPeriodEnd: boolean
+  subscriptionStatus: string | null
+  totalPaid: number
+  error?: string
+}
+
+/**
+ * Live billing history for a single user, pulled on demand from Stripe.
+ * Includes paid invoices, the next renewal date, and lifetime amount paid.
+ */
+export async function getUserBilling(
+  userId: string,
+): Promise<UserBillingDetail> {
+  await requireAdmin()
+  const rows = await db
+    .select({
+      stripeCustomerId: userTable.stripeCustomerId,
+      subscriptionStatus: userTable.subscriptionStatus,
+    })
+    .from(userTable)
+    .where(eq(userTable.id, userId))
+    .limit(1)
+  const u = rows[0]
+  const empty: UserBillingDetail = {
+    invoices: [],
+    renewalDate: null,
+    cancelAtPeriodEnd: false,
+    subscriptionStatus: u?.subscriptionStatus ?? null,
+    totalPaid: 0,
+  }
+  if (!u?.stripeCustomerId) return empty
+
+  try {
+    const [invoiceList, subs] = await Promise.all([
+      stripe.invoices.list({ customer: u.stripeCustomerId, limit: 24 }),
+      stripe.subscriptions.list({
+        customer: u.stripeCustomerId,
+        status: "all",
+        limit: 1,
+      }),
+    ])
+
+    const invoices = invoiceList.data.map((inv) => ({
+      id: inv.id ?? "",
+      amount: inv.amount_paid ?? inv.amount_due ?? 0,
+      currency: (inv.currency ?? "usd").toUpperCase(),
+      status: inv.status ?? null,
+      created: inv.created,
+      hostedUrl: inv.hosted_invoice_url ?? null,
+      pdfUrl: inv.invoice_pdf ?? null,
+      description:
+        inv.lines?.data?.[0]?.description ?? inv.number ?? null,
+    }))
+
+    const totalPaid = invoiceList.data
+      .filter((i) => i.status === "paid")
+      .reduce((sum, i) => sum + (i.amount_paid ?? 0), 0)
+
+    const sub = subs.data[0]
+    const item = sub?.items?.data?.[0]
+    return {
+      invoices,
+      renewalDate: item?.current_period_end ?? null,
+      cancelAtPeriodEnd: sub?.cancel_at_period_end ?? false,
+      subscriptionStatus: sub?.status ?? u.subscriptionStatus ?? null,
+      totalPaid,
+    }
+  } catch (error) {
+    console.error("[v0] getUserBilling failed:", error)
+    return { ...empty, error: "Could not load billing history from Stripe." }
   }
 }
 

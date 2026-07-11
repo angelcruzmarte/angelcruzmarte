@@ -200,6 +200,46 @@ export const listeningStat = pgTable(
   }),
 )
 
+// Admin-created promotional discounts (e.g. 50% off during signup).
+export const promotion = pgTable("promotion", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  // Percentage off, 1-100.
+  percentOff: integer("percentOff").notNull(),
+  // Stripe coupon duration: "once" | "repeating" | "forever".
+  durationType: text("durationType").notNull().default("once"),
+  // Number of months for "repeating" duration.
+  durationMonths: integer("durationMonths"),
+  // Which plans it applies to: "all" | "monthly" | "annual".
+  planScope: text("planScope").notNull().default("all"),
+  active: boolean("active").notNull().default(true),
+  // Whether to surface the promo banner during signup / on pricing.
+  showBanner: boolean("showBanner").notNull().default(true),
+  startsAt: timestamp("startsAt"),
+  endsAt: timestamp("endsAt"),
+  // Cached Stripe coupon id, created lazily when first applied.
+  stripeCouponId: text("stripeCouponId"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
+
+// Anonymous pricing-page views, used to measure the signup funnel.
+export const pricingView = pgTable("pricing_view", {
+  id: serial("id").primaryKey(),
+  // Anonymous visitor id from a first-party cookie.
+  visitorId: text("visitorId").notNull(),
+  // Set once the visitor becomes a registered user.
+  userId: text("userId"),
+  path: text("path").notNull().default("pricing"),
+  referrer: text("referrer"),
+  // True once the visitor completed registration.
+  converted: boolean("converted").notNull().default(false),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
+
+export type Promotion = typeof promotion.$inferSelect
+export type PricingView = typeof pricingView.$inferSelect
+
 export type ListeningStat = typeof listeningStat.$inferSelect
 
 export type ReadingItem = typeof readingItem.$inferSelect

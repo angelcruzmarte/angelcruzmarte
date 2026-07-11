@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
+import { markVisitorConverted } from "@/app/actions/funnel"
 import { LogoMark } from "@/components/logo-mark"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,9 +16,15 @@ type Props = {
   mode: "sign-in" | "sign-up"
   redirectTo?: string
   notice?: string
+  promo?: { name: string; percentOff: number; description?: string | null } | null
 }
 
-export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
+export function AuthForm({
+  mode,
+  redirectTo = "/app",
+  notice,
+  promo = null,
+}: Props) {
   const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -43,6 +50,8 @@ export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
           setError(error.message ?? "Could not create account.")
           return
         }
+        // Record the pricing-funnel conversion for this visitor.
+        void markVisitorConverted()
         // Email verification is required, so no session exists yet.
         router.push(`/verify-email?email=${encodeURIComponent(email)}`)
         return
@@ -88,6 +97,17 @@ export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
             ? "Start listening to your library in minutes."
             : "Sign in to continue listening."}
         </p>
+
+        {isSignUp && promo && (
+          <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 p-3.5 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Sign up &amp; save {promo.percentOff}%
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-card-foreground">
+              {promo.description || `${promo.name} — ${promo.percentOff}% off your subscription`}
+            </p>
+          </div>
+        )}
 
         {notice && (
           <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-sm text-secondary-foreground">

@@ -2,7 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CircleDollarSign, LayoutDashboard, Library, Users } from "lucide-react"
+import {
+  CircleDollarSign,
+  Filter,
+  LayoutDashboard,
+  Library,
+  Tag,
+  Users,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Clean, root-relative paths served from the admin subdomain
@@ -10,8 +17,10 @@ import { cn } from "@/lib/utils"
 const LINKS = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/finance", label: "Finance", icon: CircleDollarSign },
+  { href: "/funnel", label: "Pricing funnel", icon: Filter },
+  { href: "/promotions", label: "Promotions", icon: Tag },
+  { href: "/users", label: "Users", icon: Users },
   { href: "/content", label: "Content", icon: Library },
-  { href: "/subscribers", label: "Subscribers", icon: Users },
 ]
 
 export function AdminNav() {
