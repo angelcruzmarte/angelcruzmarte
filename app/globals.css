@@ -80,37 +80,37 @@
   --card-foreground: oklch(0.26 0.02 60);
   --popover: oklch(0.995 0.004 85);
   --popover-foreground: oklch(0.26 0.02 60);
-  /* Calm teal primary — distinct from the amber highlight and red destructive. */
-  --primary: oklch(0.55 0.09 195);
-  --primary-foreground: oklch(0.99 0.01 90);
+  /* Barnes & Noble deep hunter green — distinct from amber highlight & red destructive. */
+  --primary: oklch(0.42 0.08 150);
+  --primary-foreground: oklch(0.98 0.012 95);
   --secondary: oklch(0.94 0.012 85);
   --secondary-foreground: oklch(0.32 0.03 90);
   --muted: oklch(0.945 0.01 85);
   --muted-foreground: oklch(0.53 0.02 70);
-  --accent: oklch(0.92 0.035 190);
-  --accent-foreground: oklch(0.32 0.06 200);
+  --accent: oklch(0.92 0.035 150);
+  --accent-foreground: oklch(0.34 0.07 150);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.9 0.012 80);
   --input: oklch(0.9 0.012 80);
-  --ring: oklch(0.55 0.09 195);
+  --ring: oklch(0.42 0.08 150);
   /* Warm amber word-follow highlight (Speechify-style). */
   --highlight: oklch(0.86 0.15 85);
   --highlight-foreground: oklch(0.3 0.07 75);
   --spoken: oklch(0.62 0.02 70);
-  --chart-1: oklch(0.55 0.09 195);
+  --chart-1: oklch(0.42 0.08 150);
   --chart-2: oklch(0.72 0.14 55);
   --chart-3: oklch(0.7 0.15 95);
   --chart-4: oklch(0.62 0.13 25);
-  --chart-5: oklch(0.6 0.08 160);
+  --chart-5: oklch(0.55 0.1 150);
   --radius: 1rem;
   --sidebar: oklch(0.955 0.01 85);
   --sidebar-foreground: oklch(0.26 0.02 60);
-  --sidebar-primary: oklch(0.55 0.09 195);
-  --sidebar-primary-foreground: oklch(0.99 0.01 90);
-  --sidebar-accent: oklch(0.92 0.035 190);
-  --sidebar-accent-foreground: oklch(0.32 0.06 200);
+  --sidebar-primary: oklch(0.42 0.08 150);
+  --sidebar-primary-foreground: oklch(0.98 0.012 95);
+  --sidebar-accent: oklch(0.92 0.035 150);
+  --sidebar-accent-foreground: oklch(0.34 0.07 150);
   --sidebar-border: oklch(0.9 0.012 80);
-  --sidebar-ring: oklch(0.55 0.09 195);
+  --sidebar-ring: oklch(0.42 0.08 150);
 }
 
 .dark {
