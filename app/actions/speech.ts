@@ -8,7 +8,9 @@ import { experimental_generateSpeech as generateSpeech } from "ai"
 import {
   LEGACY_VOICE_IDS,
   PREMIUM_VOICES,
-  type PremiumVoiceId,
+  getPremiumVoice,
+  voiceEngine,
+  type PremiumVoice,
 } from "@/lib/voices"
 
 const VALID_VOICES = new Set<string>(PREMIUM_VOICES.map((v) => v.id))
@@ -24,9 +26,15 @@ const MAX_DOWNLOAD_CHARS = 60000
 const MINI_MODEL = "openai/gpt-4o-mini-tts"
 const LEGACY_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
 
-/** Ordered model fallback chain valid for the given voice. */
-function modelsForVoice(voice: PremiumVoiceId): string[] {
-  return LEGACY_VOICE_IDS.has(voice)
+/**
+ * Ordered model fallback chain valid for the given persona. Personas with style
+ * instructions must use the mini model exclusively (legacy models ignore
+ * instructions). Instruction-free legacy engines may fall back for rate-limit
+ * headroom.
+ */
+function modelsForVoice(persona: PremiumVoice): string[] {
+  if (persona.instructions) return [MINI_MODEL]
+  return LEGACY_VOICE_IDS.has(voiceEngine(persona))
     ? [MINI_MODEL, ...LEGACY_MODELS]
     : [MINI_MODEL]
 }
@@ -36,13 +44,16 @@ function isRateLimit(err: unknown): boolean {
   return /rate.?limit|429|GatewayRateLimit|quota|overloaded|capacity/i.test(msg)
 }
 
-async function synthOnce(model: string, text: string, voice: PremiumVoiceId) {
+async function synthOnce(model: string, text: string, persona: PremiumVoice) {
   return generateSpeech({
     model,
     text,
-    voice,
+    voice: voiceEngine(persona),
     outputFormat: "mp3",
     maxRetries: 0,
+    ...(persona.instructions
+      ? { instructions: persona.instructions }
+      : {}),
   })
 }
 
@@ -55,10 +66,10 @@ async function synthOnce(model: string, text: string, voice: PremiumVoiceId) {
  */
 async function synthWithRetry(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
   let lastErr: unknown
-  const models = modelsForVoice(voice)
+  const models = modelsForVoice(persona)
   for (let m = 0; m < models.length; m++) {
     const model = models[m]
     const isLastModel = m === models.length - 1
@@ -66,7 +77,7 @@ async function synthWithRetry(
     const tries = isLastModel ? 4 : 2
     for (let attempt = 0; attempt < tries; attempt++) {
       try {
-        return await synthOnce(model, text, voice)
+        return await synthOnce(model, text, persona)
       } catch (err) {
         lastErr = err
         // Non-rate-limit errors are real failures; surface them immediately.
@@ -116,9 +127,11 @@ const inflightUrl = new Map<string, Promise<string>>()
  */
 async function getOrCreateAudioUrl(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<string> {
-  const pathname = cacheKey(text, voice)
+  // Key by persona id so two personas sharing an engine but differing in style
+  // instructions never collide in the cache.
+  const pathname = cacheKey(text, persona.id)
   const cached = await getCachedUrl(pathname)
   if (cached) return cached
 
@@ -126,7 +139,7 @@ async function getOrCreateAudioUrl(
   if (running) return running
 
   const task = (async () => {
-    const result = await synthWithRetry(text, voice)
+    const result = await synthWithRetry(text, persona)
     const bytes = Buffer.from(result.audio.base64, "base64")
     const blob = await put(pathname, bytes, {
       access: "public",
@@ -153,9 +166,9 @@ async function getOrCreateAudioUrl(
  */
 async function getOrCreateAudioBytes(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<Uint8Array> {
-  const pathname = cacheKey(text, voice)
+  const pathname = cacheKey(text, persona.id)
   const cached = await getCachedUrl(pathname)
   if (cached) {
     try {
@@ -165,7 +178,7 @@ async function getOrCreateAudioBytes(
       // Fall through to regeneration if the cached object can't be fetched.
     }
   }
-  const result = await synthWithRetry(text, voice)
+  const result = await synthWithRetry(text, persona)
   const buffer = Buffer.from(result.audio.base64, "base64")
   await put(pathname, buffer, {
     access: "public",
@@ -195,12 +208,12 @@ export async function generatePremiumSpeech(
     return { error: "This passage is too long for a single request." }
   }
 
-  const selectedVoice: PremiumVoiceId = VALID_VOICES.has(voice)
-    ? (voice as PremiumVoiceId)
-    : "alloy"
+  const persona =
+    (VALID_VOICES.has(voice) ? getPremiumVoice(voice) : undefined) ??
+    getPremiumVoice("alloy")!
 
   try {
-    const url = await getOrCreateAudioUrl(trimmed, selectedVoice)
+    const url = await getOrCreateAudioUrl(trimmed, persona)
     return { url }
   } catch (err) {
     console.log("[v0] premium speech error:", err instanceof Error ? err.message : err)
@@ -237,9 +250,9 @@ export async function generateDownloadableAudio(
   const trimmed = (text ?? "").trim()
   if (!trimmed) return { error: "There is no text to narrate." }
 
-  const selectedVoice: PremiumVoiceId = VALID_VOICES.has(voice)
-    ? (voice as PremiumVoiceId)
-    : "alloy"
+  const persona =
+    (VALID_VOICES.has(voice) ? getPremiumVoice(voice) : undefined) ??
+    getPremiumVoice("alloy")!
 
   const chunks = chunkText(
     trimmed.slice(0, MAX_DOWNLOAD_CHARS),
@@ -250,7 +263,7 @@ export async function generateDownloadableAudio(
   try {
     const buffers: Uint8Array[] = []
     for (const chunk of chunks) {
-      buffers.push(await getOrCreateAudioBytes(chunk, selectedVoice))
+      buffers.push(await getOrCreateAudioBytes(chunk, persona))
     }
 
     const total = buffers.reduce((sum, b) => sum + b.length, 0)

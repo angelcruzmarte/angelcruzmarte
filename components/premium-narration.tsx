@@ -18,13 +18,17 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
 } from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ReaderPanel } from "@/components/reader-panel"
@@ -33,7 +37,7 @@ import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
 import { translatePassage } from "@/app/actions/ai"
-import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
+import { PREMIUM_VOICES, getPremiumVoice, groupedVoices } from "@/lib/voices"
 import {
   normalizeLang,
   isSupportedLang,
