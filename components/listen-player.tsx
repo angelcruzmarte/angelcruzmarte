@@ -69,9 +69,13 @@ export function ListenPlayer({
   sourceType,
   sourceLang,
 }: Props) {
-  // The reader always uses the premium AI voice when the user has access; there
-  // is no device-voice option. Non-premium users fall back to device speech.
-  const mode = premium ? "premium" : "standard"
+  // Everyone reads with the premium AI narration UI so free users can preview a
+  // few premium voices (with the rest locked behind a subscribe prompt). The
+  // `premium` (subscriber) flag only controls which voices are unlocked and
+  // whether offline downloads are available — not whether the player renders.
+  // The cast keeps the union type (instead of narrowing to the "premium"
+  // literal) so the retained device-voice fallback below still type-checks.
+  const mode = "premium" as "premium" | "standard"
 
   // Whether we can render the real uploaded pages (PDFs / image scans).
   const hasOriginal =
@@ -387,8 +391,10 @@ export function ListenPlayer({
                 setPdfWordCount(count)
               }}
               onWordClick={(i) => {
-                // Word taps seek the device-voice engine (exact mapping).
-                if (!(premium && mode === "premium")) seekToWord(i)
+                // Word taps seek the device-voice engine (exact mapping). With
+                // the premium reader active for everyone, premium narration owns
+                // the highlight, so this is effectively a no-op here.
+                if (mode !== "premium") seekToWord(i)
               }}
               onPageChange={(current, total) =>
                 setPdfPage({ current, total })
@@ -406,12 +412,13 @@ export function ListenPlayer({
           )}
         </main>
 
-        {premium && mode === "premium" ? (
+        {mode === "premium" ? (
           <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
             <PremiumNarration
               text={content}
               title={title}
               sourceLang={sourceLang}
+              subscribed={premium}
               showReader={false}
               immersive
               topSlot={aiTools}
@@ -492,12 +499,13 @@ export function ListenPlayer({
         </div>
       )}
 
-      {premium && mode === "premium" && (
+      {mode === "premium" && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
           <PremiumNarration
             text={content}
             title={title}
             sourceLang={sourceLang}
+            subscribed={premium}
             showReader={view === "text"}
           />
         </div>

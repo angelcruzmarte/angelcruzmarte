@@ -147,6 +147,26 @@ export function getPremiumVoice(id: string): PremiumVoice | undefined {
   return PREMIUM_VOICES.find((v) => v.id === id)
 }
 
+/**
+ * A small curated set of premium voices that non-subscribers can use for free
+ * as a trial/preview, so they can experience the premium narration quality
+ * before subscribing. Two ultra-realistic (ElevenLabs) voices plus one
+ * signature OpenAI voice give a strong, varied taste of the paid experience.
+ */
+export const FREE_PREVIEW_VOICE_IDS = new Set<string>([
+  "el-sarah", // ultra-realistic female
+  "el-brian", // ultra-realistic male
+  "nova", // signature female
+])
+
+/** True when a voice is usable for free (non-subscriber) preview. */
+export function isFreePreviewVoice(id: string): boolean {
+  return FREE_PREVIEW_VOICE_IDS.has(id)
+}
+
+/** The default preview voice a free user should start with. */
+export const DEFAULT_FREE_VOICE_ID = "el-sarah"
+
 /** Ordered list of category names as they should appear in the picker. */
 export const VOICE_CATEGORIES = [
   "Ultra Realistic",

@@ -1,6 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   Pause,
   Play,
@@ -13,6 +15,7 @@ import {
   Gauge,
   Check,
   ChevronDown,
+  Lock,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -38,7 +41,13 @@ import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
 import { translatePassage } from "@/app/actions/ai"
-import { PREMIUM_VOICES, getPremiumVoice, groupedVoices } from "@/lib/voices"
+import {
+  PREMIUM_VOICES,
+  getPremiumVoice,
+  groupedVoices,
+  isFreePreviewVoice,
+  DEFAULT_FREE_VOICE_ID,
+} from "@/lib/voices"
 import {
   normalizeLang,
   isSupportedLang,
@@ -63,6 +72,7 @@ export function PremiumNarration({
   immersive = false,
   topSlot,
   paused = false,
+  subscribed = true,
   onActiveWord,
   onPlayingChange,
 }: {
@@ -72,6 +82,12 @@ export function PremiumNarration({
   sourceLang?: string | null
   /** When false, the internal text reader is hidden (e.g. showing original). */
   showReader?: boolean
+  /**
+   * Whether the current user has an active subscription. When false, only the
+   * free preview voices are usable; every other voice is locked and prompts the
+   * user to subscribe.
+   */
+  subscribed?: boolean
   /** Immersive mode: render only a compact, always-on docked player card. */
   immersive?: boolean
   /** Content rendered above the transport controls in immersive mode. */
@@ -83,11 +99,20 @@ export function PremiumNarration({
   /** Reports whether audio is actively playing, for external auto-scroll. */
   onPlayingChange?: (playing: boolean) => void
 }) {
+  const router = useRouter()
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
   const cacheRef = useRef<Map<string, string>>(new Map())
 
-  const [voice, setVoice] = useState<string>(PREMIUM_VOICES[0].id)
+  // Free (non-subscriber) users can only select the free preview voices.
+  const canUseVoice = useCallback(
+    (id: string) => subscribed || isFreePreviewVoice(id),
+    [subscribed],
+  )
+
+  const [voice, setVoice] = useState<string>(
+    subscribed ? PREMIUM_VOICES[0].id : DEFAULT_FREE_VOICE_ID,
+  )
   const [rate, setRate] = useState(1)
   const [index, setIndex] = useState(0)
   const [status, setStatus] = useState<"idle" | "loading" | "playing" | "paused">(
@@ -400,13 +425,19 @@ export function PremiumNarration({
     (v: string | null) => {
       const next = v || PREMIUM_VOICES[0].id
       if (next === voice) return
+      // Locked voice for a free user: send them to the subscribe page instead
+      // of switching, so trying a premium voice becomes an upgrade prompt.
+      if (!canUseVoice(next)) {
+        router.push("/subscribe")
+        return
+      }
       const wasActive = status === "playing" || status === "loading"
       const resumeIndex = index
       stop()
       setVoice(next)
       if (wasActive) pendingResumeRef.current = resumeIndex
     },
-    [stop, voice, status, index],
+    [stop, voice, status, index, canUseVoice, router],
   )
 
   // After a voice switch, resume playback of the pending section with the now
@@ -491,29 +522,53 @@ export function PremiumNarration({
               className="max-h-[min(60vh,26rem)] w-56 overflow-y-auto"
             >
               <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
-                {PREMIUM_VOICES.length} voices
+                {subscribed
+                  ? `${PREMIUM_VOICES.length} voices`
+                  : "Free preview · subscribe to unlock all"}
               </div>
-              {PREMIUM_VOICES.map((v) => (
-                <DropdownMenuItem
-                  key={v.id}
-                  onClick={() => handleVoiceChange(v.id)}
-                  className="gap-2.5 py-2"
-                >
-                  <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
-                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <span className="text-sm font-medium">{v.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {v.tagline}
+              {PREMIUM_VOICES.map((v) => {
+                const locked = !canUseVoice(v.id)
+                return (
+                  <DropdownMenuItem
+                    key={v.id}
+                    onClick={() => handleVoiceChange(v.id)}
+                    className="gap-2.5 py-2"
+                  >
+                    <VoiceAvatar
+                      name={v.name}
+                      image={v.image}
+                      size={36}
+                      alt=""
+                      className={cn(locked && "opacity-60")}
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                      <span className="flex items-center gap-1.5 text-sm font-medium">
+                        <span className={cn(locked && "text-muted-foreground")}>
+                          {v.name}
+                        </span>
+                        {!subscribed && !locked && (
+                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            Free
+                          </span>
+                        )}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {v.tagline}
+                      </span>
                     </span>
-                  </span>
-                  <Check
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      voice === v.id ? "opacity-100" : "opacity-0",
+                    {locked ? (
+                      <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Check
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          voice === v.id ? "opacity-100" : "opacity-0",
+                        )}
+                      />
                     )}
-                  />
-                </DropdownMenuItem>
-              ))}
+                  </DropdownMenuItem>
+                )
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -709,19 +764,46 @@ export function PremiumNarration({
               </span>
             </SelectTrigger>
             <SelectContent className="max-h-[min(60vh,26rem)]">
-              {PREMIUM_VOICES.map((v) => (
-                <SelectItem key={v.id} value={v.id} className="py-2">
-                  <span className="flex items-center gap-2.5">
-                    <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
-                    <span className="flex flex-col leading-tight">
-                      <span className="text-sm font-medium">{v.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {v.tagline}
+              {!subscribed && (
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  Free preview · subscribe to unlock all
+                </div>
+              )}
+              {PREMIUM_VOICES.map((v) => {
+                const locked = !canUseVoice(v.id)
+                return (
+                  <SelectItem key={v.id} value={v.id} className="py-2">
+                    <span className="flex items-center gap-2.5">
+                      <VoiceAvatar
+                        name={v.name}
+                        image={v.image}
+                        size={36}
+                        alt=""
+                        className={cn(locked && "opacity-60")}
+                      />
+                      <span className="flex flex-col leading-tight">
+                        <span className="flex items-center gap-1.5 text-sm font-medium">
+                          <span className={cn(locked && "text-muted-foreground")}>
+                            {v.name}
+                          </span>
+                          {locked ? (
+                            <Lock className="h-3 w-3 text-muted-foreground" />
+                          ) : (
+                            !subscribed && (
+                              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                Free
+                              </span>
+                            )
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {v.tagline}
+                        </span>
                       </span>
                     </span>
-                  </span>
-                </SelectItem>
-              ))}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
 
@@ -784,6 +866,23 @@ export function PremiumNarration({
             ? " When a document isn't in your language, it's translated automatically as it plays."
             : ""}
         </p>
+        {!subscribed && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+            <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+            <p className="text-xs text-muted-foreground">
+              You&apos;re previewing premium narration with a few free voices.
+            </p>
+            <Link
+              href="/subscribe"
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "ml-auto h-8 px-3 text-xs",
+              )}
+            >
+              Unlock all voices
+            </Link>
+          </div>
+        )}
       </div>
 
       {showReader && (

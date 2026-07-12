@@ -9,6 +9,7 @@ import { experimental_generateSpeech as generateSpeech } from "ai"
 import {
   PREMIUM_VOICES,
   getPremiumVoice,
+  isFreePreviewVoice,
   voiceEngine,
   type PremiumVoice,
 } from "@/lib/voices"
@@ -248,8 +249,12 @@ export async function generatePremiumSpeech(
 ): Promise<SpeechResponse> {
   const user = await getCurrentUser()
   if (!user) return { error: "You must be signed in to use premium narration." }
-  if (!hasActiveSubscription(user)) {
-    return { error: "Premium narration requires an active subscription." }
+  // Non-subscribers may use a small set of free preview voices; all other
+  // premium voices require an active subscription.
+  if (!hasActiveSubscription(user) && !isFreePreviewVoice(voice)) {
+    return {
+      error: "This voice is available on Premium. Subscribe to unlock all voices.",
+    }
   }
 
   const trimmed = (text ?? "").trim()
