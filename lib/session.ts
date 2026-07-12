@@ -24,12 +24,24 @@ export async function getUserId(): Promise<string> {
   return session.user.id
 }
 
-/** An active subscription means status is "active" or "trialing". */
-export function hasActiveSubscription(u: User | null): boolean {
-  if (!u) return false
-  return u.subscriptionStatus === "active" || u.subscriptionStatus === "trialing"
-}
+/**
+ * Emails that always have admin access, regardless of the stored role. Lets a
+ * known owner account test the full app even if its DB role was never promoted.
+ */
+const ADMIN_EMAILS = new Set<string>(["admin@voxyfi.com"])
 
 export function isAdmin(u: User | null): boolean {
-  return u?.role === "admin"
+  if (!u) return false
+  return u.role === "admin" || ADMIN_EMAILS.has(u.email.toLowerCase())
+}
+
+/**
+ * An active subscription means status is "active" or "trialing". Admins always
+ * count as subscribed so they can test and access every premium feature without
+ * requiring a paid plan.
+ */
+export function hasActiveSubscription(u: User | null): boolean {
+  if (!u) return false
+  if (isAdmin(u)) return true
+  return u.subscriptionStatus === "active" || u.subscriptionStatus === "trialing"
 }
