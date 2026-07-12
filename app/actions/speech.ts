@@ -7,7 +7,6 @@ import { chunkText } from "@/lib/chunk-text"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
 import {
-  LEGACY_VOICE_IDS,
   PREMIUM_VOICES,
   getPremiumVoice,
   voiceEngine,
@@ -20,12 +19,46 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
-// "gpt-4o-mini-tts" is the newest model and supports ALL 13 voices, so it is
-// the primary. The legacy "tts-1-hd"/"tts-1" models only support a 9-voice
-// subset but have more rate-limit headroom, so we use them as fallbacks — but
-// only for voices they actually support (see modelsForVoice).
-const MINI_MODEL = "openai/gpt-4o-mini-tts"
-const LEGACY_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+// OpenAI TTS on the AI Gateway currently exposes only "tts-1-hd" and "tts-1"
+// (the higher-quality "gpt-4o-mini-tts" model was removed). We try the HD model
+// first for quality, then fall back to the standard model for rate-limit
+// headroom. These models support the 6 classic voices and do NOT support the
+// `instructions` field, so we map every persona onto a classic voice and never
+// send instructions on this path (see openAiVoiceFor / synthOnce).
+const OPENAI_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+
+// The only voices the tts-1 / tts-1-hd models accept.
+const CLASSIC_VOICES = new Set([
+  "alloy",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "shimmer",
+])
+
+// Map the newer engine ids (used by many personas) onto the closest classic
+// voice so every persona still produces audio on the available models.
+const ENGINE_TO_CLASSIC: Record<string, string> = {
+  ash: "onyx",
+  ballad: "fable",
+  verse: "echo",
+  cedar: "onyx",
+  coral: "shimmer",
+  sage: "nova",
+  marin: "nova",
+}
+
+/** Resolve a persona to a voice the tts-1 / tts-1-hd models actually support. */
+function openAiVoiceFor(persona: PremiumVoice): string {
+  const engine = voiceEngine(persona)
+  if (CLASSIC_VOICES.has(engine)) return engine
+  if (ENGINE_TO_CLASSIC[engine]) return ENGINE_TO_CLASSIC[engine]
+  // Fall back by gender for any unmapped engine.
+  if (persona.gender === "male") return "onyx"
+  if (persona.gender === "female") return "nova"
+  return "alloy"
+}
 
 // ElevenLabs (ultra-realistic) provider. Reads ELEVENLABS_API_KEY from the env.
 // "eleven_multilingual_v2" is the high-quality, widely-available model.
@@ -37,17 +70,13 @@ const ELEVEN_MODEL = "eleven_multilingual_v2"
 const ELEVEN_SENTINEL = "elevenlabs"
 
 /**
- * Ordered model fallback chain valid for the given persona. Personas with style
- * instructions must use the mini model exclusively (legacy models ignore
- * instructions). Instruction-free legacy engines may fall back for rate-limit
- * headroom.
+ * Ordered model fallback chain for the given persona. ElevenLabs personas use
+ * the ElevenLabs provider; everyone else uses the OpenAI models (HD first, then
+ * standard for rate-limit headroom).
  */
 function modelsForVoice(persona: PremiumVoice): string[] {
   if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL]
-  if (persona.instructions) return [MINI_MODEL]
-  return LEGACY_VOICE_IDS.has(voiceEngine(persona))
-    ? [MINI_MODEL, ...LEGACY_MODELS]
-    : [MINI_MODEL]
+  return [...OPENAI_MODELS]
 }
 
 function isRateLimit(err: unknown): boolean {
@@ -67,15 +96,14 @@ async function synthOnce(model: string, text: string, persona: PremiumVoice) {
       maxRetries: 0,
     })
   }
+  // OpenAI path: tts-1 / tts-1-hd only accept the classic voices and do not
+  // support the `instructions` field, so map the voice and omit instructions.
   return generateSpeech({
     model,
     text,
-    voice: voiceEngine(persona),
+    voice: openAiVoiceFor(persona),
     outputFormat: "mp3",
     maxRetries: 0,
-    ...(persona.instructions
-      ? { instructions: persona.instructions }
-      : {}),
   })
 }
 
