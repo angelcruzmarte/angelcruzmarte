@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto"
 import { head, put } from "@vercel/blob"
+import { createElevenLabs } from "@ai-sdk/elevenlabs"
 import { chunkText } from "@/lib/chunk-text"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
@@ -26,6 +27,15 @@ const MAX_DOWNLOAD_CHARS = 60000
 const MINI_MODEL = "openai/gpt-4o-mini-tts"
 const LEGACY_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
 
+// ElevenLabs (ultra-realistic) provider. Reads ELEVENLABS_API_KEY from the env.
+// "eleven_multilingual_v2" is the high-quality, widely-available model.
+const elevenlabs = createElevenLabs({
+  apiKey: process.env.ELEVENLABS_API_KEY,
+})
+const ELEVEN_MODEL = "eleven_multilingual_v2"
+// Sentinel used in the model fallback chain to mark the ElevenLabs path.
+const ELEVEN_SENTINEL = "elevenlabs"
+
 /**
  * Ordered model fallback chain valid for the given persona. Personas with style
  * instructions must use the mini model exclusively (legacy models ignore
@@ -33,6 +43,7 @@ const LEGACY_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
  * headroom.
  */
 function modelsForVoice(persona: PremiumVoice): string[] {
+  if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL]
   if (persona.instructions) return [MINI_MODEL]
   return LEGACY_VOICE_IDS.has(voiceEngine(persona))
     ? [MINI_MODEL, ...LEGACY_MODELS]
@@ -45,6 +56,17 @@ function isRateLimit(err: unknown): boolean {
 }
 
 async function synthOnce(model: string, text: string, persona: PremiumVoice) {
+  // Ultra-realistic ElevenLabs path: use the ElevenLabs provider model and pass
+  // the ElevenLabs voice_id via `voice`. No style instructions are supported.
+  if (persona.provider === "elevenlabs") {
+    return generateSpeech({
+      model: elevenlabs.speech(ELEVEN_MODEL),
+      text,
+      voice: voiceEngine(persona),
+      outputFormat: "mp3",
+      maxRetries: 0,
+    })
+  }
   return generateSpeech({
     model,
     text,

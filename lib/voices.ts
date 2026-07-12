@@ -105,6 +105,29 @@ export const PREMIUM_VOICES: PremiumVoice[] = [
   { id: "serena-sleep", name: "Serena", tagline: "Sleep Stories", label: "Serena — Sleep", gender: "female", image: "/voices/serena-sleep.png", category: "Calm & Wellness", engine: "marin", instructions: "Speak very softly and slowly, like a soothing sleep-story narrator. Dreamy, calming, and lulling." },
   { id: "kai-yoga", name: "Kai", tagline: "Yoga Guide", label: "Kai — Yoga", gender: "male", image: "/voices/kai-yoga.png", category: "Calm & Wellness", engine: "echo", instructions: "Speak calmly and steadily, like a yoga and breathwork guide. Grounded, gentle, and reassuring." },
   { id: "willow-nature", name: "Willow", tagline: "Nature Calm", label: "Willow — Nature", gender: "female", image: "/voices/willow-nature.png", category: "Calm & Wellness", engine: "sage", instructions: "Speak in a warm, peaceful voice, like a nature and mindfulness narrator. Soft, natural, and serene." },
+
+  // --- Ultra Realistic (ElevenLabs) ------------------------------------------
+  // Human-grade neural voices synthesized via the ElevenLabs API. `engine` is
+  // the ElevenLabs voice_id; delivery is governed by the voice itself, so these
+  // carry no style instructions.
+  { id: "el-brian", name: "Brian", tagline: "Deep Narrator", label: "Brian — Deep Narrator", gender: "male", image: "/voices/el-brian.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "nPczCjzI2devNBz1zQrb" },
+  { id: "el-sarah", name: "Sarah", tagline: "Warm & Soft", label: "Sarah — Warm", gender: "female", image: "/voices/el-sarah.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "EXAVITQu4vr4xnSDxMaL" },
+  { id: "el-george", name: "George", tagline: "British Narrator", label: "George — British", gender: "male", image: "/voices/el-george.png", category: "Ultra Realistic", provider: "elevenlabs", accent: "British", engine: "JBFqnCBsd6RMkjVDRZzb" },
+  { id: "el-laura", name: "Laura", tagline: "Upbeat & Social", label: "Laura — Upbeat", gender: "female", image: "/voices/el-laura.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "FGY2WhTYpPnrIDTdsKH5" },
+  { id: "el-charlie", name: "Charlie", tagline: "Aussie & Natural", label: "Charlie — Australian", gender: "male", image: "/voices/el-charlie.png", category: "Ultra Realistic", provider: "elevenlabs", accent: "Australian", engine: "IKne3meq5aSn9XLyUdCD" },
+  { id: "el-alice", name: "Alice", tagline: "Clear British", label: "Alice — British", gender: "female", image: "/voices/el-alice.png", category: "Ultra Realistic", provider: "elevenlabs", accent: "British", engine: "Xb7hH8MSUJpSbSDYk0k2" },
+  { id: "el-roger", name: "Roger", tagline: "Confident", label: "Roger — Confident", gender: "male", image: "/voices/el-roger.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "CwhRBWXzGAHq8TQ4Fs17" },
+  { id: "el-matilda", name: "Matilda", tagline: "Warm Professional", label: "Matilda — Professional", gender: "female", image: "/voices/el-matilda.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "XrExE9yKIg1WjnnlVkGX" },
+  { id: "el-daniel", name: "Daniel", tagline: "News Anchor", label: "Daniel — News", gender: "male", image: "/voices/el-daniel.png", category: "Ultra Realistic", provider: "elevenlabs", accent: "British", engine: "onwK4e9ZLuTAKqWW03F9" },
+  { id: "el-lily", name: "Lily", tagline: "Velvety & Warm", label: "Lily — Velvety", gender: "female", image: "/voices/el-lily.png", category: "Ultra Realistic", provider: "elevenlabs", accent: "British", engine: "pFZP5JQG7iQjIQuC4Bku" },
+  { id: "el-will", name: "Will", tagline: "Chill & Friendly", label: "Will — Chill", gender: "male", image: "/voices/el-will.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "bIHbv24MWmeRgasZH58o" },
+  { id: "el-jessica", name: "Jessica", tagline: "Young & Playful", label: "Jessica — Playful", gender: "female", image: "/voices/el-jessica.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "cgSgspJ2msm6clMCkdW9" },
+  { id: "el-eric", name: "Eric", tagline: "Smooth & Classy", label: "Eric — Smooth", gender: "male", image: "/voices/el-eric.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "cjVigY5qzO86Huf0OWal" },
+  { id: "el-river", name: "River", tagline: "Calm & Neutral", label: "River — Neutral", gender: "neutral", image: "/voices/el-river.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "SAz9YHcvj6GT2YYXdXww" },
+  { id: "el-chris", name: "Chris", tagline: "Casual & Natural", label: "Chris — Casual", gender: "male", image: "/voices/el-chris.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "iP95p4xoKVk53GoZ742B" },
+  { id: "el-leo", name: "Leo", tagline: "Young Energetic", label: "Leo — Energetic", gender: "male", image: "/voices/el-leo.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "TX3LPaxmHKxFdv7VOQHJ" },
+  { id: "el-callum", name: "Callum", tagline: "Intense & Cinematic", label: "Callum — Cinematic", gender: "male", image: "/voices/el-callum.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "N2lVS1w4EtoT3dr4eOWO" },
+  { id: "el-bill", name: "Bill", tagline: "Trustworthy Elder", label: "Bill — Trustworthy", gender: "male", image: "/voices/el-bill.png", category: "Ultra Realistic", provider: "elevenlabs", engine: "pqHfZKP75CvOlQylNhV4" },
 ]
 
 export type PremiumVoiceId = string
@@ -126,6 +149,7 @@ export function getPremiumVoice(id: string): PremiumVoice | undefined {
 
 /** Ordered list of category names as they should appear in the picker. */
 export const VOICE_CATEGORIES = [
+  "Ultra Realistic",
   "Signature",
   "Accents & International",
   "Characters & Styles",
