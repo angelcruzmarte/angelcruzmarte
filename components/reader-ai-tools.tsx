@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import {
   AudioLines,
@@ -23,7 +23,17 @@ import {
   type QuizQuestion,
   type SummaryResult,
 } from "@/app/actions/ai"
+import { generatePremiumSpeech } from "@/app/actions/speech"
+import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
 import { Button } from "@/components/ui/button"
+import { VoiceAvatar } from "@/components/voice-avatar"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 type Tool = "chat" | "summary" | "podcast" | "quiz"
@@ -276,14 +286,33 @@ function QuizPanel({ text }: { text: string }) {
   )
 }
 
+// Two distinct ultra-realistic voices make the two-host format feel natural.
+const DEFAULT_HOST_VOICE = "el-sarah"
+const DEFAULT_GUEST_VOICE = "el-brian"
+
+function isHostSpeaker(speaker: string) {
+  return speaker.toLowerCase().includes("host")
+}
+
 function PodcastPanel({ text }: { text: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PodcastResult | null>(null)
   const [playing, setPlaying] = useState(false)
+  const [buffering, setBuffering] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
-  const cancelRef = useRef(false)
+  const [hostVoice, setHostVoice] = useState(DEFAULT_HOST_VOICE)
+  const [guestVoice, setGuestVoice] = useState(DEFAULT_GUEST_VOICE)
 
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  // Cache of generated audio URLs keyed by `${segmentIndex}:${voiceId}`.
+  const cacheRef = useRef<Map<string, string>>(new Map())
+  // Monotonic token used to cancel an in-flight playback loop.
+  const playTokenRef = useRef(0)
+  // Resolver for the segment currently awaiting playback, so stop() can unblock.
+  const finishCurrentRef = useRef<(() => void) | null>(null)
+
+  // Auto-generate the podcast script from the current document text.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -300,69 +329,164 @@ function PodcastPanel({ text }: { text: string }) {
     })()
     return () => {
       cancelled = true
-      cancelRef.current = true
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel()
-      }
     }
   }, [text])
 
-  function stop() {
-    cancelRef.current = true
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel()
+  useEffect(() => {
+    const el = new Audio()
+    audioRef.current = el
+    return () => {
+      playTokenRef.current++
+      el.pause()
+      el.removeAttribute("src")
     }
-    setPlaying(false)
-    setActiveIndex(-1)
-  }
+  }, [])
 
-  function playPodcast() {
-    if (!result || typeof window === "undefined" || !("speechSynthesis" in window))
-      return
-    cancelRef.current = false
-    setPlaying(true)
-    const voices = window.speechSynthesis.getVoices()
-    const en = voices.filter((v) => v.lang.startsWith("en"))
-    const host = en[0] ?? voices[0]
-    const guest = en[1] ?? en[0] ?? voices[0]
-    const speakAt = (i: number) => {
-      if (cancelRef.current || i >= result.segments.length) {
-        setPlaying(false)
-        setActiveIndex(-1)
-        return
-      }
-      setActiveIndex(i)
-      const seg = result.segments[i]
-      const u = new SpeechSynthesisUtterance(seg.line)
-      const isHost = seg.speaker.toLowerCase().includes("host")
-      const v = isHost ? host : guest
-      if (v) {
-        u.voice = v
-        u.lang = v.lang
-      }
-      u.pitch = isHost ? 1 : 0.9
-      u.onend = () => speakAt(i + 1)
-      u.onerror = () => speakAt(i + 1)
-      window.speechSynthesis.speak(u)
+  const voiceIdForSegment = useCallback(
+    (i: number) => {
+      const seg = result?.segments[i]
+      if (!seg) return hostVoice
+      return isHostSpeaker(seg.speaker) ? hostVoice : guestVoice
+    },
+    [result, hostVoice, guestVoice],
+  )
+
+  const fetchSegmentUrl = useCallback(
+    async (i: number): Promise<string | null> => {
+      const seg = result?.segments[i]
+      if (!seg) return null
+      const voice = voiceIdForSegment(i)
+      const key = `${i}:${voice}`
+      const cached = cacheRef.current.get(key)
+      if (cached) return cached
+      const res = await generatePremiumSpeech(seg.line, voice)
+      if ("error" in res) throw new Error(res.error)
+      cacheRef.current.set(key, res.url)
+      return res.url
+    },
+    [result, voiceIdForSegment],
+  )
+
+  const stopPlayback = useCallback(() => {
+    playTokenRef.current++
+    const el = audioRef.current
+    if (el) {
+      el.pause()
+      el.removeAttribute("src")
     }
-    speakAt(0)
+    finishCurrentRef.current?.()
+    finishCurrentRef.current = null
+    setPlaying(false)
+    setBuffering(false)
+    setActiveIndex(-1)
+  }, [])
+
+  // Plays a single URL to completion; resolves on end/error or when cancelled.
+  const playUrl = useCallback((el: HTMLAudioElement, url: string) => {
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        el.removeEventListener("ended", done)
+        el.removeEventListener("error", done)
+        finishCurrentRef.current = null
+        resolve()
+      }
+      finishCurrentRef.current = done
+      el.addEventListener("ended", done)
+      el.addEventListener("error", done)
+      el.src = url
+      el.currentTime = 0
+      void el.play().catch(() => {
+        /* autoplay restrictions: resolve so the loop can advance */
+        done()
+      })
+    })
+  }, [])
+
+  const playFrom = useCallback(
+    async (start: number) => {
+      if (!result) return
+      const el = audioRef.current
+      if (!el) return
+      const token = ++playTokenRef.current
+      setError(null)
+      setPlaying(true)
+
+      for (let i = start; i < result.segments.length; i++) {
+        if (playTokenRef.current !== token) return
+        setActiveIndex(i)
+        setBuffering(true)
+        let url: string | null = null
+        try {
+          url = await fetchSegmentUrl(i)
+        } catch (e) {
+          if (playTokenRef.current !== token) return
+          setError(
+            e instanceof Error
+              ? e.message
+              : "Could not generate audio. Please try again.",
+          )
+          stopPlayback()
+          return
+        }
+        if (playTokenRef.current !== token) return
+        setBuffering(false)
+        if (!url) continue
+        // Prefetch the next segment's audio while this one plays.
+        if (i + 1 < result.segments.length) {
+          void fetchSegmentUrl(i + 1).catch(() => {})
+        }
+        await playUrl(el, url)
+      }
+
+      if (playTokenRef.current === token) {
+        setPlaying(false)
+        setBuffering(false)
+        setActiveIndex(-1)
+      }
+    },
+    [result, fetchSegmentUrl, playUrl, stopPlayback],
+  )
+
+  function changeHostVoice(v: string) {
+    stopPlayback()
+    setHostVoice(v)
+  }
+  function changeGuestVoice(v: string) {
+    stopPlayback()
+    setGuestVoice(v)
   }
 
   if (loading) return <Loading label="Producing your podcast…" />
-  if (error) return <ErrorNote message={error} />
+  if (error && !result) return <ErrorNote message={error} />
   if (!result) return null
+
+  const hostPersona = getPremiumVoice(hostVoice)
+  const guestPersona = getPremiumVoice(guestVoice)
 
   return (
     <div>
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <VoicePicker label="Host voice" value={hostVoice} onChange={changeHostVoice} />
+        <VoicePicker
+          label="Guest voice"
+          value={guestVoice}
+          onChange={changeGuestVoice}
+        />
+      </div>
+
       <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-balance">{result.title}</h3>
         <Button
           size="sm"
           variant={playing ? "secondary" : "default"}
-          onClick={playing ? stop : playPodcast}
+          onClick={playing ? stopPlayback : () => playFrom(0)}
           className="shrink-0 gap-1.5"
         >
-          {playing ? (
+          {buffering ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading
+            </>
+          ) : playing ? (
             <>
               <Pause className="h-4 w-4" /> Stop
             </>
@@ -373,9 +497,37 @@ function PodcastPanel({ text }: { text: string }) {
           )}
         </Button>
       </div>
+
+      <div className="mb-4 flex items-center gap-4 text-xs text-muted-foreground">
+        {hostPersona && (
+          <span className="flex items-center gap-1.5">
+            <VoiceAvatar
+              name={hostPersona.name}
+              image={hostPersona.image}
+              size={22}
+              alt=""
+            />
+            Host · {hostPersona.name}
+          </span>
+        )}
+        {guestPersona && (
+          <span className="flex items-center gap-1.5">
+            <VoiceAvatar
+              name={guestPersona.name}
+              image={guestPersona.image}
+              size={22}
+              alt=""
+            />
+            Guest · {guestPersona.name}
+          </span>
+        )}
+      </div>
+
+      {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+
       <div className="space-y-3">
         {result.segments.map((seg, i) => {
-          const isHost = seg.speaker.toLowerCase().includes("host")
+          const isHost = isHostSpeaker(seg.speaker)
           return (
             <div
               key={i}
@@ -402,6 +554,40 @@ function PodcastPanel({ text }: { text: string }) {
         })}
       </div>
     </div>
+  )
+}
+
+function VoicePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={(v) => v && onChange(v)}>
+        <SelectTrigger className="h-11">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-[min(60vh,26rem)]">
+          {PREMIUM_VOICES.map((v) => (
+            <SelectItem key={v.id} value={v.id} className="py-2">
+              <span className="flex items-center gap-2.5">
+                <VoiceAvatar name={v.name} image={v.image} size={32} alt="" />
+                <span className="flex flex-col leading-tight">
+                  <span className="text-sm font-medium">{v.name}</span>
+                  <span className="text-xs text-muted-foreground">{v.tagline}</span>
+                </span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
   )
 }
 
