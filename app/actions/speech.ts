@@ -70,14 +70,32 @@ const ELEVEN_MODEL = "eleven_multilingual_v2"
 // Sentinel used in the model fallback chain to mark the ElevenLabs path.
 const ELEVEN_SENTINEL = "elevenlabs"
 
+// Gender-matched ElevenLabs fallback voice_ids (Brian / Sarah). Used as a
+// last-resort cross-provider fallback when an OpenAI persona is rate-limited, so
+// audio is still produced — ultra-realistically — instead of failing.
+const ELEVEN_FALLBACK_BY_GENDER: Record<"male" | "female" | "neutral", string> = {
+  male: "nPczCjzI2devNBz1zQrb", // Brian
+  female: "EXAVITQu4vr4xnSDxMaL", // Sarah
+  neutral: "EXAVITQu4vr4xnSDxMaL",
+}
+
+/** Resolve the ElevenLabs voice_id to use for a persona (native or fallback). */
+function elevenVoiceIdFor(persona: PremiumVoice): string {
+  if (persona.provider === "elevenlabs") return voiceEngine(persona)
+  return (
+    ELEVEN_FALLBACK_BY_GENDER[persona.gender] ?? ELEVEN_FALLBACK_BY_GENDER.neutral
+  )
+}
+
 /**
- * Ordered model fallback chain for the given persona. ElevenLabs personas use
- * the ElevenLabs provider; everyone else uses the OpenAI models (HD first, then
- * standard for rate-limit headroom).
+ * Ordered model fallback chain for the given persona. Every persona now falls
+ * back across providers so a rate limit on one never surfaces a "high demand"
+ * error: ElevenLabs personas try ElevenLabs first then OpenAI; OpenAI personas
+ * try OpenAI (HD then standard) then ElevenLabs.
  */
 function modelsForVoice(persona: PremiumVoice): string[] {
-  if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL]
-  return [...OPENAI_MODELS]
+  if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL, ...OPENAI_MODELS]
+  return [...OPENAI_MODELS, ELEVEN_SENTINEL]
 }
 
 function isRateLimit(err: unknown): boolean {
@@ -86,13 +104,14 @@ function isRateLimit(err: unknown): boolean {
 }
 
 async function synthOnce(model: string, text: string, persona: PremiumVoice) {
-  // Ultra-realistic ElevenLabs path: use the ElevenLabs provider model and pass
-  // the ElevenLabs voice_id via `voice`. No style instructions are supported.
-  if (persona.provider === "elevenlabs") {
+  // Ultra-realistic ElevenLabs path (native provider OR cross-provider fallback
+  // for an OpenAI persona). Pass the ElevenLabs voice_id via `voice`. No style
+  // instructions are supported here.
+  if (model === ELEVEN_SENTINEL) {
     return generateSpeech({
       model: elevenlabs.speech(ELEVEN_MODEL),
       text,
-      voice: voiceEngine(persona),
+      voice: elevenVoiceIdFor(persona),
       outputFormat: "mp3",
       maxRetries: 0,
     })
