@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import {
   AudioLines,
   Check,
+  ChevronDown,
   HelpCircle,
   Loader2,
   MessageSquare,
@@ -27,13 +28,6 @@ import { generatePremiumSpeech } from "@/app/actions/speech"
 import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
 import { Button } from "@/components/ui/button"
 import { VoiceAvatar } from "@/components/voice-avatar"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 type Tool = "chat" | "summary" | "podcast" | "quiz"
@@ -566,44 +560,43 @@ function VoicePicker({
   value: string
   onChange: (v: string) => void
 }) {
-  // NB: this must NOT be a <label>. Wrapping the Radix Select trigger in a
-  // <label> makes the label forward its click to the trigger button, firing the
-  // open toggle twice so the menu instantly re-closes and the voice never
-  // switches. A plain <div> with a sibling caption avoids that.
+  // Backed by a real native <select> layered invisibly over the styled trigger.
+  // The JS dropdown (base-ui) proved unreliable on iOS Safari when nested inside
+  // the tool modal's portal — taps on options wouldn't register, so the voice
+  // never switched. A native <select> uses the OS picker, which is 100% reliable
+  // for touch, while we keep the avatar + name styling in the visible trigger.
   const persona = getPremiumVoice(value)
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <Select value={value} onValueChange={(v) => v && onChange(v)}>
-        <SelectTrigger className="h-12">
-          <SelectValue>
-            {persona ? (
-              <span className="flex items-center gap-2">
-                <VoiceAvatar
-                  name={persona.name}
-                  image={persona.image}
-                  size={24}
-                  alt=""
-                />
-                <span className="text-sm font-medium">{persona.name}</span>
-              </span>
-            ) : null}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent className="max-h-[min(60vh,26rem)]">
+      <div className="relative">
+        <div className="flex h-12 items-center gap-2 rounded-lg border border-input bg-background px-3 pr-9 text-sm">
+          {persona && (
+            <VoiceAvatar
+              name={persona.name}
+              image={persona.image}
+              size={24}
+              alt=""
+            />
+          )}
+          <span className="truncate font-medium">
+            {persona?.name ?? "Select a voice"}
+          </span>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
+        <select
+          aria-label={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        >
           {PREMIUM_VOICES.map((v) => (
-            <SelectItem key={v.id} value={v.id} className="py-2">
-              <span className="flex items-center gap-2.5">
-                <VoiceAvatar name={v.name} image={v.image} size={32} alt="" />
-                <span className="flex flex-col leading-tight">
-                  <span className="text-sm font-medium">{v.name}</span>
-                  <span className="text-xs text-muted-foreground">{v.tagline}</span>
-                </span>
-              </span>
-            </SelectItem>
+            <option key={v.id} value={v.id}>
+              {v.name} — {v.tagline}
+            </option>
           ))}
-        </SelectContent>
-      </Select>
+        </select>
+      </div>
     </div>
   )
 }
