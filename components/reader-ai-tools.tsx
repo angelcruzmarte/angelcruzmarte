@@ -566,12 +566,29 @@ function VoicePicker({
   value: string
   onChange: (v: string) => void
 }) {
+  // NB: this must NOT be a <label>. Wrapping the Radix Select trigger in a
+  // <label> makes the label forward its click to the trigger button, firing the
+  // open toggle twice so the menu instantly re-closes and the voice never
+  // switches. A plain <div> with a sibling caption avoids that.
+  const persona = getPremiumVoice(value)
   return (
-    <label className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <Select value={value} onValueChange={(v) => v && onChange(v)}>
-        <SelectTrigger className="h-11">
-          <SelectValue />
+        <SelectTrigger className="h-12">
+          <SelectValue>
+            {persona ? (
+              <span className="flex items-center gap-2">
+                <VoiceAvatar
+                  name={persona.name}
+                  image={persona.image}
+                  size={24}
+                  alt=""
+                />
+                <span className="text-sm font-medium">{persona.name}</span>
+              </span>
+            ) : null}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent className="max-h-[min(60vh,26rem)]">
           {PREMIUM_VOICES.map((v) => (
@@ -587,7 +604,7 @@ function VoicePicker({
           ))}
         </SelectContent>
       </Select>
-    </label>
+    </div>
   )
 }
 
