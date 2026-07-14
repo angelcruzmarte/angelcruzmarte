@@ -467,7 +467,8 @@ export async function askDocument(
   question: string,
 ): Promise<ChatResult> {
   try {
-    await requirePremium()
+    const guard = await contentToolGuard()
+    if (guard.message) return { answer: "", error: guard.message }
     const q = (question ?? "").trim()
     if (!q) return { answer: "", error: "Please enter a question." }
     const ctx = (context ?? "").trim().slice(0, MAX_INPUT)
@@ -480,6 +481,7 @@ export async function askDocument(
         "knowledge if you can.\n\n" +
         `DOCUMENT:\n${ctx}\n\nQUESTION: ${q}`,
     })
+    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
     return { answer: text.trim() }
   } catch (e) {
     return { answer: "", error: friendlyAiError(e, "askDocument") }
@@ -488,11 +490,13 @@ export async function askDocument(
 
 /** Quick free-form generation for the "Type anything" box on Home. */
 export async function quickGenerate(prompt: string): Promise<string> {
-  await requirePremium()
+  const guard = await contentToolGuard()
+  if (guard.message) throw new Error(guard.message)
   const p = clamp(prompt)
   const { text } = await generateText({
     model: MODEL,
     prompt: p,
   })
+  if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
   return text
 }

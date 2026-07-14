@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
+import { getAiGenerationsLeftToday } from "@/app/actions/ai"
 import { QuickCreate } from "@/components/quick-create"
 import { SavedStat } from "@/components/saved-stat"
 import { ContinueListening } from "@/components/continue-listening"
@@ -37,8 +38,8 @@ const aiTiles = [
 export default async function AppHome() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
-  // Everyone who reaches this page is entitled (the layout gate sends anyone
-  // without a trial/subscription to /subscribe) or is an admin.
+  // `unlocked` means unlimited access (paid, in-trial, or admin). Free users
+  // still reach this page but get the limited experience with daily quotas.
   const unlocked = subscribed || user?.role === "admin"
   const isTrialing = user?.subscriptionStatus === "trialing"
   const trialDaysLeft =
@@ -52,6 +53,8 @@ export default async function AppHome() {
         )
       : 0
   const docs = await getDocuments()
+  // Free users see how many AI generations they have left today as a nudge.
+  const aiLeft = unlocked ? 0 : await getAiGenerationsLeftToday()
   const totalWords = docs.reduce((sum, d) => sum + d.wordCount, 0)
   const minutesSaved = Math.round((totalWords / 200) * 0.6)
 
@@ -131,17 +134,17 @@ export default async function AppHome() {
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
               <Sparkles className="h-3 w-3" aria-hidden="true" />
-              Premium
+              {aiLeft > 0 ? `${aiLeft} free left today` : "Upgrade for more"}
             </Link>
           )}
         </div>
         <div className="grid grid-cols-3 gap-3">
           {aiTiles.map((tile) => (
-            <TileLink key={tile.label} {...tile} locked={!unlocked} />
+            <TileLink key={tile.label} {...tile} />
           ))}
         </div>
         <div className="mt-4">
-          <QuickCreate subscribed={unlocked} />
+          <QuickCreate />
         </div>
       </section>
 

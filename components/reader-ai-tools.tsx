@@ -27,6 +27,7 @@ import {
 import { generatePremiumSpeech } from "@/app/actions/speech"
 import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
 import { Button } from "@/components/ui/button"
+import { PodcastAudioActions } from "@/components/podcast-audio-actions"
 import { VoiceAvatar } from "@/components/voice-avatar"
 import { cn } from "@/lib/utils"
 
@@ -515,6 +516,15 @@ function PodcastPanel({ text }: { text: string }) {
             Guest · {guestPersona.name}
           </span>
         )}
+      </div>
+
+      <div className="mb-4">
+        <PodcastAudioActions
+          segments={result.segments}
+          hostVoice={hostVoice}
+          guestVoice={guestVoice}
+          title={result.title}
+        />
       </div>
 
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}

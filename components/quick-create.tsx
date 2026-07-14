@@ -7,7 +7,7 @@ import { quickGenerate } from "@/app/actions/ai"
 import { createDocument } from "@/app/actions/documents"
 import { cn } from "@/lib/utils"
 
-export function QuickCreate({ subscribed }: { subscribed: boolean }) {
+export function QuickCreate() {
   const router = useRouter()
   const [value, setValue] = useState("")
   const [loading, setLoading] = useState(false)
@@ -16,10 +16,8 @@ export function QuickCreate({ subscribed }: { subscribed: boolean }) {
   async function handleSubmit() {
     const prompt = value.trim()
     if (!prompt || loading) return
-    if (!subscribed) {
-      router.push("/subscribe")
-      return
-    }
+    // Free users are allowed through: the server enforces the shared daily AI
+    // quota and returns a friendly "subscribe" message once it's exhausted.
     setLoading(true)
     setError(null)
     try {

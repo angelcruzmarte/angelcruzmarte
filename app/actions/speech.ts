@@ -364,3 +364,84 @@ export async function generateDownloadableAudio(
 function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64")
 }
+
+function isHostSpeaker(speaker: string): boolean {
+  return (speaker ?? "").toLowerCase().includes("host")
+}
+
+/**
+ * Stitches an entire AI podcast (Host/Guest segments) into one downloadable
+ * MP3. Each segment is synthesized with its speaker's voice and the MP3 byte
+ * buffers are concatenated (MP3 frames join cleanly). Uses the same per-voice
+ * permission rules as playback: subscribers get every voice; free users may
+ * only use the free preview voices.
+ */
+export async function generatePodcastAudio(
+  segments: { speaker: string; line: string }[],
+  hostVoice: string,
+  guestVoice: string,
+): Promise<DownloadResponse> {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to download audio." }
+
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return { error: "There is no podcast audio to export yet." }
+  }
+
+  const subscribed = hasActiveSubscription(user)
+  // Which voices are actually used by this conversation.
+  const usesHost = segments.some((s) => isHostSpeaker(s.speaker))
+  const usesGuest = segments.some((s) => !isHostSpeaker(s.speaker))
+  const blocked =
+    (usesHost && !subscribed && !isFreePreviewVoice(hostVoice)) ||
+    (usesGuest && !subscribed && !isFreePreviewVoice(guestVoice))
+  if (blocked) {
+    return {
+      error:
+        "These voices are available on Premium. Subscribe to download this podcast.",
+    }
+  }
+
+  const hostPersona =
+    (VALID_VOICES.has(hostVoice) ? getPremiumVoice(hostVoice) : undefined) ??
+    getPremiumVoice("alloy")!
+  const guestPersona =
+    (VALID_VOICES.has(guestVoice) ? getPremiumVoice(guestVoice) : undefined) ??
+    getPremiumVoice("alloy")!
+
+  try {
+    const buffers: Uint8Array[] = []
+    for (const seg of segments) {
+      const line = (seg.line ?? "").trim()
+      if (!line) continue
+      const persona = isHostSpeaker(seg.speaker) ? hostPersona : guestPersona
+      buffers.push(await getOrCreateAudioBytes(line.slice(0, MAX_CHARS), persona))
+    }
+
+    if (buffers.length === 0) {
+      return { error: "There is no podcast audio to export yet." }
+    }
+
+    const total = buffers.reduce((sum, b) => sum + b.length, 0)
+    const merged = new Uint8Array(total)
+    let offset = 0
+    for (const b of buffers) {
+      merged.set(b, offset)
+      offset += b.length
+    }
+
+    return { audio: bytesToBase64(merged), mediaType: "audio/mpeg" }
+  } catch (err) {
+    console.log(
+      "[v0] podcast audio error:",
+      err instanceof Error ? err.message : err,
+    )
+    if (isRateLimit(err)) {
+      return {
+        error:
+          "Audio is in high demand right now. Please wait a moment and try again.",
+      }
+    }
+    return { error: "Could not generate the podcast audio right now. Try again." }
+  }
+}
