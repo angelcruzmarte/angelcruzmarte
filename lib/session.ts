@@ -56,6 +56,16 @@ export function isTrialExpired(u: User | null): boolean {
 }
 
 /**
+ * Free-tier daily limits (Speechify-style). Once a trial ends and the user has
+ * no paid plan, they keep a limited experience that nudges them to subscribe:
+ * a capped number of listening minutes and AI tool generations per day.
+ */
+// 15 minutes of premium narration per day.
+export const FREE_DAILY_LISTEN_SECONDS = 15 * 60
+// 3 AI generations (summary / quiz / podcast) per day.
+export const FREE_DAILY_AI_GENERATIONS = 3
+
+/**
  * Whether the account may use premium features. Admins always qualify (for
  * testing). Everyone else needs an active paid subscription OR a trial that is
  * still within its 7-day window — once the trial ends, access is limited to

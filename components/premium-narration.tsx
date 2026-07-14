@@ -145,9 +145,11 @@ export function PremiumNarration({
   }, [])
 
   const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
-  // Translation is offered only when we know the document's language, the
-  // reader's device language is one we support, and the two differ.
+  // Translation is a premium capability, offered only when we know the
+  // document's language, the reader's device language is one we support, and
+  // the two differ. Free users never trigger it (it calls a premium action).
   const canTranslate =
+    subscribed &&
     Boolean(sourceNorm) &&
     Boolean(deviceLang) &&
     isSupportedLang(deviceLang) &&

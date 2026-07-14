@@ -2,8 +2,15 @@
 
 import { chunkText } from "@/lib/chunk-text"
 import { languageName } from "@/lib/languages"
-import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import { db } from "@/lib/db"
+import { aiUsage } from "@/lib/db/schema"
+import {
+  FREE_DAILY_AI_GENERATIONS,
+  getCurrentUser,
+  hasActiveSubscription,
+} from "@/lib/session"
 import { generateObject, generateText } from "ai"
+import { and, eq, sql } from "drizzle-orm"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
@@ -46,6 +53,68 @@ function clamp(text: string) {
   return t.slice(0, MAX_INPUT)
 }
 
+// ----- Free-tier AI quota (summary / quiz / podcast) -----
+
+function aiDayKey(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function getAiUsedToday(userId: string): Promise<number> {
+  const rows = await db
+    .select({ count: aiUsage.count })
+    .from(aiUsage)
+    .where(and(eq(aiUsage.userId, userId), eq(aiUsage.day, aiDayKey())))
+    .limit(1)
+  return rows[0]?.count ?? 0
+}
+
+/** Increment today's AI generation counter for a free user (best-effort). */
+async function recordAiUsage(userId: string): Promise<void> {
+  const day = aiDayKey()
+  await db
+    .insert(aiUsage)
+    .values({ userId, day, count: 1 })
+    .onConflictDoUpdate({
+      target: [aiUsage.userId, aiUsage.day],
+      set: { count: sql`${aiUsage.count} + 1`, updatedAt: new Date() },
+    })
+}
+
+type ContentToolGuard = {
+  userId: string | null
+  /** User-facing message when the tool is blocked; null when allowed. */
+  message: string | null
+  /** True for subscribers/admins (unlimited, never counted). */
+  subscribed: boolean
+}
+
+/**
+ * Gate for the free-tier content tools (summary / quiz / podcast). Subscribers
+ * and admins are unlimited. Free users get FREE_DAILY_AI_GENERATIONS per day;
+ * beyond that they are prompted to subscribe. A credit is NOT consumed here —
+ * call recordAiUsage() only after a successful generation so failures are free.
+ */
+async function contentToolGuard(): Promise<ContentToolGuard> {
+  const user = await getCurrentUser()
+  if (!user)
+    return {
+      userId: null,
+      message: "Please sign in to use AI features.",
+      subscribed: false,
+    }
+  if (hasActiveSubscription(user))
+    return { userId: user.id, message: null, subscribed: true }
+  const used = await getAiUsedToday(user.id)
+  if (used >= FREE_DAILY_AI_GENERATIONS) {
+    return {
+      userId: user.id,
+      message: `You've used all ${FREE_DAILY_AI_GENERATIONS} free AI generations for today. Subscribe for unlimited AI tools.`,
+      subscribed: false,
+    }
+  }
+  return { userId: user.id, message: null, subscribed: false }
+}
+
 export interface SummaryResult {
   summary: string
   keyPoints: string[]
@@ -73,7 +142,9 @@ function friendlyAiError(e: unknown, label: string): string {
 
 export async function generateSummary(input: string): Promise<SummaryResult> {
   try {
-    await requirePremium()
+    const guard = await contentToolGuard()
+    if (guard.message)
+      return { summary: "", keyPoints: [], error: guard.message }
     const text = clamp(input)
     const { object } = await generateObject({
       model: MODEL,
@@ -87,6 +158,7 @@ export async function generateSummary(input: string): Promise<SummaryResult> {
       }),
       prompt: `Summarize the following text. Provide a short summary and the key takeaways.\n\n${text}`,
     })
+    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
     return object
   } catch (e) {
     return { summary: "", keyPoints: [], error: friendlyAiError(e, "generateSummary") }
@@ -107,7 +179,8 @@ export interface QuizResult {
 
 export async function generateQuiz(input: string): Promise<QuizResult> {
   try {
-    await requirePremium()
+    const guard = await contentToolGuard()
+    if (guard.message) return { questions: [], error: guard.message }
     const text = clamp(input)
     const { object } = await generateObject({
       model: MODEL,
@@ -132,6 +205,7 @@ export async function generateQuiz(input: string): Promise<QuizResult> {
       }),
       prompt: `Create a multiple-choice quiz that tests comprehension of the following text. Each question must have exactly 4 options with one correct answer.\n\n${text}`,
     })
+    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
     return { questions: object.questions }
   } catch (e) {
     return { questions: [], error: friendlyAiError(e, "generateQuiz") }
@@ -151,7 +225,8 @@ export interface PodcastResult {
 
 export async function generatePodcast(input: string): Promise<PodcastResult> {
   try {
-    await requirePremium()
+    const guard = await contentToolGuard()
+    if (guard.message) return { title: "", segments: [], error: guard.message }
     const text = clamp(input)
     const { object } = await generateObject({
       model: MODEL,
@@ -172,6 +247,7 @@ export async function generatePodcast(input: string): Promise<PodcastResult> {
       }),
       prompt: `Turn the following text into an engaging two-person podcast conversation between a Host and a Guest. Keep it lively, insightful, and faithful to the source.\n\n${text}`,
     })
+    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
     return object
   } catch (e) {
     return { title: "", segments: [], error: friendlyAiError(e, "generatePodcast") }

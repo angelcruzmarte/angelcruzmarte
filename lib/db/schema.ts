@@ -200,6 +200,23 @@ export const listeningStat = pgTable(
   }),
 )
 
+// Per-user daily count of AI tool generations (summary/quiz/podcast). Used to
+// enforce the free-tier daily quota; subscribers/admins are never counted.
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    // Calendar day, stored as YYYY-MM-DD.
+    day: text("day").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserDayAi: unique().on(t.userId, t.day),
+  }),
+)
+
 // Admin-created promotional discounts (e.g. 50% off during signup).
 export const promotion = pgTable("promotion", {
   id: serial("id").primaryKey(),
@@ -241,6 +258,7 @@ export type Promotion = typeof promotion.$inferSelect
 export type PricingView = typeof pricingView.$inferSelect
 
 export type ListeningStat = typeof listeningStat.$inferSelect
+export type AiUsage = typeof aiUsage.$inferSelect
 
 export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect

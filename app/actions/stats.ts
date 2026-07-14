@@ -47,6 +47,22 @@ export async function logListening(input: {
     })
 }
 
+/**
+ * Total listening seconds the signed-in user has accumulated today (server
+ * local day). Used to seed the free-tier daily listening cap. Returns 0 when
+ * there is no activity yet.
+ */
+export async function getTodayListenSeconds(): Promise<number> {
+  const userId = await getUserId()
+  const day = toDayKey(new Date())
+  const rows = await db
+    .select({ seconds: listeningStat.seconds })
+    .from(listeningStat)
+    .where(and(eq(listeningStat.userId, userId), eq(listeningStat.day, day)))
+    .limit(1)
+  return rows[0]?.seconds ?? 0
+}
+
 /** All-time totals + current streak for the signed-in user. */
 export async function getLifetimeStats(): Promise<LifetimeStats> {
   const userId = await getUserId()

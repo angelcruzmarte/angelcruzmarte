@@ -18,10 +18,10 @@ export default async function AppLayout({
   if (!user) redirect("/sign-in")
   if (!user.onboardingComplete) redirect("/onboarding")
   const subscribed = hasActiveSubscription(user)
-  // The entire app requires an active trial or subscription. Anyone without
-  // one is sent to the paywall to start their 7-day free trial. Admins are
-  // exempt so they can always reach the app to manage it.
-  if (!subscribed && user.role !== "admin") redirect("/subscribe")
+  // Speechify-style free tier: everyone can use the app. Non-subscribers get a
+  // limited experience (a daily listening cap, only the free preview voices,
+  // and a small daily AI-tool quota) that nudges them to subscribe — enforced
+  // per-feature rather than by locking them out at the door.
 
   return (
     <CartProvider>
