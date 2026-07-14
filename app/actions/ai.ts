@@ -89,6 +89,19 @@ type ContentToolGuard = {
 }
 
 /**
+ * How many free AI generations the signed-in user has left today. Returns a
+ * very large number for subscribers/admins (effectively unlimited) so callers
+ * can treat it uniformly. Used by the free-tier quota banner.
+ */
+export async function getAiGenerationsLeftToday(): Promise<number> {
+  const user = await getCurrentUser()
+  if (!user) return 0
+  if (hasActiveSubscription(user)) return Number.MAX_SAFE_INTEGER
+  const used = await getAiUsedToday(user.id)
+  return Math.max(0, FREE_DAILY_AI_GENERATIONS - used)
+}
+
+/**
  * Gate for the free-tier content tools (summary / quiz / podcast). Subscribers
  * and admins are unlimited. Free users get FREE_DAILY_AI_GENERATIONS per day;
  * beyond that they are prompted to subscribe. A credit is NOT consumed here —

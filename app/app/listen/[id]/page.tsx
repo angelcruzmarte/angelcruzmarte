@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { getDocument } from "@/app/actions/documents"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import { getTodayListenSeconds } from "@/app/actions/stats"
 import { ListenPlayer } from "@/components/listen-player"
 
 // Allow time for on-demand translation of long documents.
@@ -18,6 +19,8 @@ export default async function AppListenPage({
   const [doc, user] = await Promise.all([getDocument(docId), getCurrentUser()])
   if (!doc) notFound()
   const premium = hasActiveSubscription(user)
+  // Only free users are capped, so only they need today's listening total.
+  const initialListenSeconds = premium ? 0 : await getTodayListenSeconds()
 
   return (
     <ListenPlayer
@@ -33,6 +36,7 @@ export default async function AppListenPage({
       originalMime={doc.originalMime}
       sourceType={doc.sourceType}
       sourceLang={doc.sourceLang}
+      initialListenSeconds={initialListenSeconds}
     />
   )
 }

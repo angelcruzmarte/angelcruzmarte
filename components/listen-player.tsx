@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, TriangleAlert, FileText } from "lucide-react"
+import { ArrowLeft, TriangleAlert, FileText, Lock } from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
@@ -27,6 +27,7 @@ import {
   trackerPause,
   trackerStart,
 } from "@/lib/listening-tracker"
+import { FREE_DAILY_LISTEN_SECONDS } from "@/lib/limits"
 
 type Props = {
   title: string
@@ -52,6 +53,12 @@ type Props = {
   sourceType?: string | null
   /** Detected language (ISO/BCP-47) of the document content. */
   sourceLang?: string | null
+  /**
+   * Seconds this user has already listened today (server-provided). Used to
+   * seed the free-tier daily listening cap so it survives reloads. Ignored for
+   * subscribers/admins (premium=true).
+   */
+  initialListenSeconds?: number
 }
 
 export function ListenPlayer({
@@ -68,6 +75,7 @@ export function ListenPlayer({
   originalMime,
   sourceType,
   sourceLang,
+  initialListenSeconds = 0,
 }: Props) {
   // Everyone reads with the premium AI narration UI so free users can preview a
   // few premium voices (with the rest locked behind a subscribe prompt). The
@@ -103,6 +111,20 @@ export function ListenPlayer({
   // Whether the premium AI voice is actively playing (gates auto-scroll so it
   // never yanks the user back to the top when paused/idle).
   const [premiumPlaying, setPremiumPlaying] = useState(false)
+
+  // Free-tier daily listening cap. Subscribers/admins (premium) are unlimited.
+  // We seed with today's server-side total so the limit survives reloads, then
+  // add locally-observed seconds while the premium voice plays. When the cap is
+  // reached we force-pause the narration and show an upgrade prompt.
+  const [listenSeconds, setListenSeconds] = useState(initialListenSeconds)
+  const capReached = !premium && listenSeconds >= FREE_DAILY_LISTEN_SECONDS
+  useEffect(() => {
+    if (premium || !premiumPlaying) return
+    const id = setInterval(() => {
+      setListenSeconds((s) => s + 1)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [premium, premiumPlaying])
   // Whether an AI tool panel (Chat/Summary/Podcast/Quiz) is open. While open we
   // pause narration; closing it returns to the reader.
   const [toolOpen, setToolOpen] = useState(false)
@@ -266,13 +288,13 @@ export function ListenPlayer({
       persistProgress(currentWord)
   }, [currentWord, status, persistProgress, readingLang])
 
-  // Feed listening statistics: run a timer while playing and count word
-  // advances as the highlight moves forward. This covers the device-voice path;
-  // the premium AI player uses the shared player-provider engine.
+  // Feed listening statistics: run a timer while playing. Everyone now uses the
+  // premium AI narration path, so we track its play/pause state (the legacy
+  // device-voice `status` stays wired for the fallback engine below).
   useEffect(() => {
-    if (status === "playing") trackerStart()
+    if (status === "playing" || premiumPlaying) trackerStart()
     else trackerPause()
-  }, [status])
+  }, [status, premiumPlaying])
 
   const lastTrackedWord = useRef(-1)
   useEffect(() => {
@@ -414,6 +436,11 @@ export function ListenPlayer({
 
         {mode === "premium" ? (
           <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+            {capReached && (
+              <div className="mx-auto mb-2 max-w-2xl">
+                <ListenCapNotice />
+              </div>
+            )}
             <PremiumNarration
               text={content}
               title={title}
@@ -422,7 +449,7 @@ export function ListenPlayer({
               showReader={false}
               immersive
               topSlot={aiTools}
-              paused={toolOpen}
+              paused={toolOpen || capReached}
               onActiveWord={(word, total) => setPremiumPos({ word, total })}
               onPlayingChange={setPremiumPlaying}
             />
@@ -501,12 +528,19 @@ export function ListenPlayer({
 
       {mode === "premium" && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+          {capReached && (
+            <div className="mb-3">
+              <ListenCapNotice />
+            </div>
+          )}
           <PremiumNarration
             text={content}
             title={title}
             sourceLang={sourceLang}
             subscribed={premium}
             showReader={view === "text"}
+            paused={capReached}
+            onPlayingChange={setPremiumPlaying}
           />
         </div>
       )}
@@ -547,6 +581,37 @@ export function ListenPlayer({
           />
         </>
       )}
+    </div>
+  )
+}
+
+/** Upgrade prompt shown when a free user hits the daily listening cap. */
+function ListenCapNotice() {
+  return (
+    <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 shadow-lg backdrop-blur">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <Lock className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            You&apos;ve reached today&apos;s free listening limit
+          </p>
+          <p className="mt-0.5 text-pretty text-sm text-muted-foreground">
+            Subscribe for unlimited listening, every premium voice, and offline
+            downloads.
+          </p>
+          <Link
+            href="/subscribe"
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "mt-3 w-full sm:w-auto",
+            )}
+          >
+            Upgrade to Premium
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

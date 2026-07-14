@@ -8,6 +8,7 @@ import {
   ownsBook,
 } from "@/app/actions/books"
 import { formatPrice } from "@/lib/plans"
+import { getTodayListenSeconds } from "@/app/actions/stats"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
 import { BuyElsewhereButton } from "@/components/buy-elsewhere-button"
@@ -40,6 +41,9 @@ export default async function BookDetailPage({
     ownsBook(bookId),
     isBookFavorited(bookId),
   ])
+  // Owners listen to the full book with unlimited access; the free preview for
+  // non-owners counts toward the daily listening cap.
+  const initialListenSeconds = owned ? 0 : await getTodayListenSeconds()
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -115,6 +119,7 @@ export default async function BookDetailPage({
         premium={owned}
         bookId={owned ? book.id : undefined}
         allowDownload={owned}
+        initialListenSeconds={initialListenSeconds}
       />
     </div>
   )

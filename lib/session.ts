@@ -55,15 +55,13 @@ export function isTrialExpired(u: User | null): boolean {
   return new Date(u.currentPeriodEnd).getTime() <= Date.now()
 }
 
-/**
- * Free-tier daily limits (Speechify-style). Once a trial ends and the user has
- * no paid plan, they keep a limited experience that nudges them to subscribe:
- * a capped number of listening minutes and AI tool generations per day.
- */
-// 15 minutes of premium narration per day.
-export const FREE_DAILY_LISTEN_SECONDS = 15 * 60
-// 3 AI generations (summary / quiz / podcast) per day.
-export const FREE_DAILY_AI_GENERATIONS = 3
+// Free-tier daily limits live in a client-safe module (lib/limits.ts) so the
+// player (a client component) can import them without pulling in the db/auth
+// stack. Re-exported here for the many server callers that import from session.
+export {
+  FREE_DAILY_LISTEN_SECONDS,
+  FREE_DAILY_AI_GENERATIONS,
+} from "@/lib/limits"
 
 /**
  * Whether the account may use premium features. Admins always qualify (for
