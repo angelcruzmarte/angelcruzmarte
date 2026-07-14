@@ -36,12 +36,34 @@ export function isAdmin(u: User | null): boolean {
 }
 
 /**
- * An active subscription means status is "active" or "trialing". Admins always
- * count as subscribed so they can test and access every premium feature without
- * requiring a paid plan.
+ * True when the account is inside a 7-day free trial that has NOT yet expired.
+ * For a trialing Stripe subscription, `currentPeriodEnd` holds the trial end
+ * date, so once that moment passes the trial is over even if a webhook hasn't
+ * yet flipped the stored status. A missing end date is treated as still-active
+ * to avoid wrongly locking a legitimate in-progress trial.
+ */
+export function isTrialActive(u: User | null): boolean {
+  if (!u || u.subscriptionStatus !== "trialing") return false
+  if (!u.currentPeriodEnd) return true
+  return new Date(u.currentPeriodEnd).getTime() > Date.now()
+}
+
+/** True once a free trial has ended without converting to a paid plan. */
+export function isTrialExpired(u: User | null): boolean {
+  if (!u || u.subscriptionStatus !== "trialing") return false
+  if (!u.currentPeriodEnd) return false
+  return new Date(u.currentPeriodEnd).getTime() <= Date.now()
+}
+
+/**
+ * Whether the account may use premium features. Admins always qualify (for
+ * testing). Everyone else needs an active paid subscription OR a trial that is
+ * still within its 7-day window — once the trial ends, access is limited to
+ * encourage them to subscribe.
  */
 export function hasActiveSubscription(u: User | null): boolean {
   if (!u) return false
   if (isAdmin(u)) return true
-  return u.subscriptionStatus === "active" || u.subscriptionStatus === "trialing"
+  if (u.subscriptionStatus === "active") return true
+  return isTrialActive(u)
 }

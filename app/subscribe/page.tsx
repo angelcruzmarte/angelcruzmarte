@@ -1,6 +1,10 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import {
+  getCurrentUser,
+  hasActiveSubscription,
+  isTrialExpired,
+} from "@/lib/session"
 import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { SubscribePlans } from "@/components/subscribe-plans"
@@ -16,6 +20,7 @@ export default async function SubscribePage({
   if (hasActiveSubscription(user)) redirect("/app")
 
   const trialEligible = !user.hasUsedTrial && !user.stripeSubscriptionId
+  const trialEnded = isTrialExpired(user)
 
   const { canceled } = await searchParams
   const promo = await getActivePromotion()
@@ -25,9 +30,21 @@ export default async function SubscribePage({
       <SiteHeader />
       <PricingViewTracker path="subscribe" />
       <main className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+        {trialEnded && (
+          <div className="mx-auto mb-8 max-w-lg rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Your free trial has ended
+            </p>
+            <p className="mt-1 text-balance text-lg font-semibold">
+              Subscribe to keep your premium voices, AI podcasts, and full
+              library.
+            </p>
+          </div>
+        )}
+
         <div className="text-center">
           <h1 className="text-balance text-4xl font-semibold tracking-tight">
-            Unlock the full library
+            {trialEnded ? "Continue with Premium" : "Unlock the full library"}
           </h1>
           <p className="mt-3 text-pretty text-lg text-muted-foreground">
             Subscribe to listen to every title with natural narration and
