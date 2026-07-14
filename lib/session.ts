@@ -60,7 +60,7 @@ export function isTrialExpired(u: User | null): boolean {
 // stack. Re-exported here for the many server callers that import from session.
 export {
   FREE_DAILY_LISTEN_SECONDS,
-  FREE_DAILY_AI_GENERATIONS,
+  FREE_AI_QUOTA_CAPACITY,
 } from "@/lib/limits"
 
 /**

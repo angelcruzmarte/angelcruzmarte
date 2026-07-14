@@ -1,17 +1,26 @@
 import Link from "next/link"
 import { Sparkles } from "lucide-react"
-import { getAiGenerationsLeftToday } from "@/app/actions/ai"
-import { FREE_DAILY_AI_GENERATIONS } from "@/lib/limits"
+import { getAiQuotaStatus } from "@/app/actions/ai"
 import { cn } from "@/lib/utils"
 
+/** Human-friendly "in X" phrase for a refill countdown given minutes. */
+function refillPhrase(minutes: number | null): string {
+  if (!minutes) return ""
+  if (minutes >= 60) {
+    const hours = Math.round(minutes / 60)
+    return ` Another unlocks in about ${hours} hour${hours === 1 ? "" : "s"}.`
+  }
+  return ` Another unlocks in ${minutes} minute${minutes === 1 ? "" : "s"}.`
+}
+
 /**
- * Free-tier banner for the AI create tools. Shows how many of the daily free
- * AI generations remain and links to the subscribe page. Rendered only for
- * non-subscribers (the caller decides).
+ * Free-tier banner for the AI create tools. Shows how many banked AI
+ * generations remain (a quarter of capacity refills every few hours) and links
+ * to the subscribe page. Rendered only for non-subscribers (caller decides).
  */
 export async function FreeQuotaBanner({ className }: { className?: string }) {
-  const left = await getAiGenerationsLeftToday()
-  const none = left <= 0
+  const { available, capacity, nextRefillMinutes } = await getAiQuotaStatus()
+  const none = available <= 0
 
   return (
     <div
@@ -24,8 +33,8 @@ export async function FreeQuotaBanner({ className }: { className?: string }) {
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">
           {none
-            ? "You've used all your free AI generations today"
-            : `${left} of ${FREE_DAILY_AI_GENERATIONS} free AI generations left today`}
+            ? `You're out of free AI generations.${refillPhrase(nextRefillMinutes)}`
+            : `${available} of ${capacity} free AI generations available.${refillPhrase(nextRefillMinutes)}`}
         </p>
         <p className="mt-0.5 text-pretty text-muted-foreground">
           Subscribe for unlimited AI summaries, quizzes, and podcasts.{" "}

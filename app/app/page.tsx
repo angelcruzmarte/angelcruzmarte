@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
-import { getAiGenerationsLeftToday } from "@/app/actions/ai"
+import { getAiQuotaStatus } from "@/app/actions/ai"
 import { QuickCreate } from "@/components/quick-create"
 import { SavedStat } from "@/components/saved-stat"
 import { ContinueListening } from "@/components/continue-listening"
@@ -53,8 +53,8 @@ export default async function AppHome() {
         )
       : 0
   const docs = await getDocuments()
-  // Free users see how many AI generations they have left today as a nudge.
-  const aiLeft = unlocked ? 0 : await getAiGenerationsLeftToday()
+  // Free users see how many banked AI generations remain as a nudge.
+  const aiLeft = unlocked ? 0 : (await getAiQuotaStatus()).available
   const totalWords = docs.reduce((sum, d) => sum + d.wordCount, 0)
   const minutesSaved = Math.round((totalWords / 200) * 0.6)
 
@@ -134,7 +134,7 @@ export default async function AppHome() {
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
               <Sparkles className="h-3 w-3" aria-hidden="true" />
-              {aiLeft > 0 ? `${aiLeft} free left today` : "Upgrade for more"}
+              {aiLeft > 0 ? `${aiLeft} AI credits free` : "Upgrade for more"}
             </Link>
           )}
         </div>

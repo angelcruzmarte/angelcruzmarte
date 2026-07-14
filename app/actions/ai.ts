@@ -3,14 +3,15 @@
 import { chunkText } from "@/lib/chunk-text"
 import { languageName } from "@/lib/languages"
 import { db } from "@/lib/db"
-import { aiUsage } from "@/lib/db/schema"
+import { aiQuota } from "@/lib/db/schema"
 import {
-  FREE_DAILY_AI_GENERATIONS,
-  getCurrentUser,
-  hasActiveSubscription,
-} from "@/lib/session"
+  FREE_AI_QUOTA_CAPACITY,
+  FREE_AI_REFILL_AMOUNT,
+  FREE_AI_REFILL_PERIOD_MS,
+} from "@/lib/limits"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { generateObject, generateText } from "ai"
-import { and, eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
@@ -53,31 +54,114 @@ function clamp(text: string) {
   return t.slice(0, MAX_INPUT)
 }
 
-// ----- Free-tier AI quota (summary / quiz / podcast) -----
+// ----- Free-tier AI quota (refilling token bucket) -----
+//
+// A free user banks up to FREE_AI_QUOTA_CAPACITY AI generations. A quarter of
+// that capacity (FREE_AI_REFILL_AMOUNT) refills every FREE_AI_REFILL_PERIOD_MS,
+// rather than everyone resetting on a calendar-day boundary. State is a token
+// count plus an "anchor" timestamp (updatedAt) from which whole refill periods
+// are measured; leftover partial time carries forward.
 
-function aiDayKey(): string {
-  return new Date().toISOString().slice(0, 10)
+/**
+ * Pure token-bucket refill. Given the stored token count and anchor time,
+ * returns the tokens available now and the new anchor. When the bucket is full
+ * the anchor resets to now so the countdown to the next refill starts fresh.
+ */
+function refillTokens(
+  tokens: number,
+  anchorMs: number,
+  nowMs: number,
+): { tokens: number; anchorMs: number } {
+  if (tokens >= FREE_AI_QUOTA_CAPACITY) {
+    return { tokens: FREE_AI_QUOTA_CAPACITY, anchorMs: nowMs }
+  }
+  const elapsed = nowMs - anchorMs
+  const periods = Math.floor(elapsed / FREE_AI_REFILL_PERIOD_MS)
+  if (periods <= 0) return { tokens, anchorMs }
+  const next = Math.min(
+    FREE_AI_QUOTA_CAPACITY,
+    tokens + periods * FREE_AI_REFILL_AMOUNT,
+  )
+  // If we hit capacity, reset the anchor to now; otherwise advance it by the
+  // whole periods consumed so remaining partial time is preserved.
+  const nextAnchor =
+    next >= FREE_AI_QUOTA_CAPACITY
+      ? nowMs
+      : anchorMs + periods * FREE_AI_REFILL_PERIOD_MS
+  return { tokens: next, anchorMs: nextAnchor }
 }
 
-async function getAiUsedToday(userId: string): Promise<number> {
+/** Current bucket state for a user (after refill), without persisting. */
+async function readQuota(
+  userId: string,
+  nowMs: number,
+): Promise<{ tokens: number; anchorMs: number; existed: boolean }> {
   const rows = await db
-    .select({ count: aiUsage.count })
-    .from(aiUsage)
-    .where(and(eq(aiUsage.userId, userId), eq(aiUsage.day, aiDayKey())))
+    .select({ tokens: aiQuota.tokens, updatedAt: aiQuota.updatedAt })
+    .from(aiQuota)
+    .where(eq(aiQuota.userId, userId))
     .limit(1)
-  return rows[0]?.count ?? 0
+  // No row yet means the user has never spent a token: start full.
+  if (!rows[0]) {
+    return { tokens: FREE_AI_QUOTA_CAPACITY, anchorMs: nowMs, existed: false }
+  }
+  const refilled = refillTokens(rows[0].tokens, rows[0].updatedAt.getTime(), nowMs)
+  return { ...refilled, existed: true }
 }
 
-/** Increment today's AI generation counter for a free user (best-effort). */
-async function recordAiUsage(userId: string): Promise<void> {
-  const day = aiDayKey()
+export interface AiQuotaStatus {
+  /** Whole AI generations available right now. */
+  available: number
+  /** Maximum that can be banked. */
+  capacity: number
+  /** True for subscribers/admins (no limit applies). */
+  unlimited: boolean
+  /** Minutes until the next generation refills, or null when full/unlimited. */
+  nextRefillMinutes: number | null
+}
+
+/**
+ * Free-tier quota status for the signed-in user. Subscribers/admins are
+ * reported as unlimited. Used by the quota banner and Home pill.
+ */
+export async function getAiQuotaStatus(): Promise<AiQuotaStatus> {
+  const user = await getCurrentUser()
+  const capacity = FREE_AI_QUOTA_CAPACITY
+  if (!user)
+    return { available: 0, capacity, unlimited: false, nextRefillMinutes: null }
+  if (hasActiveSubscription(user))
+    return { available: capacity, capacity, unlimited: true, nextRefillMinutes: null }
+
+  const now = Date.now()
+  const { tokens, anchorMs } = await readQuota(user.id, now)
+  const available = Math.floor(tokens)
+  let nextRefillMinutes: number | null = null
+  if (available < capacity) {
+    const remaining = FREE_AI_REFILL_PERIOD_MS - ((now - anchorMs) % FREE_AI_REFILL_PERIOD_MS)
+    nextRefillMinutes = Math.max(1, Math.ceil(remaining / 60000))
+  }
+  return { available, capacity, unlimited: false, nextRefillMinutes }
+}
+
+/** Spend one token for a free user (best-effort), persisting the new state. */
+async function consumeAiToken(userId: string): Promise<void> {
+  const now = Date.now()
+  const { tokens, anchorMs, existed } = await readQuota(userId, now)
+  const remaining = Math.max(0, tokens - 1)
+  if (!existed) {
+    await db
+      .insert(aiQuota)
+      .values({ userId, tokens: remaining, updatedAt: new Date(anchorMs) })
+      .onConflictDoUpdate({
+        target: aiQuota.userId,
+        set: { tokens: remaining, updatedAt: new Date(anchorMs) },
+      })
+    return
+  }
   await db
-    .insert(aiUsage)
-    .values({ userId, day, count: 1 })
-    .onConflictDoUpdate({
-      target: [aiUsage.userId, aiUsage.day],
-      set: { count: sql`${aiUsage.count} + 1`, updatedAt: new Date() },
-    })
+    .update(aiQuota)
+    .set({ tokens: remaining, updatedAt: new Date(anchorMs) })
+    .where(eq(aiQuota.userId, userId))
 }
 
 type ContentToolGuard = {
@@ -89,23 +173,11 @@ type ContentToolGuard = {
 }
 
 /**
- * How many free AI generations the signed-in user has left today. Returns a
- * very large number for subscribers/admins (effectively unlimited) so callers
- * can treat it uniformly. Used by the free-tier quota banner.
- */
-export async function getAiGenerationsLeftToday(): Promise<number> {
-  const user = await getCurrentUser()
-  if (!user) return 0
-  if (hasActiveSubscription(user)) return Number.MAX_SAFE_INTEGER
-  const used = await getAiUsedToday(user.id)
-  return Math.max(0, FREE_DAILY_AI_GENERATIONS - used)
-}
-
-/**
- * Gate for the free-tier content tools (summary / quiz / podcast). Subscribers
- * and admins are unlimited. Free users get FREE_DAILY_AI_GENERATIONS per day;
- * beyond that they are prompted to subscribe. A credit is NOT consumed here —
- * call recordAiUsage() only after a successful generation so failures are free.
+ * Gate for the free-tier AI tools. Subscribers and admins are unlimited. Free
+ * users draw from the refilling token bucket; when empty they are told when the
+ * next generation refills and prompted to subscribe. A token is NOT consumed
+ * here — call consumeAiToken() only after a successful generation so failed
+ * attempts are free.
  */
 async function contentToolGuard(): Promise<ContentToolGuard> {
   const user = await getCurrentUser()
@@ -117,11 +189,19 @@ async function contentToolGuard(): Promise<ContentToolGuard> {
     }
   if (hasActiveSubscription(user))
     return { userId: user.id, message: null, subscribed: true }
-  const used = await getAiUsedToday(user.id)
-  if (used >= FREE_DAILY_AI_GENERATIONS) {
+
+  const now = Date.now()
+  const { tokens, anchorMs } = await readQuota(user.id, now)
+  if (Math.floor(tokens) < 1) {
+    const remaining = FREE_AI_REFILL_PERIOD_MS - ((now - anchorMs) % FREE_AI_REFILL_PERIOD_MS)
+    const mins = Math.max(1, Math.ceil(remaining / 60000))
+    const wait =
+      mins >= 60
+        ? `about ${Math.round(mins / 60)} hour${mins >= 120 ? "s" : ""}`
+        : `${mins} minute${mins === 1 ? "" : "s"}`
     return {
       userId: user.id,
-      message: `You've used all ${FREE_DAILY_AI_GENERATIONS} free AI generations for today. Subscribe for unlimited AI tools.`,
+      message: `You're out of free AI generations. You'll get another in ${wait}, or subscribe for unlimited AI tools.`,
       subscribed: false,
     }
   }
@@ -171,7 +251,7 @@ export async function generateSummary(input: string): Promise<SummaryResult> {
       }),
       prompt: `Summarize the following text. Provide a short summary and the key takeaways.\n\n${text}`,
     })
-    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
+    if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
     return object
   } catch (e) {
     return { summary: "", keyPoints: [], error: friendlyAiError(e, "generateSummary") }
@@ -218,7 +298,7 @@ export async function generateQuiz(input: string): Promise<QuizResult> {
       }),
       prompt: `Create a multiple-choice quiz that tests comprehension of the following text. Each question must have exactly 4 options with one correct answer.\n\n${text}`,
     })
-    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
+    if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
     return { questions: object.questions }
   } catch (e) {
     return { questions: [], error: friendlyAiError(e, "generateQuiz") }
@@ -260,7 +340,7 @@ export async function generatePodcast(input: string): Promise<PodcastResult> {
       }),
       prompt: `Turn the following text into an engaging two-person podcast conversation between a Host and a Guest. Keep it lively, insightful, and faithful to the source.\n\n${text}`,
     })
-    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
+    if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
     return object
   } catch (e) {
     return { title: "", segments: [], error: friendlyAiError(e, "generatePodcast") }
@@ -481,7 +561,7 @@ export async function askDocument(
         "knowledge if you can.\n\n" +
         `DOCUMENT:\n${ctx}\n\nQUESTION: ${q}`,
     })
-    if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
+    if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
     return { answer: text.trim() }
   } catch (e) {
     return { answer: "", error: friendlyAiError(e, "askDocument") }
@@ -497,6 +577,6 @@ export async function quickGenerate(prompt: string): Promise<string> {
     model: MODEL,
     prompt: p,
   })
-  if (!guard.subscribed && guard.userId) await recordAiUsage(guard.userId)
+  if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
   return text
 }
