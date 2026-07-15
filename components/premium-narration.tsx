@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   Pause,
   Play,
@@ -21,21 +21,18 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
 } from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ReaderPanel } from "@/components/reader-panel"
 import { VoiceAvatar } from "@/components/voice-avatar"
+import { usePlayer } from "@/components/player-provider"
 import { cn } from "@/lib/utils"
 import { chunkForNarration } from "@/lib/chunk-text"
 import { tokenize } from "@/hooks/use-speech"
@@ -44,7 +41,6 @@ import { translatePassage } from "@/app/actions/ai"
 import {
   PREMIUM_VOICES,
   getPremiumVoice,
-  groupedVoices,
   isFreePreviewVoice,
   DEFAULT_FREE_VOICE_ID,
 } from "@/lib/voices"
@@ -100,7 +96,8 @@ export function PremiumNarration({
   onPlayingChange?: (playing: boolean) => void
 }) {
   const router = useRouter()
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const pathname = usePathname()
+  const player = usePlayer()
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
   const cacheRef = useRef<Map<string, string>>(new Map())
 
@@ -113,13 +110,23 @@ export function PremiumNarration({
   const [voice, setVoice] = useState<string>(
     subscribed ? PREMIUM_VOICES[0].id : DEFAULT_FREE_VOICE_ID,
   )
-  const [rate, setRate] = useState(1)
-  const [index, setIndex] = useState(0)
-  const [status, setStatus] = useState<"idle" | "loading" | "playing" | "paused">(
-    "idle",
-  )
   const [error, setError] = useState<string | null>(null)
-  const [currentWord, setCurrentWord] = useState(-1)
+
+  // Playback state is owned by the global player provider so audio survives
+  // navigation (and drives the docked mini-player on other screens). The
+  // methods are individually stable (useCallback), so we destructure them and
+  // depend on those — NOT the `player` object, whose identity changes on every
+  // progress tick and would otherwise re-run effects continuously.
+  const { status, index, fraction, rate } = player
+  const {
+    setSource,
+    setFullPlayerMounted,
+    play,
+    toggle,
+    pause,
+    stop,
+    setRate,
+  } = player
 
   // Narration sections come from the ORIGINAL text so their boundaries stay
   // stable across languages. Translations are stored per section and filled in
@@ -127,9 +134,7 @@ export function PremiumNarration({
   const sourceChunks = useMemo(() => chunkForNarration(text), [text])
 
   // Translation state. `lang` is either the sentinel "original" (narrate the
-  // document as-is) or a target language code we translate INTO. There is no
-  // manual language menu: we auto-detect the reader's device language and, when
-  // it differs from the document's language, offer/enable translation to it.
+  // document as-is) or a target language code we translate INTO.
   const ORIGINAL = "original"
   const [lang, setLang] = useState<string>(ORIGINAL)
   const [sections, setSections] = useState<
@@ -185,9 +190,18 @@ export function PremiumNarration({
     return offs
   }, [chunks])
 
+  // Approximate active word: map audio progress within the current section onto
+  // its word range so the reader tracks and auto-scrolls during playback.
+  const currentWord = useMemo(() => {
+    if (status === "idle") return -1
+    const localCount = countWords(chunks[index] ?? "")
+    const local = Math.min(localCount - 1, Math.floor(fraction * localCount))
+    return (offsets[index] ?? 0) + Math.max(0, local)
+  }, [status, index, fraction, chunks, offsets])
+
   // Surface the approximate active word so an external follow-along view (the
-  // PDF pages) can track playback position. The callback is held in a ref so an
-  // inline parent callback doesn't retrigger this effect every render.
+  // PDF pages) can track playback position. Held in a ref so an inline parent
+  // callback doesn't retrigger this effect every render.
   const onActiveWordRef = useRef(onActiveWord)
   onActiveWordRef.current = onActiveWord
   useEffect(() => {
@@ -195,8 +209,7 @@ export function PremiumNarration({
   }, [currentWord, words.length])
 
   // Surface whether audio is actively playing so the external follow-along view
-  // only auto-scrolls during playback (and never yanks the user back to the top
-  // when paused/idle). Held in a ref to avoid retriggering on inline callbacks.
+  // only auto-scrolls during playback.
   const onPlayingChangeRef = useRef(onPlayingChange)
   onPlayingChangeRef.current = onPlayingChange
   useEffect(() => {
@@ -208,17 +221,6 @@ export function PremiumNarration({
     lang === ORIGINAL
       ? sourceChunks.length
       : sections[lang]?.reduce((n, s) => (s ? n + 1 : n), 0) ?? 0
-
-  const stop = useCallback(() => {
-    const audio = audioRef.current
-    if (audio) {
-      audio.pause()
-      audio.currentTime = 0
-    }
-    setStatus("idle")
-    setIndex(0)
-    setCurrentWord(-1)
-  }, [])
 
   // Translate a single source section into `targetLang`, caching the result and
   // deduplicating in-flight requests. Returns the translated (or source) text.
@@ -289,12 +291,13 @@ export function PremiumNarration({
     [sourceChunks, translateSection],
   )
 
+  // Resolver handed to the global player: returns a persistent, cached MP3 URL
+  // for section `i` (translating on demand first when needed).
   const loadChunk = useCallback(
     async (i: number): Promise<string | null> => {
       const key = `${lang}:${voice}:${i}`
       const cached = cacheRef.current.get(key)
       if (cached) return cached
-      // Ensure this section is translated (on demand) before generating audio.
       let sectionText = sourceChunks[i]
       if (lang !== ORIGINAL) {
         try {
@@ -311,93 +314,70 @@ export function PremiumNarration({
         setError(res.error)
         return null
       }
-      // res.url is a persistent, publicly cached MP3 URL — the browser caches it
-      // too, so replays are instant and never re-hit the TTS API.
       cacheRef.current.set(key, res.url)
       return res.url
     },
     [sourceChunks, voice, lang, translateSection],
   )
 
-  const playChunk = useCallback(
-    async (i: number) => {
-      if (i >= chunks.length) {
-        setStatus("idle")
-        setIndex(0)
-        setCurrentWord(-1)
-        return
-      }
-      setError(null)
-      setStatus("loading")
-      setIndex(i)
-      setCurrentWord(offsets[i] ?? 0)
-      // Try to load audio; if the first attempt is throttled, automatically
-      // retry a couple of times with a short delay so the user doesn't have to
-      // press play again themselves.
-      let url = await loadChunk(i)
-      for (let attempt = 0; !url && attempt < 2; attempt++) {
-        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
-        url = await loadChunk(i)
-      }
-      if (!url) {
-        setStatus("idle")
-        return
-      }
-      setError(null)
-      const audio = audioRef.current
-      if (!audio) return
-      audio.src = url
-      audio.playbackRate = rate
-      try {
-        await audio.play()
-        setStatus("playing")
-        // Prefetch the next chunk in the background for seamless playback.
-        if (i + 1 < chunks.length) void loadChunk(i + 1)
-      } catch {
-        setStatus("paused")
-      }
-    },
-    [chunks.length, loadChunk, rate, offsets],
+  const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
+
+  // Stable id for this content so the provider can dedupe reader remounts and
+  // adopt ongoing playback instead of restarting.
+  const sessionId = useMemo(
+    () => `${title}::${text.length}::${countWords(text)}`,
+    [title, text],
   )
 
-  const handlePlayPause = useCallback(() => {
-    const audio = audioRef.current
-    if (!audio) return
-    if (status === "playing") {
-      audio.pause()
-      setStatus("paused")
-    } else if (status === "paused") {
-      void audio.play()
-      setStatus("playing")
-    } else {
-      void playChunk(index)
-    }
-  }, [status, index, playChunk])
-
-  const handleEnded = useCallback(() => {
-    void playChunk(index + 1)
-  }, [index, playChunk])
-
-  // When an AI tool panel opens, force-pause narration so the two audio
-  // sources don't overlap. On close (`paused` back to false) we leave playback
-  // paused so the reader resumes intentionally with the Play button.
+  // Register (and keep fresh) the playback source with the global player. This
+  // re-runs when the resolver changes (voice/lang switch) so the provider keeps
+  // a current resolver without interrupting playback (same session id).
   useEffect(() => {
-    if (!paused) return
-    const audio = audioRef.current
-    if (audio && !audio.paused) audio.pause()
-    setStatus((s) => (s === "playing" || s === "loading" ? "paused" : s))
-  }, [paused])
+    setSource(
+      {
+        id: sessionId,
+        title,
+        expandHref: pathname || "/app",
+        total: sourceChunks.length,
+        voiceName: selectedVoice.name,
+        voiceImage: selectedVoice.image,
+      },
+      loadChunk,
+    )
+  }, [
+    setSource,
+    sessionId,
+    title,
+    pathname,
+    sourceChunks.length,
+    selectedVoice.name,
+    selectedVoice.image,
+    loadChunk,
+  ])
 
-  // Approximate follow-along highlighting: map audio progress within the
-  // current chunk onto its word range so the reader tracks and auto-scrolls.
-  const handleTimeUpdate = useCallback(() => {
-    const audio = audioRef.current
-    if (!audio || !audio.duration || Number.isNaN(audio.duration)) return
-    const frac = Math.min(1, audio.currentTime / audio.duration)
-    const localCount = countWords(chunks[index] ?? "")
-    const local = Math.min(localCount - 1, Math.floor(frac * localCount))
-    setCurrentWord((offsets[index] ?? 0) + Math.max(0, local))
-  }, [chunks, index, offsets])
+  // While the full reader is mounted it has its own controls, so hide the
+  // docked mini-player. Restore it (and thus continue showing playback) once
+  // the user navigates away.
+  useEffect(() => {
+    setFullPlayerMounted(true)
+    return () => setFullPlayerMounted(false)
+  }, [setFullPlayerMounted])
+
+  // When an AI tool panel opens (or any external force-pause), pause narration
+  // so two audio sources don't overlap.
+  useEffect(() => {
+    if (paused) pause()
+  }, [paused, pause])
+
+  const busy = status === "loading"
+  const progress =
+    chunks.length > 0 ? Math.round((index / chunks.length) * 100) : 0
+  const showTranslateProgress =
+    lang !== ORIGINAL && translating && doneCount < chunks.length
+  const deviceLabel = deviceLang ? languageLabel(deviceLang) : ""
+  const isTranslated = lang !== ORIGINAL
+
+  const handlePlayPause = useCallback(() => toggle(), [toggle])
 
   // Start playback from the chunk that contains a tapped word.
   const handleWordClick = useCallback(
@@ -409,26 +389,19 @@ export function PremiumNarration({
           break
         }
       }
-      void playChunk(target)
+      void play(target)
     },
-    [offsets, playChunk],
+    [offsets, play],
   )
 
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.playbackRate = rate
-  }, [rate])
-
-  // When the user switches voice, stop the current audio and — if it was
-  // playing — resume the SAME section with the new voice. The actual replay
-  // happens in an effect below, once `voice` (and the voice-aware `playChunk`)
-  // has updated, so we don't play with a stale closure.
+  // When the user switches voice, stop and — if it was playing — resume the
+  // SAME section with the new voice once the resolver has updated.
   const pendingResumeRef = useRef<number | null>(null)
   const handleVoiceChange = useCallback(
     (v: string | null) => {
       const next = v || PREMIUM_VOICES[0].id
       if (next === voice) return
-      // Locked voice for a free user: send them to the subscribe page instead
-      // of switching, so trying a premium voice becomes an upgrade prompt.
+      // Locked voice for a free user: send them to subscribe instead.
       if (!canUseVoice(next)) {
         router.push("/subscribe")
         return
@@ -439,21 +412,22 @@ export function PremiumNarration({
       setVoice(next)
       if (wasActive) pendingResumeRef.current = resumeIndex
     },
-    [stop, voice, status, index, canUseVoice, router],
+    [voice, status, index, canUseVoice, router, stop],
   )
 
-  // After a voice switch, resume playback of the pending section with the now
-  // updated (voice-aware) playChunk.
+  // After a voice switch, resume playback of the pending section. This runs
+  // after the setSource effect above (defined earlier) has refreshed the
+  // provider's resolver to the new voice.
   useEffect(() => {
     if (pendingResumeRef.current == null) return
     const i = pendingResumeRef.current
     pendingResumeRef.current = null
-    void playChunk(i)
+    void play(i)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice])
 
   // Toggle between the document's original language and an automatic
-  // translation into the reader's device language. No manual language menu.
+  // translation into the reader's device language.
   const toggleTranslation = useCallback(() => {
     stop()
     setError(null)
@@ -464,7 +438,7 @@ export function PremiumNarration({
       setLang(ORIGINAL)
       setTranslating(false)
     }
-  }, [lang, deviceLang, stop, translateInBackground])
+  }, [lang, deviceLang, translateInBackground, stop])
 
   // Automatically translate into the device language the first time we detect
   // that it differs from the document's language.
@@ -478,26 +452,9 @@ export function PremiumNarration({
     }
   }, [canTranslate, deviceLang, translateInBackground])
 
-  const progress =
-    chunks.length > 0 ? Math.round((index / chunks.length) * 100) : 0
-  const busy = status === "loading"
-  const showTranslateProgress =
-    lang !== ORIGINAL && translating && doneCount < chunks.length
-  const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
-  const deviceLabel = deviceLang ? languageLabel(deviceLang) : ""
-  const isTranslated = lang !== ORIGINAL
-
   if (immersive) {
     return (
       <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <audio
-          ref={audioRef}
-          onEnded={handleEnded}
-          onTimeUpdate={handleTimeUpdate}
-          className="hidden"
-        />
-
         {topSlot && (
           <div className="mb-2 border-b border-border pb-2">{topSlot}</div>
         )}
@@ -575,7 +532,7 @@ export function PremiumNarration({
           </DropdownMenu>
 
           <Button
-            onClick={() => playChunk(Math.max(0, index - 1))}
+            onClick={() => player.play(Math.max(0, index - 1))}
             variant="ghost"
             size="icon"
             className="h-10 w-10 shrink-0"
@@ -602,7 +559,7 @@ export function PremiumNarration({
           </Button>
 
           <Button
-            onClick={() => playChunk(Math.min(chunks.length - 1, index + 1))}
+            onClick={() => player.play(Math.min(chunks.length - 1, index + 1))}
             variant="ghost"
             size="icon"
             className="h-10 w-10 shrink-0"
@@ -641,7 +598,7 @@ export function PremiumNarration({
               {RATES.map((r) => (
                 <DropdownMenuItem
                   key={r}
-                  onClick={() => setRate(r)}
+                  onClick={() => player.setRate(r)}
                   className="justify-between tabular-nums"
                 >
                   {r}x
@@ -693,14 +650,6 @@ export function PremiumNarration({
   return (
     <>
       <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 sm:p-5">
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <audio
-          ref={audioRef}
-          onEnded={handleEnded}
-          onTimeUpdate={handleTimeUpdate}
-          className="hidden"
-        />
-
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
           <Sparkles className="h-4 w-4" />
           Premium AI narration
@@ -724,7 +673,7 @@ export function PremiumNarration({
           </Button>
 
           <Button
-            onClick={stop}
+            onClick={() => player.stop()}
             variant="secondary"
             size="lg"
             className="h-12 w-12 rounded-full p-0"
@@ -820,7 +769,7 @@ export function PremiumNarration({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {RATES.map((r) => (
-                <DropdownMenuItem key={r} onClick={() => setRate(r)}>
+                <DropdownMenuItem key={r} onClick={() => player.setRate(r)}>
                   {r}x
                 </DropdownMenuItem>
               ))}
@@ -925,7 +874,7 @@ export function PremiumNarration({
             </Button>
 
             <Button
-              onClick={stop}
+              onClick={() => player.stop()}
               variant="secondary"
               size="icon"
               className="h-11 w-11 shrink-0 rounded-full"
