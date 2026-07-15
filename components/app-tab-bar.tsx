@@ -3,14 +3,14 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Library, Compass } from "lucide-react"
+import { Home, Library, BookOpen } from "lucide-react"
 import { AddSheet, AddSheetTrigger } from "@/components/add-sheet"
 import { cn } from "@/lib/utils"
 
 const tabs = [
   { href: "/app", label: "Home", icon: Home, exact: true },
   { href: "/app/library", label: "Library", icon: Library },
-  { href: "/app/discover", label: "Discover", icon: Compass },
+  { href: "/app/books", label: "Books", icon: BookOpen },
 ]
 
 export function AppTabBar() {

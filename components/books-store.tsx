@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   ShoppingBag,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react"
@@ -185,6 +186,19 @@ export function BooksStore({
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-3xl font-bold tracking-tight">Book Store</h1>
         <div className="flex items-center gap-2">
+          <Link
+            href="/app/discover"
+            aria-label="Personalize your book recommendations"
+            className={cn(
+              "flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              personalized
+                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                : "border-border bg-card hover:bg-secondary",
+            )}
+          >
+            <Sparkles className="h-4 w-4" />
+            For You
+          </Link>
           <button
             type="button"
             onClick={() => setOpen(true)}
