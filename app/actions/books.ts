@@ -7,9 +7,10 @@ import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
+import type { Book } from "@/lib/db/schema"
 
 // Flat price for public-domain books imported on-demand from the live catalog.
 const IMPORTED_BOOK_PRICE = 499
@@ -31,6 +32,84 @@ export async function getBooks() {
 export async function getBook(id: number) {
   const [row] = await db.select().from(book).where(eq(book.id, id)).limit(1)
   return row ?? null
+}
+
+export type StorefrontRow = { key: string; title: string; books: Book[] }
+
+export type Storefront = {
+  hero: Book | null
+  rows: StorefrontRow[]
+}
+
+// How many books to show per curated storefront row.
+const ROW_SIZE = 12
+
+/**
+ * Builds the storefront: a hero spotlight plus curated rows. "New Releases"
+ * and "Editor's Picks" are derived from catalog metadata; "Trending" (last 30
+ * days) and "Best Sellers" (all-time) are derived from real purchase counts,
+ * so they only appear once there is genuine sales data.
+ */
+export async function getStorefront(): Promise<Storefront> {
+  const all = await getBooks()
+  if (all.length === 0) return { hero: null, rows: [] }
+
+  const byId = new Map(all.map((b) => [b.id, b]))
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+  // Real purchase counts, all-time and trailing 30 days.
+  const [allTime, recent] = await Promise.all([
+    db
+      .select({ bookId: bookPurchase.bookId, c: count() })
+      .from(bookPurchase)
+      .groupBy(bookPurchase.bookId)
+      .orderBy(desc(count())),
+    db
+      .select({ bookId: bookPurchase.bookId, c: count() })
+      .from(bookPurchase)
+      .where(gte(bookPurchase.createdAt, thirtyDaysAgo))
+      .groupBy(bookPurchase.bookId)
+      .orderBy(desc(count())),
+  ])
+
+  const rankToBooks = (ranked: { bookId: number }[]) =>
+    ranked
+      .map((r) => byId.get(r.bookId))
+      .filter((b): b is Book => Boolean(b))
+      .slice(0, ROW_SIZE)
+
+  const rows: StorefrontRow[] = []
+
+  // Editor's Picks — curated featured titles.
+  const editors = all.filter((b) => b.featured).slice(0, ROW_SIZE)
+  if (editors.length > 0) {
+    rows.push({ key: "editors", title: "Editor's Picks", books: editors })
+  }
+
+  // New Releases — newest additions to the catalog.
+  const newReleases = [...all]
+    .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+    .slice(0, ROW_SIZE)
+  if (newReleases.length > 0) {
+    rows.push({ key: "new", title: "New Releases", books: newReleases })
+  }
+
+  // Trending — most purchased in the last 30 days (only with real data).
+  const trending = rankToBooks(recent)
+  if (trending.length >= 3) {
+    rows.push({ key: "trending", title: "Trending Now", books: trending })
+  }
+
+  // Best Sellers — most purchased all-time (only with real data).
+  const bestSellers = rankToBooks(allTime)
+  if (bestSellers.length >= 3) {
+    rows.push({ key: "bestsellers", title: "Best Sellers", books: bestSellers })
+  }
+
+  // Hero: top featured title, otherwise the newest book.
+  const hero = editors[0] ?? newReleases[0] ?? all[0]
+
+  return { hero, rows }
 }
 
 /** Returns the set of book ids the current user owns (empty if signed out). */

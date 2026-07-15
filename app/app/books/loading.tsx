@@ -19,6 +19,17 @@ export default function BooksLoading() {
         <div className="h-9 w-28 animate-pulse rounded-full bg-secondary" />
       </div>
 
+      {/* Hero spotlight */}
+      <div className="mt-7 flex gap-5 rounded-3xl border border-border bg-secondary/40 p-6 sm:p-8">
+        <div className="h-48 w-32 shrink-0 animate-pulse rounded-lg bg-secondary sm:h-60 sm:w-40" />
+        <div className="flex-1 space-y-3 py-2">
+          <div className="h-6 w-24 animate-pulse rounded-full bg-secondary" />
+          <div className="h-7 w-3/4 animate-pulse rounded bg-secondary" />
+          <div className="h-4 w-1/3 animate-pulse rounded bg-secondary" />
+          <div className="h-11 w-40 animate-pulse rounded-full bg-secondary" />
+        </div>
+      </div>
+
       {/* A few shelf skeletons */}
       <div className="mt-8 space-y-8">
         {[0, 1, 2].map((shelf) => (

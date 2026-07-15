@@ -3,14 +3,16 @@ import {
   getFavoriteBookIds,
   getOwnedBookIds,
   getPersonalizedBooks,
+  getStorefront,
 } from "@/app/actions/books"
 import { getDocuments } from "@/app/actions/documents"
 import { BooksStore } from "@/components/books-store"
 
 export default async function BooksPage() {
-  const [{ books, personalized }, ownedIds, favoriteIds, uploads] =
+  const [{ books, personalized }, storefront, ownedIds, favoriteIds, uploads] =
     await Promise.all([
       getPersonalizedBooks(),
+      getStorefront(),
       getOwnedBookIds(),
       getFavoriteBookIds(),
       getDocuments(),
@@ -22,6 +24,7 @@ export default async function BooksPage() {
       <Suspense fallback={null}>
         <BooksStore
           books={books}
+          storefront={storefront}
           personalized={personalized}
           ownedIds={Array.from(ownedIds)}
           favoriteIds={Array.from(favoriteIds)}

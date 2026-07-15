@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
+  ArrowRight,
   Check,
   Headphones,
   Heart,
@@ -14,6 +15,7 @@ import {
   X,
 } from "lucide-react"
 import type { Book, Document } from "@/lib/db/schema"
+import type { Storefront } from "@/app/actions/books"
 import { BookCover } from "@/components/book-cover"
 import { FavoriteButton } from "@/components/favorite-button"
 import { LiveBookResults } from "@/components/live-book-results"
@@ -83,12 +85,14 @@ function toCartItem(b: Book): CartItem {
 
 export function BooksStore({
   books,
+  storefront,
   personalized,
   ownedIds = [],
   favoriteIds = [],
   uploads = [],
 }: {
   books: Book[]
+  storefront?: Storefront
   personalized: boolean
   ownedIds?: number[]
   favoriteIds?: number[]
@@ -98,8 +102,8 @@ export function BooksStore({
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const { count, totalCents, setOpen } = useCart()
 
-  // Group the catalog into Speechify-style shelves by category. Featured books
-  // get their own shelf at the top.
+  // Group the catalog into Speechify-style shelves by category. (Featured books
+  // are surfaced separately via the storefront's "Editor's Picks" row.)
   const shelves = useMemo(() => {
     const byCategory = new Map<string, Book[]>()
     for (const b of books) {
@@ -107,11 +111,7 @@ export function BooksStore({
       list.push(b)
       byCategory.set(b.category, list)
     }
-    const featured = books.filter((b) => b.featured)
     const result: Array<{ title: string; books: Book[] }> = []
-    if (featured.length > 0) {
-      result.push({ title: "Featured", books: featured })
-    }
     // Order categories by the curated list, then any extras alphabetically.
     const categories = Array.from(byCategory.keys()).sort((a, b) => {
       const ia = CATEGORY_ORDER.indexOf(a)
@@ -338,6 +338,26 @@ export function BooksStore({
         />
       ) : (
         <>
+          {/* Hero spotlight */}
+          {storefront?.hero && (
+            <BookHero
+              book={storefront.hero}
+              owned={owned.has(storefront.hero.id)}
+              favorited={favorites.has(storefront.hero.id)}
+            />
+          )}
+
+          {/* Curated storefront rows (Editor's Picks, New Releases, etc.) */}
+          {storefront?.rows.map((row) => (
+            <BookShelf
+              key={row.key}
+              title={row.title}
+              books={row.books}
+              owned={owned}
+              favorites={favorites}
+            />
+          ))}
+
           {/* Upload your own books (free to listen) */}
           <section>
             <UploadBook />
@@ -346,7 +366,12 @@ export function BooksStore({
           {/* Your uploaded books */}
           {uploads.length > 0 && <UploadsShelf uploads={uploads} />}
 
-          {/* Speechify-style category shelves */}
+          {/* Browse by category */}
+          {shelves.length > 0 && (
+            <h2 className="pt-2 text-xl font-bold tracking-tight">
+              Browse by category
+            </h2>
+          )}
           {shelves.map((shelf) => (
             <BookShelf
               key={shelf.title}
@@ -359,6 +384,100 @@ export function BooksStore({
         </>
       )}
     </div>
+  )
+}
+
+function BookHero({
+  book,
+  owned,
+  favorited,
+}: {
+  book: Book
+  owned: boolean
+  favorited: boolean
+}) {
+  const { has, add, remove } = useCart()
+  const inCart = has(book.id)
+
+  return (
+    <section
+      aria-label="Featured book"
+      className="overflow-hidden rounded-3xl border border-border"
+      // Subtle tint drawn from the book's own cover color as an accent.
+      style={{ backgroundColor: `${book.coverColor}14` }}
+    >
+      <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:p-8 sm:text-left">
+        <Link
+          href={`/app/books/${book.id}`}
+          aria-label={book.title}
+          className="w-32 shrink-0 sm:w-40"
+        >
+          <BookCover
+            book={book}
+            className="w-full shadow-lg transition-transform hover:-translate-y-1"
+          />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <Sparkles className="h-3.5 w-3.5" />
+            Featured
+          </span>
+          <h2 className="mt-3 text-pretty text-2xl font-bold tracking-tight sm:text-3xl">
+            {book.title}
+          </h2>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">
+            by {book.author}
+          </p>
+          {book.description && (
+            <p className="mt-3 line-clamp-2 text-sm text-muted-foreground text-pretty sm:line-clamp-3">
+              {book.description}
+            </p>
+          )}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5 sm:justify-start">
+            {owned ? (
+              <Link
+                href={`/app/listen/book/${book.id}`}
+                className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Headphones className="h-4 w-4" />
+                Listen now
+              </Link>
+            ) : inCart ? (
+              <button
+                type="button"
+                onClick={() => remove(book.id)}
+                className="flex h-11 items-center gap-2 rounded-full border border-primary bg-primary/10 px-6 text-sm font-semibold text-primary transition-colors"
+              >
+                <Check className="h-4 w-4" />
+                In cart
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => add(toCartItem(book))}
+                className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" />
+                Add · {formatPrice(book.priceInCents)}
+              </button>
+            )}
+            <Link
+              href={`/app/books/${book.id}`}
+              className="flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-5 text-sm font-semibold transition-colors hover:bg-secondary"
+            >
+              Details
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <FavoriteButton
+              bookId={book.id}
+              initialFavorited={favorited}
+              size="md"
+              className="h-11 w-11 border border-border bg-card"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
