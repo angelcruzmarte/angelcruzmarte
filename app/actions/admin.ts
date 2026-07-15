@@ -227,7 +227,12 @@ export type AdminUser = {
   currentPeriodEnd: Date | null
   hasUsedTrial: boolean
   onboardingComplete: boolean
+  emailVerified: boolean
+  referralCode: string | null
   stripeCustomerId: string | null
+  stripeSubscriptionId: string | null
+  image: string | null
+  updatedAt: Date | null
   createdAt: Date
   isPaying: boolean
 }
@@ -247,7 +252,12 @@ export async function getUsers(): Promise<AdminUser[]> {
       currentPeriodEnd: userTable.currentPeriodEnd,
       hasUsedTrial: userTable.hasUsedTrial,
       onboardingComplete: userTable.onboardingComplete,
+      emailVerified: userTable.emailVerified,
+      referralCode: userTable.referralCode,
       stripeCustomerId: userTable.stripeCustomerId,
+      stripeSubscriptionId: userTable.stripeSubscriptionId,
+      image: userTable.image,
+      updatedAt: userTable.updatedAt,
       createdAt: userTable.createdAt,
     })
     .from(userTable)
@@ -273,7 +283,12 @@ export async function getUserById(userId: string): Promise<AdminUser | null> {
       currentPeriodEnd: userTable.currentPeriodEnd,
       hasUsedTrial: userTable.hasUsedTrial,
       onboardingComplete: userTable.onboardingComplete,
+      emailVerified: userTable.emailVerified,
+      referralCode: userTable.referralCode,
       stripeCustomerId: userTable.stripeCustomerId,
+      stripeSubscriptionId: userTable.stripeSubscriptionId,
+      image: userTable.image,
+      updatedAt: userTable.updatedAt,
       createdAt: userTable.createdAt,
     })
     .from(userTable)

@@ -24,6 +24,19 @@ function fmtDate(d: Date | number | null): string {
   })
 }
 
+/** Full date + time, used for precise signup / last-active timestamps. */
+function fmtDateTime(d: Date | number | null): string {
+  if (d == null) return "—"
+  const date = typeof d === "number" ? new Date(d * 1000) : new Date(d)
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
 export default async function AdminUserDetailPage({
   params,
 }: {
@@ -48,6 +61,10 @@ export default async function AdminUserDetailPage({
 
   const details: { label: string; value: string }[] = [
     { label: "Email", value: user.email },
+    {
+      label: "Email verified",
+      value: user.emailVerified ? "Yes" : "No",
+    },
     { label: "Username", value: user.username ? `@${user.username}` : "—" },
     { label: "Role", value: user.role === "admin" ? "Admin" : "User" },
     {
@@ -59,12 +76,27 @@ export default async function AdminUserDetailPage({
             ? "Monthly"
             : "—",
     },
-    { label: "Signed up", value: fmtDate(user.createdAt) },
+    { label: "Signed up", value: fmtDateTime(user.createdAt) },
+    { label: "Last updated", value: fmtDateTime(user.updatedAt) },
     { label: "Renews", value: fmtDate(user.currentPeriodEnd) },
     { label: "Used free trial", value: user.hasUsedTrial ? "Yes" : "No" },
     {
       label: "Onboarding",
       value: user.onboardingComplete ? "Complete" : "Incomplete",
+    },
+    { label: "Referral code", value: user.referralCode || "—" },
+  ]
+
+  // Technical identifiers shown in a monospace block for copy/paste + Stripe.
+  const identifiers: { label: string; value: string }[] = [
+    { label: "User ID", value: user.id },
+    {
+      label: "Stripe customer",
+      value: user.stripeCustomerId || "—",
+    },
+    {
+      label: "Stripe subscription",
+      value: user.stripeSubscriptionId || "—",
     },
   ]
 
@@ -79,19 +111,37 @@ export default async function AdminUserDetailPage({
       </Link>
 
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{user.name}</h1>
-          <div className="mt-2 flex items-center gap-2">
-            <Badge
-              variant={
-                user.subscriptionStatus === "active" ? "default" : "secondary"
-              }
-            >
-              {statusLabel}
-            </Badge>
-            {billing.cancelAtPeriodEnd && (
-              <Badge variant="outline">Cancels at period end</Badge>
-            )}
+        <div className="flex items-center gap-4">
+          {user.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.image || "/placeholder.svg"}
+              alt=""
+              aria-hidden
+              className="h-14 w-14 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold uppercase text-primary">
+              {(user.name || user.email).slice(0, 2)}
+            </span>
+          )}
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {user.name}
+            </h1>
+            <div className="mt-2 flex items-center gap-2">
+              <Badge
+                variant={
+                  user.subscriptionStatus === "active" ? "default" : "secondary"
+                }
+              >
+                {statusLabel}
+              </Badge>
+              {user.role === "admin" && <Badge variant="outline">Admin</Badge>}
+              {billing.cancelAtPeriodEnd && (
+                <Badge variant="outline">Cancels at period end</Badge>
+              )}
+            </div>
           </div>
         </div>
         <AdminUserRoleToggle
@@ -135,6 +185,20 @@ export default async function AdminUserDetailPage({
               >
                 <dt className="text-muted-foreground">{d.label}</dt>
                 <dd className="truncate text-right font-medium">{d.value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <h3 className="mt-6 text-sm font-semibold text-muted-foreground">
+            Identifiers
+          </h3>
+          <dl className="mt-3 flex flex-col gap-3">
+            {identifiers.map((d) => (
+              <div key={d.label} className="flex flex-col gap-1">
+                <dt className="text-xs text-muted-foreground">{d.label}</dt>
+                <dd className="truncate rounded-md bg-muted px-2 py-1 font-mono text-xs">
+                  {d.value}
+                </dd>
               </div>
             ))}
           </dl>
