@@ -16,6 +16,7 @@ import {
   Check,
   ChevronDown,
   Lock,
+  Moon,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -51,6 +52,15 @@ import {
 } from "@/lib/languages"
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
+const SLEEP_OPTIONS = [5, 10, 15, 30, 45, 60]
+
+/** mm:ss for a sleep-timer countdown given milliseconds remaining. */
+function formatSleep(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, "0")}`
+}
 // Upper bound on how many sections we pre-translate in the background. Sections
 // beyond this are still translated on demand the moment they are played, so
 // playback is never blocked — this only caps background work on huge documents.
@@ -612,6 +622,8 @@ export function PremiumNarration({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <SleepTimerButton />
         </div>
 
         {canTranslate && (
@@ -775,6 +787,8 @@ export function PremiumNarration({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <SleepTimerButton />
         </div>
 
         {/* Automatic translation status + toggle (no manual language menu). */}
@@ -900,5 +914,58 @@ export function PremiumNarration({
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Sleep-timer control backed by the global player provider so the countdown
+ * (and the auto-pause when it ends) survives navigation. Shows the remaining
+ * time when active, otherwise a moon icon.
+ */
+function SleepTimerButton({ className }: { className?: string }) {
+  const { sleepMinutes, sleepRemainingMs, setSleep } = usePlayer()
+  const active = sleepMinutes !== null
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Sleep timer"
+        className={cn(
+          buttonVariants({ variant: active ? "default" : "secondary" }),
+          "h-9 shrink-0 gap-1.5 px-3 tabular-nums",
+          className,
+        )}
+      >
+        <Moon className="h-4 w-4" />
+        {active && sleepRemainingMs !== null
+          ? formatSleep(sleepRemainingMs)
+          : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        {active && (
+          <DropdownMenuItem
+            onClick={() => setSleep(null)}
+            className="justify-between font-medium text-destructive"
+          >
+            Turn off
+          </DropdownMenuItem>
+        )}
+        {SLEEP_OPTIONS.map((m) => (
+          <DropdownMenuItem
+            key={m}
+            onClick={() => setSleep(m)}
+            className="justify-between tabular-nums"
+          >
+            {m} min
+            <Check
+              className={cn(
+                "h-4 w-4",
+                sleepMinutes === m ? "opacity-100" : "opacity-0",
+              )}
+            />
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

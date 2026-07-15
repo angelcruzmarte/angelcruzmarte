@@ -42,6 +42,10 @@ interface PlayerContextValue {
   rate: number
   /** Whether the full reader/player is currently mounted (hides the mini-bar). */
   fullPlayerMounted: boolean
+  /** Minutes selected for the sleep timer, or null when off. */
+  sleepMinutes: number | null
+  /** Milliseconds remaining on the active sleep timer, or null when off. */
+  sleepRemainingMs: number | null
   /**
    * Register (or refresh) the current playback source. Passing a new session id
    * resets playback to the start; the same id just refreshes metadata/resolver
@@ -56,6 +60,8 @@ interface PlayerContextValue {
   next: () => void
   prev: () => void
   setRate: (r: number) => void
+  /** Start a sleep timer for `minutes`, or pass null to cancel it. */
+  setSleep: (minutes: number | null) => void
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null)
@@ -76,6 +82,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [fraction, setFraction] = useState(0)
   const [rate, setRateState] = useState(1)
   const [fullPlayerMounted, setFullPlayerMounted] = useState(false)
+  const [sleepMinutes, setSleepMinutes] = useState<number | null>(null)
+  const [sleepRemainingMs, setSleepRemainingMs] = useState<number | null>(null)
 
   // Mirror volatile state into refs so async playback callbacks never read a
   // stale value (the audio element outlives individual renders).
@@ -164,6 +172,41 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) audioRef.current.playbackRate = r
   }, [])
 
+  // Sleep timer: pause playback once the countdown reaches zero. The deadline
+  // lives in a ref so the ticking effect never needs to re-subscribe.
+  const sleepDeadlineRef = useRef<number | null>(null)
+  const setSleep = useCallback((minutes: number | null) => {
+    if (!minutes) {
+      sleepDeadlineRef.current = null
+      setSleepMinutes(null)
+      setSleepRemainingMs(null)
+      return
+    }
+    sleepDeadlineRef.current = Date.now() + minutes * 60_000
+    setSleepMinutes(minutes)
+    setSleepRemainingMs(minutes * 60_000)
+  }, [])
+
+  useEffect(() => {
+    if (sleepMinutes === null) return
+    const id = setInterval(() => {
+      const deadline = sleepDeadlineRef.current
+      if (deadline === null) return
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        sleepDeadlineRef.current = null
+        setSleepMinutes(null)
+        setSleepRemainingMs(null)
+        const audio = audioRef.current
+        if (audio && !audio.paused) audio.pause()
+        setStatus((s) => (s === "playing" || s === "loading" ? "paused" : s))
+      } else {
+        setSleepRemainingMs(remaining)
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [sleepMinutes])
+
   const setSource = useCallback(
     (next: PlayerSession, resolve: ChunkResolver) => {
       resolverRef.current = resolve
@@ -208,6 +251,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       fraction,
       rate,
       fullPlayerMounted,
+      sleepMinutes,
+      sleepRemainingMs,
       setSource,
       setFullPlayerMounted,
       play,
@@ -217,6 +262,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       next,
       prev,
       setRate,
+      setSleep,
     }),
     [
       session,
@@ -225,6 +271,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       fraction,
       rate,
       fullPlayerMounted,
+      sleepMinutes,
+      sleepRemainingMs,
       setSource,
       play,
       toggle,
@@ -233,6 +281,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       next,
       prev,
       setRate,
+      setSleep,
     ],
   )
 
