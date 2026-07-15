@@ -1,13 +1,22 @@
 export default function BooksLoading() {
   return (
     <div className="px-4 py-6 sm:px-6">
-      {/* Header row: title + search/cart controls */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="h-8 w-40 animate-pulse rounded-lg bg-secondary" />
-        <div className="flex items-center gap-2">
-          <div className="h-9 w-9 animate-pulse rounded-full bg-secondary" />
-          <div className="h-9 w-20 animate-pulse rounded-full bg-secondary" />
+      {/* Header row: title + cart */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="h-8 w-40 animate-pulse rounded-lg bg-secondary" />
+          <div className="h-4 w-56 animate-pulse rounded bg-secondary" />
         </div>
+        <div className="h-11 w-16 animate-pulse rounded-full bg-secondary" />
+      </div>
+
+      {/* Search bar */}
+      <div className="mt-4 h-14 w-full animate-pulse rounded-2xl bg-secondary" />
+
+      {/* Filter chips */}
+      <div className="mt-4 flex gap-2">
+        <div className="h-9 w-24 animate-pulse rounded-full bg-secondary" />
+        <div className="h-9 w-28 animate-pulse rounded-full bg-secondary" />
       </div>
 
       {/* A few shelf skeletons */}

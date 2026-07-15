@@ -132,7 +132,6 @@ export function BooksStore({
     [books, favorites],
   )
 
-  const [showSearch, setShowSearch] = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
 
   // Live catalog search (debounced).
@@ -182,28 +181,20 @@ export function BooksStore({
     <div className="space-y-7">
       <CartReturnHandler />
 
-      {/* Header: title + cart / search / favorites controls */}
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold tracking-tight">Book Store</h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/app/discover"
-            aria-label="Personalize your book recommendations"
-            className={cn(
-              "flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
-              personalized
-                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-                : "border-border bg-card hover:bg-secondary",
-            )}
-          >
-            <Sparkles className="h-4 w-4" />
-            For You
-          </Link>
+      {/* Modern store header: title, cart, prominent always-on search, chips */}
+      <header className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight">Book Store</h1>
+            <p className="text-sm text-muted-foreground text-pretty">
+              Search and listen to millions of books.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => setOpen(true)}
             aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
-            className="relative flex h-10 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-sm font-semibold transition-colors hover:bg-secondary"
+            className="relative flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-semibold shadow-sm transition-colors hover:bg-secondary"
           >
             <ShoppingBag className="h-4 w-4 text-primary" />
             {count > 0 ? formatPrice(totalCents) : "$0"}
@@ -213,52 +204,13 @@ export function BooksStore({
               </span>
             )}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowSearch((s) => !s)
-              setShowFavorites(false)
-            }}
-            aria-label="Search books"
-            aria-pressed={showSearch}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
-              showSearch
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card hover:bg-secondary",
-            )}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowFavorites((s) => !s)
-              setShowSearch(false)
-            }}
-            aria-label="Show favorites"
-            aria-pressed={showFavorites}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full border transition-colors",
-              showFavorites
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card hover:bg-secondary",
-            )}
-          >
-            <Heart
-              className={cn("h-4 w-4", showFavorites && "fill-current")}
-            />
-          </button>
         </div>
-      </header>
 
-      {/* Search field (revealed by the search button) */}
-      {showSearch && (
+        {/* Prominent, always-visible search bar */}
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
-            autoFocus
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -269,12 +221,12 @@ export function BooksStore({
             onKeyDown={(e) => {
               if (e.key === "Enter") setSuggestOpen(false)
             }}
-            placeholder="Search millions of books by title or author…"
+            placeholder="Search by title or author…"
             aria-label="Search the book store"
             role="combobox"
             aria-expanded={suggestOpen && suggestions.length > 0}
             aria-autocomplete="list"
-            className="h-11 w-full rounded-xl border border-border bg-card pl-9 pr-9 text-sm outline-none ring-primary/30 transition focus:ring-2"
+            className="h-14 w-full rounded-2xl border border-transparent bg-secondary pl-12 pr-11 text-base font-medium outline-none ring-primary/40 transition placeholder:font-normal placeholder:text-muted-foreground focus:border-primary/30 focus:bg-card focus:ring-2"
           />
           {query && (
             <button
@@ -284,7 +236,7 @@ export function BooksStore({
                 setSuggestions([])
               }}
               aria-label="Clear search"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
@@ -292,7 +244,7 @@ export function BooksStore({
 
           {/* Autocomplete suggestions */}
           {suggestOpen && suggestions.length > 0 && (
-            <ul className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+            <ul className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
               {suggestions.map((s, i) => (
                 <li key={`${s.title}-${i}`}>
                   <button
@@ -302,7 +254,7 @@ export function BooksStore({
                       e.preventDefault()
                       pickSuggestion(s)
                     }}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
                   >
                     {s.coverUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -337,9 +289,41 @@ export function BooksStore({
             </ul>
           )}
         </div>
-      )}
 
-      {showSearch && searching ? (
+        {/* Filter chips: personalize + favorites */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/app/discover"
+            aria-label="Personalize your book recommendations"
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              personalized
+                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                : "border-border bg-card hover:bg-secondary",
+            )}
+          >
+            <Sparkles className="h-4 w-4" />
+            For You
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowFavorites((s) => !s)}
+            aria-label="Show favorites"
+            aria-pressed={showFavorites}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              showFavorites
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card hover:bg-secondary",
+            )}
+          >
+            <Heart className={cn("h-4 w-4", showFavorites && "fill-current")} />
+            Favorites
+          </button>
+        </div>
+      </header>
+
+      {searching ? (
         <section>
           <h2 className="mb-3 text-lg font-semibold">
             Results for &ldquo;{debounced}&rdquo;
