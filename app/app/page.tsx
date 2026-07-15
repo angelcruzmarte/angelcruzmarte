@@ -1,10 +1,8 @@
 import Link from "next/link"
 import {
   FolderOpen,
-  ScanLine,
   LinkIcon,
   Type,
-  Mic,
   Plus,
   FileText,
   AudioLines,
@@ -20,13 +18,14 @@ import { SavedStat } from "@/components/saved-stat"
 import { ContinueListening } from "@/components/continue-listening"
 import { cn } from "@/lib/utils"
 
+// The floating "+" button (and its Add sheet) is the canonical way to reach
+// every input method. On Home we surface only the most-used quick adds so the
+// screen stays calm; "More" opens the full add flow.
 const ttsTiles = [
   { href: "/app/new?mode=file", label: "File", icon: FolderOpen },
-  { href: "/app/new?mode=scan", label: "Scan", icon: ScanLine },
   { href: "/app/new?mode=link", label: "Link", icon: LinkIcon },
   { href: "/app/new?mode=text", label: "Paste", icon: Type },
-  { href: "/app/new?mode=dictate", label: "Dictate", icon: Mic },
-  { href: "/app/new", label: "Add", icon: Plus },
+  { href: "/app/new", label: "More", icon: Plus },
 ]
 
 const aiTiles = [
@@ -116,9 +115,39 @@ export default async function AppHome() {
         </Link>
       )}
 
+      {/* Returning users want to pick up where they left off, so this leads. */}
+      {docs.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-bold tracking-tight">
+              Continue listening
+            </h2>
+            <Link
+              href="/app/library"
+              className="text-sm font-medium text-primary"
+            >
+              See all
+            </Link>
+          </div>
+          <ContinueListening
+            docs={docs.slice(0, 3).map((doc) => ({
+              id: doc.id,
+              title: doc.title,
+              content: doc.content,
+              wordCount: doc.wordCount,
+            }))}
+          />
+        </section>
+      )}
+
+      {/* One calm "Add" area: the free-text box is the hero, with a compact
+          row of the most-used quick adds beneath it. */}
       <section>
-        <h2 className="mb-3 text-2xl font-bold tracking-tight">Text to Speech</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <h2 className="mb-3 text-xl font-bold tracking-tight">
+          {docs.length > 0 ? "Add something new" : "Start listening"}
+        </h2>
+        <QuickCreate />
+        <div className="mt-3 grid grid-cols-4 gap-3">
           {ttsTiles.map((tile) => (
             <TileLink key={tile.label} {...tile} />
           ))}
@@ -127,7 +156,7 @@ export default async function AppHome() {
 
       <section>
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-2xl font-bold tracking-tight">Create with AI</h2>
+          <h2 className="text-xl font-bold tracking-tight">Create with AI</h2>
           {!unlocked && (
             <Link
               href="/subscribe"
@@ -143,29 +172,7 @@ export default async function AppHome() {
             <TileLink key={tile.label} {...tile} />
           ))}
         </div>
-        <div className="mt-4">
-          <QuickCreate />
-        </div>
       </section>
-
-      {docs.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Continue listening</h2>
-            <Link href="/app/library" className="text-sm font-medium text-primary">
-              See all
-            </Link>
-          </div>
-          <ContinueListening
-            docs={docs.slice(0, 3).map((doc) => ({
-              id: doc.id,
-              title: doc.title,
-              content: doc.content,
-              wordCount: doc.wordCount,
-            }))}
-          />
-        </section>
-      )}
     </div>
   )
 }
