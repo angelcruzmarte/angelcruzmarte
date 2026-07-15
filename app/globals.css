@@ -184,3 +184,10 @@
   background-color: color-mix(in oklch, var(--primary) 34%, transparent);
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
 }
+
+/* When the docked mini-player is visible (flagged on <body> by PlayerProvider)
+   the page content needs extra bottom padding so its last section isn't hidden
+   behind the floating bar that sits above the tab bar. */
+body[data-miniplayer="true"] main {
+  padding-bottom: 12rem;
+}

@@ -243,6 +243,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setFraction(Math.min(1, audio.currentTime / audio.duration))
   }, [])
 
+  // When the docked mini-player is visible it floats above the tab bar, so flag
+  // <body> and let global CSS add extra bottom padding to the page content.
+  // Without this, the last section on a page (e.g. the "Create with AI" tiles)
+  // is obscured by the bar.
+  const miniPlayerVisible =
+    !!session && status !== "idle" && !fullPlayerMounted
+  useEffect(() => {
+    const body = document.body
+    if (miniPlayerVisible) body.dataset.miniplayer = "true"
+    else delete body.dataset.miniplayer
+    return () => {
+      delete body.dataset.miniplayer
+    }
+  }, [miniPlayerVisible])
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       session,
