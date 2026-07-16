@@ -70,6 +70,20 @@ const ELEVEN_MODEL = "eleven_multilingual_v2"
 // Sentinel used in the model fallback chain to mark the ElevenLabs path.
 const ELEVEN_SENTINEL = "elevenlabs"
 
+// If the ElevenLabs key is missing or gets rejected (401/Unauthorized/invalid),
+// we skip the ElevenLabs provider for the rest of this server's lifetime so we
+// don't waste a failing round-trip on every request (which would delay the
+// "instant" OpenAI playback). Starts disabled when no key is configured.
+let elevenUnavailable = !process.env.ELEVENLABS_API_KEY
+
+/** True for ElevenLabs auth/permission errors (bad, expired, or unusual key). */
+function isElevenAuthError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /unauthorized|401|invalid[_\s-]?api[_\s-]?key|api key|missing_permissions|detected_unusual_activity|forbidden|403/i.test(
+    msg,
+  )
+}
+
 // Gender-matched ElevenLabs fallback voice_ids (Brian / Sarah). Used as a
 // last-resort cross-provider fallback when an OpenAI persona is rate-limited, so
 // audio is still produced — ultra-realistically — instead of failing.
@@ -94,8 +108,17 @@ function elevenVoiceIdFor(persona: PremiumVoice): string {
  * try OpenAI (HD then standard) then ElevenLabs.
  */
 function modelsForVoice(persona: PremiumVoice): string[] {
-  if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL, ...OPENAI_MODELS]
-  return [...OPENAI_MODELS, ELEVEN_SENTINEL]
+  const chain =
+    persona.provider === "elevenlabs"
+      ? [ELEVEN_SENTINEL, ...OPENAI_MODELS]
+      : [...OPENAI_MODELS, ELEVEN_SENTINEL]
+  // Drop the ElevenLabs step entirely if the key is missing/rejected so we go
+  // straight to the reliable OpenAI models.
+  const filtered = elevenUnavailable
+    ? chain.filter((m) => m !== ELEVEN_SENTINEL)
+    : chain
+  // Safety net: never return an empty chain.
+  return filtered.length > 0 ? filtered : [...OPENAI_MODELS]
 }
 
 function isRateLimit(err: unknown): boolean {
@@ -151,6 +174,11 @@ async function synthWithRetry(
       } catch (err) {
         lastErr = err
         const isLastAttempt = attempt === tries - 1
+        // A rejected ElevenLabs key won't fix itself — disable the provider for
+        // the rest of this server's lifetime so future requests skip it.
+        if (model === ELEVEN_SENTINEL && isElevenAuthError(err)) {
+          elevenUnavailable = true
+        }
         // Rate limits are transient: back off and retry the SAME model a couple
         // of times before falling back to the next provider.
         if (isRateLimit(err) && !isLastAttempt) {
