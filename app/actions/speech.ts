@@ -100,7 +100,17 @@ function modelsForVoice(persona: PremiumVoice): string[] {
 
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
-  return /rate.?limit|429|GatewayRateLimit|quota|overloaded|capacity/i.test(msg)
+  return /rate.?limit|429|GatewayRateLimit|overloaded|capacity/i.test(msg)
+}
+
+// Quota/credit exhaustion (e.g. ElevenLabs "quota_exceeded") will NOT recover
+// by retrying, so we must fall back to the next provider immediately rather
+// than waste time backing off against a provider that can't serve the request.
+function isQuotaExhausted(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /quota|insufficient|credits?\s+remaining|out of credits|payment/i.test(
+    msg,
+  )
 }
 
 async function synthOnce(model: string, text: string, persona: PremiumVoice) {
@@ -151,17 +161,18 @@ async function synthWithRetry(
       } catch (err) {
         lastErr = err
         const isLastAttempt = attempt === tries - 1
-        // Rate limits are transient: back off and retry the SAME model a couple
-        // of times before falling back to the next provider.
-        if (isRateLimit(err) && !isLastAttempt) {
+        // Transient rate limits/overload are worth a short backoff + retry on
+        // the SAME model. Quota exhaustion is NOT transient, so skip retries.
+        if (isRateLimit(err) && !isQuotaExhausted(err) && !isLastAttempt) {
           const delay = 700 * 2 ** attempt
           await new Promise((r) => setTimeout(r, delay))
           continue
         }
         // Any other error (auth/quota/unavailable voice/etc.) — or exhausted
         // rate-limit retries — should NOT hard-fail. Break out and try the next
-        // provider in the chain so, e.g., an ElevenLabs key problem transparently
-        // falls back to OpenAI TTS instead of surfacing "could not generate".
+        // provider in the chain so, e.g., an ElevenLabs key that is unauthorized
+        // or out of credits transparently falls back to OpenAI TTS instead of
+        // surfacing "could not generate audio".
         break
       }
     }
