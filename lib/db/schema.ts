@@ -258,5 +258,8 @@ export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
+// Lightweight book shape for listings/storefront: everything except the heavy
+// full-text `content` column, which is only needed on the reader/detail pages.
+export type BookCard = Omit<Book, "content">
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect

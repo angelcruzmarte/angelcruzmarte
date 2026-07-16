@@ -4,17 +4,43 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   ArrowRight,
+  Blocks,
+  BookOpen,
+  Brain,
+  Calculator,
+  Castle,
   Check,
+  ChevronRight,
+  Church,
+  Compass,
+  Crown,
+  Drama,
+  Feather,
+  FlaskConical,
+  Ghost,
   Headphones,
   Heart,
+  Landmark,
+  Laugh,
+  Leaf,
+  type LucideIcon,
+  Plane,
   Plus,
+  Rocket,
+  Scale,
+  ScrollText,
   Search,
   ShoppingBag,
   Sparkles,
+  TrendingUp,
   Upload,
+  UserRound,
   X,
+  Zap,
 } from "lucide-react"
-import type { Book, Document } from "@/lib/db/schema"
+// The store only renders card-level fields, so it works on the lightweight
+// BookCard shape (no heavy full-text `content`). Aliased to Book locally.
+import type { BookCard as Book, Document } from "@/lib/db/schema"
 import type { Storefront } from "@/app/actions/books"
 import { BookCover } from "@/components/book-cover"
 import { FavoriteButton } from "@/components/favorite-button"
@@ -70,6 +96,11 @@ const UPLOAD_COLORS = [
   "#5c3b8f",
   "#3b6f8f",
 ]
+
+// Stable anchor id for a category so the genre nav can jump to its shelf.
+function genreSlug(category: string) {
+  return `genre-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
+}
 
 function toCartItem(b: Book): CartItem {
   return {
@@ -375,15 +406,98 @@ export function BooksStore({
           {shelves.map((shelf) => (
             <BookShelf
               key={shelf.title}
+              id={genreSlug(shelf.title)}
               title={shelf.title}
               books={shelf.books}
               owned={owned}
               favorites={favorites}
             />
           ))}
+
+          {/* Genre quick-nav for easy jumping between categories */}
+          {shelves.length > 0 && (
+            <GenreNav
+              genres={shelves.map((s) => ({
+                title: s.title,
+                count: s.books.length,
+              }))}
+            />
+          )}
         </>
       )}
     </div>
+  )
+}
+
+// Maps each catalog category to a representative icon for the genre nav.
+const GENRE_ICONS: Record<string, LucideIcon> = {
+  "Mystery & Detective": Search,
+  "Science Fiction": Rocket,
+  Fantasy: Sparkles,
+  Horror: Ghost,
+  Adventure: Compass,
+  "Historical Fiction": ScrollText,
+  Romance: Heart,
+  "Thriller & Suspense": Zap,
+  "Short Stories": BookOpen,
+  Classics: Crown,
+  Fiction: BookOpen,
+  Poetry: Feather,
+  "Drama & Plays": Drama,
+  "Humor & Satire": Laugh,
+  "Biography & Memoir": UserRound,
+  History: Landmark,
+  Philosophy: Brain,
+  Psychology: Brain,
+  Politics: Scale,
+  "Religion & Spirituality": Church,
+  Science: FlaskConical,
+  Mathematics: Calculator,
+  Economics: TrendingUp,
+  "Self-Help": Sparkles,
+  Travel: Plane,
+  "Nature & Environment": Leaf,
+  "Children's Fiction": Blocks,
+  "Fairy Tales": Castle,
+}
+
+function GenreNav({
+  genres,
+}: {
+  genres: Array<{ title: string; count: number }>
+}) {
+  return (
+    <section aria-labelledby="genres-heading" className="pt-4">
+      <h2 id="genres-heading" className="mb-3 text-xl font-bold tracking-tight">
+        Genres
+      </h2>
+      <ul className="flex flex-col gap-2.5">
+        {genres.map((g) => {
+          const Icon = GENRE_ICONS[g.title] ?? BookOpen
+          return (
+            <li key={g.title}>
+              <a
+                href={`#${genreSlug(g.title)}`}
+                className="flex items-center gap-3 rounded-2xl bg-secondary px-4 py-4 transition-colors hover:bg-secondary/70"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-base font-semibold">
+                    {g.title}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {g.count} {g.count === 1 ? "book" : "books"}
+                  </span>
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -521,18 +635,20 @@ function FavoritesView({
 }
 
 function BookShelf({
+  id,
   title,
   books,
   owned,
   favorites,
 }: {
+  id?: string
   title: string
   books: Book[]
   owned: Set<number>
   favorites: Set<number>
 }) {
   return (
-    <section>
+    <section id={id} className={id ? "scroll-mt-6" : undefined}>
       <h2 className="mb-3 text-xl font-bold tracking-tight">{title}</h2>
       <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {books.map((book) => (

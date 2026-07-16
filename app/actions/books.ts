@@ -10,7 +10,25 @@ import { getBaseUrl } from "@/lib/urls"
 import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
-import type { Book } from "@/lib/db/schema"
+import type { BookCard } from "@/lib/db/schema"
+
+// Columns needed to render book cards / the storefront — everything except the
+// heavy full-text `content`, which would bloat the store payload enormously.
+const bookCardColumns = {
+  id: book.id,
+  title: book.title,
+  author: book.author,
+  category: book.category,
+  description: book.description,
+  excerpt: book.excerpt,
+  priceInCents: book.priceInCents,
+  coverImageUrl: book.coverImageUrl,
+  gutenbergId: book.gutenbergId,
+  coverColor: book.coverColor,
+  accentColor: book.accentColor,
+  featured: book.featured,
+  createdAt: book.createdAt,
+}
 
 // Flat price for public-domain books imported on-demand from the live catalog.
 const IMPORTED_BOOK_PRICE = 499
@@ -25,8 +43,11 @@ const IMPORT_PALETTE: Array<[string, string]> = [
   ["#1e3a5f", "#7dd3fc"],
 ]
 
-export async function getBooks() {
-  return db.select().from(book).orderBy(desc(book.featured), desc(book.createdAt))
+export async function getBooks(): Promise<BookCard[]> {
+  return db
+    .select(bookCardColumns)
+    .from(book)
+    .orderBy(desc(book.featured), desc(book.createdAt))
 }
 
 export async function getBook(id: number) {
@@ -34,10 +55,10 @@ export async function getBook(id: number) {
   return row ?? null
 }
 
-export type StorefrontRow = { key: string; title: string; books: Book[] }
+export type StorefrontRow = { key: string; title: string; books: BookCard[] }
 
 export type Storefront = {
-  hero: Book | null
+  hero: BookCard | null
   rows: StorefrontRow[]
 }
 
@@ -75,7 +96,7 @@ export async function getStorefront(): Promise<Storefront> {
   const rankToBooks = (ranked: { bookId: number }[]) =>
     ranked
       .map((r) => byId.get(r.bookId))
-      .filter((b): b is Book => Boolean(b))
+      .filter((b): b is BookCard => Boolean(b))
       .slice(0, ROW_SIZE)
 
   const rows: StorefrontRow[] = []
