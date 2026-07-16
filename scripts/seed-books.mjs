@@ -1,51 +1,49 @@
 // Seeds the book catalog across many categories from real public-domain
-// sources. For each category we ask Open Library for popular public-domain
-// titles that have a Project Gutenberg id, then download the real full text
-// from Project Gutenberg (used for in-app reading + text-to-speech).
+// sources. For each category we ask Gutendex (a JSON API over the full Project
+// Gutenberg catalog) for popular titles matching a topic, then download the
+// real full text from Project Gutenberg (used for in-app reading + TTS).
 //
 // The seed is idempotent: books are upserted by their Gutenberg id, so existing
 // purchases and favorites are preserved. Run with:
 //   node --env-file-if-exists=/vercel/share/.env.project scripts/seed-books.mjs
 import { Pool } from "pg"
 
-// Category label -> Open Library subject key. Ordered specific -> broad so that
-// when a popular title appears under several subjects it is assigned to the
-// most specific category (first one wins via global de-duplication).
-// Each category pulls plenty of real public-domain titles so users have lots of
-// choice everywhere. Several categories list multiple Open Library subjects
-// (tried in order) so we can hit the target even for narrower topics.
+// Category label -> Gutendex topic keyword(s). Gutendex matches topics against
+// Gutenberg's own subject + bookshelf taxonomy (case-insensitive, partial), so
+// even niche nonfiction categories return plenty of real public-domain titles.
+// Multiple topics are tried in order until the target is reached. Ordered so
+// that more specific categories claim shared titles first (global de-dupe).
 const CATEGORIES = [
   // Fiction
-  { name: "Mystery & Detective", subjects: ["detective_and_mystery_stories", "detective_and_mystery_stories_english", "crime"], target: 24 },
-  { name: "Science Fiction", subjects: ["science_fiction", "science_fiction_english", "space_flight"], target: 24 },
-  { name: "Fantasy", subjects: ["fantasy_fiction", "fantasy", "imaginary_wars_and_battles"], target: 24 },
-  { name: "Horror", subjects: ["horror_tales", "ghost_stories", "gothic_fiction"], target: 22 },
-  { name: "Adventure", subjects: ["adventure_stories", "sea_stories", "survival"], target: 24 },
-  { name: "Historical Fiction", subjects: ["historical_fiction", "history_fiction", "war_stories"], target: 22 },
-  { name: "Romance", subjects: ["love_stories", "romance", "courtship"], target: 24 },
-  { name: "Thriller & Suspense", subjects: ["adventure_and_adventurers", "spy_stories", "suspense"], target: 20 },
-  { name: "Short Stories", subjects: ["short_stories", "american_short_stories", "english_short_stories"], target: 22 },
-  { name: "Poetry", subjects: ["poetry", "english_poetry", "american_poetry"], target: 24 },
-  { name: "Classics", subjects: ["classical_literature", "english_literature", "literature"], target: 24 },
-  { name: "Drama & Plays", subjects: ["drama", "english_drama", "tragedies", "comedies", "plays"], target: 20 },
-  { name: "Humor & Satire", subjects: ["humor", "wit_and_humor", "satire", "comic", "parody"], target: 18 },
-  // Children's — placed before broad nonfiction so juvenile titles aren't
-  // claimed by other categories via the global de-dupe.
-  { name: "Children's Fiction", subjects: ["children's_stories", "juvenile_fiction", "children's_literature", "juvenile_literature", "school_stories", "animals_fiction"], target: 24 },
-  { name: "Fairy Tales", subjects: ["fairy_tales", "folklore", "legends", "folk_literature", "tales", "mythology"], target: 22 },
+  { name: "Mystery & Detective", topics: ["detective", "mystery"], target: 24 },
+  { name: "Science Fiction", topics: ["science fiction"], target: 24 },
+  { name: "Fantasy", topics: ["fantasy", "imaginary places"], target: 24 },
+  { name: "Horror", topics: ["horror", "ghost stories", "gothic"], target: 22 },
+  { name: "Adventure", topics: ["adventure", "sea stories"], target: 24 },
+  { name: "Historical Fiction", topics: ["historical fiction", "war stories"], target: 22 },
+  { name: "Romance", topics: ["love stories", "romance"], target: 24 },
+  { name: "Thriller & Suspense", topics: ["spies", "crime", "adventure stories"], target: 20 },
+  { name: "Short Stories", topics: ["short stories"], target: 22 },
+  { name: "Poetry", topics: ["poetry"], target: 24 },
+  { name: "Classics", topics: ["best books ever listings", "harvard classics"], target: 24 },
+  { name: "Drama & Plays", topics: ["drama", "plays"], target: 20 },
+  { name: "Humor & Satire", topics: ["humor", "satire", "wit"], target: 18 },
+  // Children's — before broad nonfiction so juvenile titles aren't taken first.
+  { name: "Children's Fiction", topics: ["children's", "juvenile fiction"], target: 24 },
+  { name: "Fairy Tales", topics: ["fairy tales", "folklore", "legends"], target: 22 },
   // Nonfiction
-  { name: "Philosophy", subjects: ["philosophy", "ethics", "metaphysics", "logic", "philosophy_of_nature", "reason"], target: 22 },
-  { name: "Psychology", subjects: ["psychology", "mind_and_body", "thought_and_thinking", "emotions", "dreams", "will"], target: 18 },
-  { name: "Biography & Memoir", subjects: ["biography", "autobiography", "memoirs", "correspondence", "diaries"], target: 22 },
-  { name: "History", subjects: ["world_history", "history", "military_history", "great_britain_history", "united_states_history", "ancient_history"], target: 24 },
-  { name: "Politics", subjects: ["political_science", "government", "democracy", "liberty", "revolutions", "political_ethics"], target: 18 },
-  { name: "Religion & Spirituality", subjects: ["religion", "christianity", "bible", "theology", "prayer", "spiritual_life"], target: 20 },
-  { name: "Science", subjects: ["science", "physics", "chemistry", "astronomy", "evolution", "biology", "natural_science"], target: 18 },
-  { name: "Mathematics", subjects: ["mathematics", "geometry", "arithmetic", "algebra", "logic_mathematical", "calculus"], target: 16 },
-  { name: "Economics", subjects: ["economics", "finance", "commerce", "political_economy", "money", "capital"], target: 16 },
-  { name: "Travel", subjects: ["voyages_and_travels", "travel", "description_and_travel", "discoveries_in_geography", "voyages_around_the_world", "exploration"], target: 18 },
-  { name: "Nature & Environment", subjects: ["natural_history", "nature", "botany", "zoology", "birds", "outdoor_life", "gardening"], target: 16 },
-  { name: "Self-Help", subjects: ["success", "conduct_of_life", "self-help", "character", "happiness", "virtue"], target: 20 },
+  { name: "Philosophy", topics: ["philosophy", "ethics"], target: 22 },
+  { name: "Psychology", topics: ["psychology", "mind"], target: 18 },
+  { name: "Biography & Memoir", topics: ["biography", "autobiography"], target: 22 },
+  { name: "History", topics: ["history"], target: 24 },
+  { name: "Politics", topics: ["political science", "government"], target: 18 },
+  { name: "Religion & Spirituality", topics: ["religion", "christianity", "mythology"], target: 20 },
+  { name: "Science", topics: ["science", "physics", "astronomy", "natural history"], target: 18 },
+  { name: "Mathematics", topics: ["mathematics", "geometry"], target: 16 },
+  { name: "Economics", topics: ["economics", "finance", "political economy"], target: 16 },
+  { name: "Travel", topics: ["travel", "voyages and travels"], target: 18 },
+  { name: "Nature & Environment", topics: ["natural history", "botany", "zoology"], target: 16 },
+  { name: "Self-Help", topics: ["conduct of life", "success", "character"], target: 20 },
 ]
 
 const PRICE_TIERS = [399, 499, 599, 699]
@@ -66,48 +64,57 @@ async function fetchWithTimeout(url, opts = {}, ms = 30_000) {
   }
 }
 
-// Asks Open Library for popular public-domain books in a subject that expose a
-// Project Gutenberg id (so we can fetch the real full text).
-async function findBooksForSubject(subject, limit = 50) {
-  const fields = [
-    "title",
-    "author_name",
-    "cover_i",
-    "id_project_gutenberg",
-    "ebook_access",
-    "first_publish_year",
-  ].join(",")
-  // Note: we don't filter on ebook_access here — any record exposing a Project
-  // Gutenberg id is public domain by definition, and the extra filter needlessly
-  // shrinks results for niche subjects. We de-dupe + require a Gutenberg id below.
-  const url =
-    `https://openlibrary.org/search.json?q=subject:${subject}` +
-    `&limit=${limit}&language=eng&sort=readinglog&fields=${fields}`
-  try {
-    const res = await fetchWithTimeout(url, {}, 20_000)
-    if (!res.ok) return []
-    const data = await res.json()
-    return (data.docs ?? [])
-      .map((d) => {
-        const pg = d.id_project_gutenberg?.length
-          ? Number(d.id_project_gutenberg[0])
-          : null
-        if (!pg || !Number.isFinite(pg)) return null
-        return {
+// Asks Gutendex for popular English public-domain books matching a topic. Every
+// result carries a Project Gutenberg id (so we can fetch real full text) and a
+// direct text/plain URL. Paginates until `want` usable books are collected.
+async function findBooksForTopic(topic, want = 40) {
+  const out = []
+  let url =
+    `https://gutendex.com/books?topic=${encodeURIComponent(topic)}` +
+    `&languages=en&mime_type=text%2Fplain&sort=popular`
+  // Gutendex returns 32/page; fetch a few pages to comfortably exceed `want`.
+  for (let page = 0; page < 4 && url && out.length < want * 2; page++) {
+    try {
+      const res = await fetchWithTimeout(url, {}, 20_000)
+      if (!res.ok) break
+      const data = await res.json()
+      for (const d of data.results ?? []) {
+        const pg = Number(d.id)
+        if (!pg || !Number.isFinite(pg)) continue
+        // Prefer a plain-text format URL (skip zipped variants).
+        const formats = d.formats ?? {}
+        const textUrl = Object.entries(formats).find(
+          ([k, v]) =>
+            k.startsWith("text/plain") && !String(v).endsWith(".zip"),
+        )?.[1]
+        out.push({
           title: d.title,
-          author: d.author_name?.[0] ?? "Unknown",
+          author: d.authors?.[0]?.name
+            ? formatAuthor(d.authors[0].name)
+            : "Unknown",
           gutenbergId: pg,
-          coverI: d.cover_i ?? null,
-        }
-      })
-      .filter(Boolean)
-  } catch {
-    return []
+          coverI: null,
+          textUrl: typeof textUrl === "string" ? textUrl : null,
+        })
+      }
+      url = data.next
+      await new Promise((r) => setTimeout(r, 120))
+    } catch {
+      break
+    }
   }
+  return out
 }
 
-async function fetchText(id) {
+// Gutendex authors are "Last, First"; flip to "First Last" for display.
+function formatAuthor(name) {
+  const m = name.match(/^([^,]+),\s*(.+)$/)
+  return m ? `${m[2].trim()} ${m[1].trim()}` : name.trim()
+}
+
+async function fetchText(id, preferredUrl = null) {
   const urls = [
+    ...(preferredUrl ? [preferredUrl] : []),
     `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`,
     `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
     `https://www.gutenberg.org/files/${id}/${id}.txt`,
@@ -206,10 +213,10 @@ async function main() {
 
   for (const cat of CATEGORIES) {
     let taken = 0
-    // Try each subject for this category in order until we hit the target.
-    for (const subject of cat.subjects) {
+    // Try each topic for this category in order until we hit the target.
+    for (const topic of cat.topics) {
       if (taken >= cat.target) break
-      const found = await findBooksForSubject(subject, 200)
+      const found = await findBooksForTopic(topic, cat.target)
       for (const b of found) {
         if (taken >= cat.target) break
         if (seen.has(b.gutenbergId)) continue
@@ -223,7 +230,6 @@ async function main() {
         })
         taken++
       }
-      await new Promise((r) => setTimeout(r, 120)) // be polite to Open Library
     }
     console.log(`[seed]   ${cat.name}: ${taken} books`)
   }
@@ -233,7 +239,7 @@ async function main() {
   // 2) Download + parse full text for each selection.
   const rows = (
     await mapWithConcurrency(selected, 8, async (entry, i) => {
-      const raw = await fetchText(entry.gutenbergId)
+      const raw = await fetchText(entry.gutenbergId, entry.textUrl)
       if (!raw) {
         console.warn("[seed]   skip", entry.gutenbergId, "-", entry.title, "(no text)")
         return null
