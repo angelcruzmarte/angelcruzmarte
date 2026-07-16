@@ -11,35 +11,41 @@ import { Pool } from "pg"
 // Category label -> Open Library subject key. Ordered specific -> broad so that
 // when a popular title appears under several subjects it is assigned to the
 // most specific category (first one wins via global de-duplication).
+// Each category pulls plenty of real public-domain titles so users have lots of
+// choice everywhere. Several categories list multiple Open Library subjects
+// (tried in order) so we can hit the target even for narrower topics.
 const CATEGORIES = [
   // Fiction
-  { name: "Mystery & Detective", subject: "detective_and_mystery_stories", target: 7 },
-  { name: "Science Fiction", subject: "science_fiction", target: 7 },
-  { name: "Fantasy", subject: "fantasy_fiction", target: 7 },
-  { name: "Horror", subject: "horror_tales", target: 6 },
-  { name: "Adventure", subject: "adventure_stories", target: 7 },
-  { name: "Historical Fiction", subject: "historical_fiction", target: 6 },
-  { name: "Romance", subject: "love_stories", target: 7 },
-  { name: "Thriller & Suspense", subject: "adventure_and_adventurers", target: 5 },
-  { name: "Short Stories", subject: "short_stories", target: 6 },
-  { name: "Poetry", subject: "poetry", target: 7 },
-  { name: "Classics", subject: "classical_literature", target: 8 },
+  { name: "Mystery & Detective", subjects: ["detective_and_mystery_stories", "detective_and_mystery_stories_english", "crime"], target: 24 },
+  { name: "Science Fiction", subjects: ["science_fiction", "science_fiction_english", "space_flight"], target: 24 },
+  { name: "Fantasy", subjects: ["fantasy_fiction", "fantasy", "imaginary_wars_and_battles"], target: 24 },
+  { name: "Horror", subjects: ["horror_tales", "ghost_stories", "gothic_fiction"], target: 22 },
+  { name: "Adventure", subjects: ["adventure_stories", "sea_stories", "survival"], target: 24 },
+  { name: "Historical Fiction", subjects: ["historical_fiction", "history_fiction", "war_stories"], target: 22 },
+  { name: "Romance", subjects: ["love_stories", "romance", "courtship"], target: 24 },
+  { name: "Thriller & Suspense", subjects: ["adventure_and_adventurers", "spy_stories", "suspense"], target: 20 },
+  { name: "Short Stories", subjects: ["short_stories", "american_short_stories", "english_short_stories"], target: 22 },
+  { name: "Poetry", subjects: ["poetry", "english_poetry", "american_poetry"], target: 24 },
+  { name: "Classics", subjects: ["classical_literature", "english_literature", "literature"], target: 24 },
+  { name: "Drama & Plays", subjects: ["drama", "english_drama", "tragedies", "comedies", "plays"], target: 20 },
+  { name: "Humor & Satire", subjects: ["humor", "wit_and_humor", "satire", "comic", "parody"], target: 18 },
+  // Children's — placed before broad nonfiction so juvenile titles aren't
+  // claimed by other categories via the global de-dupe.
+  { name: "Children's Fiction", subjects: ["children's_stories", "juvenile_fiction", "children's_literature", "juvenile_literature", "school_stories", "animals_fiction"], target: 24 },
+  { name: "Fairy Tales", subjects: ["fairy_tales", "folklore", "legends", "folk_literature", "tales", "mythology"], target: 22 },
   // Nonfiction
-  { name: "Philosophy", subject: "philosophy", target: 7 },
-  { name: "Psychology", subject: "psychology", target: 5 },
-  { name: "Biography & Memoir", subject: "biography", target: 7 },
-  { name: "History", subject: "world_history", target: 8 },
-  { name: "Politics", subject: "political_science", target: 5 },
-  { name: "Religion & Spirituality", subject: "religion", target: 6 },
-  { name: "Science", subject: "natural_science", target: 4 },
-  { name: "Mathematics", subject: "mathematics", target: 5 },
-  { name: "Economics", subject: "economics", target: 5 },
-  { name: "Travel", subject: "voyages_and_travels", target: 5 },
-  { name: "Nature & Environment", subject: "natural_history", target: 4 },
-  { name: "Self-Help", subject: "success", target: 6 },
-  // Children's
-  { name: "Children's Fiction", subject: "juvenile_fiction", target: 8 },
-  { name: "Fairy Tales", subject: "fairy_tales", target: 6 },
+  { name: "Philosophy", subjects: ["philosophy", "ethics", "metaphysics", "logic", "philosophy_of_nature", "reason"], target: 22 },
+  { name: "Psychology", subjects: ["psychology", "mind_and_body", "thought_and_thinking", "emotions", "dreams", "will"], target: 18 },
+  { name: "Biography & Memoir", subjects: ["biography", "autobiography", "memoirs", "correspondence", "diaries"], target: 22 },
+  { name: "History", subjects: ["world_history", "history", "military_history", "great_britain_history", "united_states_history", "ancient_history"], target: 24 },
+  { name: "Politics", subjects: ["political_science", "government", "democracy", "liberty", "revolutions", "political_ethics"], target: 18 },
+  { name: "Religion & Spirituality", subjects: ["religion", "christianity", "bible", "theology", "prayer", "spiritual_life"], target: 20 },
+  { name: "Science", subjects: ["science", "physics", "chemistry", "astronomy", "evolution", "biology", "natural_science"], target: 18 },
+  { name: "Mathematics", subjects: ["mathematics", "geometry", "arithmetic", "algebra", "logic_mathematical", "calculus"], target: 16 },
+  { name: "Economics", subjects: ["economics", "finance", "commerce", "political_economy", "money", "capital"], target: 16 },
+  { name: "Travel", subjects: ["voyages_and_travels", "travel", "description_and_travel", "discoveries_in_geography", "voyages_around_the_world", "exploration"], target: 18 },
+  { name: "Nature & Environment", subjects: ["natural_history", "nature", "botany", "zoology", "birds", "outdoor_life", "gardening"], target: 16 },
+  { name: "Self-Help", subjects: ["success", "conduct_of_life", "self-help", "character", "happiness", "virtue"], target: 20 },
 ]
 
 const PRICE_TIERS = [399, 499, 599, 699]
@@ -71,8 +77,11 @@ async function findBooksForSubject(subject, limit = 50) {
     "ebook_access",
     "first_publish_year",
   ].join(",")
+  // Note: we don't filter on ebook_access here — any record exposing a Project
+  // Gutenberg id is public domain by definition, and the extra filter needlessly
+  // shrinks results for niche subjects. We de-dupe + require a Gutenberg id below.
   const url =
-    `https://openlibrary.org/search.json?q=subject:${subject}+ebook_access:public` +
+    `https://openlibrary.org/search.json?q=subject:${subject}` +
     `&limit=${limit}&language=eng&sort=readinglog&fields=${fields}`
   try {
     const res = await fetchWithTimeout(url, {}, 20_000)
@@ -196,23 +205,27 @@ async function main() {
   const selected = [] // { title, author, gutenbergId, coverI, category, price, featured }
 
   for (const cat of CATEGORIES) {
-    const found = await findBooksForSubject(cat.subject)
     let taken = 0
-    for (const b of found) {
+    // Try each subject for this category in order until we hit the target.
+    for (const subject of cat.subjects) {
       if (taken >= cat.target) break
-      if (seen.has(b.gutenbergId)) continue
-      seen.add(b.gutenbergId)
-      selected.push({
-        ...b,
-        category: cat.name,
-        price: PRICE_TIERS[selected.length % PRICE_TIERS.length],
-        // Feature the top pick of the first several marquee categories.
-        featured: taken === 0 && selected.length < 60 && cat.target >= 6,
-      })
-      taken++
+      const found = await findBooksForSubject(subject, 200)
+      for (const b of found) {
+        if (taken >= cat.target) break
+        if (seen.has(b.gutenbergId)) continue
+        seen.add(b.gutenbergId)
+        selected.push({
+          ...b,
+          category: cat.name,
+          price: PRICE_TIERS[selected.length % PRICE_TIERS.length],
+          // Feature the top pick of the first several marquee categories.
+          featured: taken === 0 && selected.length < 60 && cat.target >= 20,
+        })
+        taken++
+      }
+      await new Promise((r) => setTimeout(r, 120)) // be polite to Open Library
     }
     console.log(`[seed]   ${cat.name}: ${taken} books`)
-    await new Promise((r) => setTimeout(r, 150)) // be polite to Open Library
   }
 
   console.log(`[seed] downloading full text for ${selected.length} books…`)
