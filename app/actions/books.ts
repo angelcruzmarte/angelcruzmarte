@@ -70,9 +70,11 @@ const ROW_SIZE = 12
  * and "Editor's Picks" are derived from catalog metadata; "Trending" (last 30
  * days) and "Best Sellers" (all-time) are derived from real purchase counts,
  * so they only appear once there is genuine sales data.
+ *
+ * Takes the already-fetched catalog so the books page only queries the catalog
+ * once (this used to run its own `getBooks()`, duplicating a ~400-row fetch).
  */
-export async function getStorefront(): Promise<Storefront> {
-  const all = await getBooks()
+async function buildStorefront(all: BookCard[]): Promise<Storefront> {
   if (all.length === 0) return { hero: null, rows: [] }
 
   const byId = new Map(all.map((b) => [b.id, b]))
@@ -374,15 +376,25 @@ export async function saveBookProgress(bookId: number, wordIndex: number) {
 }
 
 /**
- * Returns books ranked by how well their category matches the user's selected
- * interests. Falls back to featured/newest when no interests are set.
+ * Single entry point for the Book Store page. Fetches the catalog ONCE, then
+ * derives both the personalized ordering (by the user's interests) and the
+ * curated storefront (hero + rows) from it. This replaces two separate calls
+ * that each re-queried the whole catalog.
  */
-export async function getPersonalizedBooks() {
+export async function getStorefrontData(): Promise<{
+  books: BookCard[]
+  personalized: boolean
+  storefront: Storefront
+}> {
   const [all, interestIds] = await Promise.all([getBooks(), getMyInterests()])
+  const storefront = await buildStorefront(all)
+
   const wanted = new Set(
     interestIds.map((id) => (INTEREST_LABELS.get(id) ?? id).toLowerCase()),
   )
-  if (wanted.size === 0) return { books: all, personalized: false }
+  if (wanted.size === 0) {
+    return { books: all, personalized: false, storefront }
+  }
 
   const ranked = [...all].sort((a, b) => {
     const aMatch = wanted.has(a.category.toLowerCase()) ? 1 : 0
@@ -390,7 +402,7 @@ export async function getPersonalizedBooks() {
     if (aMatch !== bMatch) return bMatch - aMatch
     return Number(b.featured) - Number(a.featured)
   })
-  return { books: ranked, personalized: true }
+  return { books: ranked, personalized: true, storefront }
 }
 
 // ----- Favorites (wishlist) -----

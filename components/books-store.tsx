@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -403,15 +403,23 @@ export function BooksStore({
               Browse by category
             </h2>
           )}
-          {shelves.map((shelf) => (
-            <BookShelf
+          {shelves.map((shelf, i) => (
+            <LazyShelf
               key={shelf.title}
               id={genreSlug(shelf.title)}
-              title={shelf.title}
-              books={shelf.books}
-              owned={owned}
-              favorites={favorites}
-            />
+              // Render the first couple of shelves immediately; defer the rest
+              // until they scroll near the viewport so the page paints fast.
+              eager={i < 2}
+              placeholderCount={Math.min(shelf.books.length, 6)}
+            >
+              <BookShelf
+                id={genreSlug(shelf.title)}
+                title={shelf.title}
+                books={shelf.books}
+                owned={owned}
+                favorites={favorites}
+              />
+            </LazyShelf>
           ))}
 
           {/* Genre quick-nav for easy jumping between categories */}
@@ -628,6 +636,68 @@ function FavoritesView({
             owned={owned.has(book.id)}
             favorited={favorites.has(book.id)}
           />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Defers rendering of a heavy shelf (many cover images) until it scrolls near
+ * the viewport. Until then it shows a light skeleton of the same height, so the
+ * page paints quickly and anchor jumps (#genre-…) still land in roughly the
+ * right place. `eager` shelves render immediately.
+ */
+function LazyShelf({
+  id,
+  eager = false,
+  placeholderCount,
+  children,
+}: {
+  id?: string
+  eager?: boolean
+  placeholderCount: number
+  children: React.ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(eager)
+
+  // Mount instantly if the URL already targets this shelf's anchor (e.g. the
+  // user tapped a genre link that points here).
+  useEffect(() => {
+    if (!visible && id && window.location.hash === `#${id}`) setVisible(true)
+  }, [id, visible])
+
+  useEffect(() => {
+    if (visible) return
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true)
+          io.disconnect()
+        }
+      },
+      // Start loading a good bit before it enters view for a seamless scroll.
+      { rootMargin: "600px 0px" },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [visible])
+
+  if (visible) return <>{children}</>
+
+  // Keep the anchor id on the placeholder so #genre-… jumps always land, even
+  // before the real shelf mounts.
+  return (
+    <section ref={ref} id={id} aria-hidden className={id ? "scroll-mt-6" : undefined}>
+      <div className="mb-3 h-6 w-40 animate-pulse rounded bg-secondary" />
+      <div className="-mx-4 flex gap-4 overflow-hidden px-4 pb-2 sm:-mx-6 sm:px-6">
+        {Array.from({ length: placeholderCount }).map((_, i) => (
+          <div key={i} className="w-32 shrink-0 sm:w-36">
+            <div className="aspect-[2/3] w-full animate-pulse rounded-lg bg-secondary" />
+          </div>
         ))}
       </div>
     </section>

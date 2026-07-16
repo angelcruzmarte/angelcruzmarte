@@ -2,17 +2,15 @@ import { Suspense } from "react"
 import {
   getFavoriteBookIds,
   getOwnedBookIds,
-  getPersonalizedBooks,
-  getStorefront,
+  getStorefrontData,
 } from "@/app/actions/books"
 import { getDocuments } from "@/app/actions/documents"
 import { BooksStore } from "@/components/books-store"
 
 export default async function BooksPage() {
-  const [{ books, personalized }, storefront, ownedIds, favoriteIds, uploads] =
+  const [{ books, personalized, storefront }, ownedIds, favoriteIds, uploads] =
     await Promise.all([
-      getPersonalizedBooks(),
-      getStorefront(),
+      getStorefrontData(),
       getOwnedBookIds(),
       getFavoriteBookIds(),
       getDocuments(),
