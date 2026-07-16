@@ -861,9 +861,19 @@ export function PremiumNarration({
       )}
 
       {/* Floating controls so the user can always pause/stop without scrolling
-          back up to the card on long documents. */}
+          back up to the card on long documents. On screens that also show the
+          global bottom tab bar (everything except the immersive /app/listen
+          routes, where it's hidden), lift the bar above the tab bar so the two
+          never overlap. */}
       {status !== "idle" && (
-        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+        <div
+          className={cn(
+            "fixed inset-x-0 z-40 px-4 sm:px-6",
+            pathname?.startsWith("/app/listen")
+              ? "bottom-0 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]"
+              : "bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)]",
+          )}
+        >
           <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
             <VoiceAvatar
               name={selectedVoice.name}

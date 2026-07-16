@@ -8,6 +8,7 @@ import {
   ownsBook,
 } from "@/app/actions/books"
 import { formatPrice } from "@/lib/plans"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getTodayListenSeconds } from "@/app/actions/stats"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
@@ -37,13 +38,20 @@ export default async function BookDetailPage({
     await confirmBookCheckout(session_id)
   }
 
-  const [owned, favorited] = await Promise.all([
+  const [owned, favorited, user] = await Promise.all([
     ownsBook(bookId),
     isBookFavorited(bookId),
+    getCurrentUser(),
   ])
-  // Owners listen to the full book with unlimited access; the free preview for
-  // non-owners counts toward the daily listening cap.
-  const initialListenSeconds = owned ? 0 : await getTodayListenSeconds()
+  // Premium subscribers get the full narration experience (every voice, no
+  // daily cap, translation, AI tools) even on previews of books they haven't
+  // purchased yet. Book *ownership* still separately controls access to the
+  // full text and offline downloads.
+  const subscribed = hasActiveSubscription(user)
+  const premiumNarration = owned || subscribed
+  // Owners and subscribers listen with unlimited access; the free preview for
+  // everyone else counts toward the daily listening cap.
+  const initialListenSeconds = premiumNarration ? 0 : await getTodayListenSeconds()
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -116,7 +124,7 @@ export default async function BookDetailPage({
         content={owned ? book.content : book.excerpt.slice(0, 600)}
         backHref="/app/books"
         backLabel="Book Store"
-        premium={owned}
+        premium={premiumNarration}
         bookId={owned ? book.id : undefined}
         allowDownload={owned}
         initialListenSeconds={initialListenSeconds}

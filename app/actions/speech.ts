@@ -150,13 +150,19 @@ async function synthWithRetry(
         return await synthOnce(model, text, persona)
       } catch (err) {
         lastErr = err
-        // Non-rate-limit errors are real failures; surface them immediately.
-        if (!isRateLimit(err)) throw err
         const isLastAttempt = attempt === tries - 1
-        // On the last attempt for a non-final model, break to fall back fast.
-        if (isLastAttempt) break
-        const delay = 700 * 2 ** attempt
-        await new Promise((r) => setTimeout(r, delay))
+        // Rate limits are transient: back off and retry the SAME model a couple
+        // of times before falling back to the next provider.
+        if (isRateLimit(err) && !isLastAttempt) {
+          const delay = 700 * 2 ** attempt
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        // Any other error (auth/quota/unavailable voice/etc.) — or exhausted
+        // rate-limit retries — should NOT hard-fail. Break out and try the next
+        // provider in the chain so, e.g., an ElevenLabs key problem transparently
+        // falls back to OpenAI TTS instead of surfacing "could not generate".
+        break
       }
     }
   }
