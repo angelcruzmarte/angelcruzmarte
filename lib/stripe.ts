@@ -10,4 +10,25 @@ if (!secretKey) {
   )
 }
 
+// Guardrail: catch the easy-to-miss case where production is running against a
+// TEST Stripe key (so no real cards are ever charged). This commonly happens
+// when a test-mode Stripe integration keeps injecting its key and overrides a
+// manually-set live key. We only warn (never crash) so test/preview keep working.
+const isTestKey = secretKey.startsWith("sk_test_")
+const isProdRuntime =
+  process.env.VERCEL_ENV === "production" ||
+  (!process.env.VERCEL_ENV && process.env.NODE_ENV === "production")
+
+if (isTestKey && isProdRuntime) {
+  console.warn(
+    "[v0] ⚠️ Stripe is using a TEST key (sk_test_…) in a PRODUCTION deployment. " +
+      "Real customers will NOT be charged. Switch the connected Stripe integration " +
+      "to live mode, or disconnect the test-mode integration so the live " +
+      "STRIPE_SECRET_KEY (sk_live_…) takes effect.",
+  )
+}
+
+/** True when the app is running against Stripe's live mode (real charges). */
+export const stripeIsLiveMode = secretKey.startsWith("sk_live_")
+
 export const stripe = new Stripe(secretKey)
