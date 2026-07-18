@@ -1,4 +1,5 @@
 import { Analytics } from '@vercel/analytics/next'
+import { GoogleAnalytics } from '@next/third-parties/google'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Lora } from 'next/font/google'
 import { IdleLogout } from '@/components/idle-logout'
@@ -60,6 +61,9 @@ export default function RootLayout({
         <IdleLogout />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
+      {process.env.NODE_ENV === 'production' && (
+        <GoogleAnalytics gaId="G-3WCGXECSTL" />
+      )}
     </html>
   )
 }
