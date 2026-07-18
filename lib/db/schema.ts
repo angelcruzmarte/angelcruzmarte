@@ -25,6 +25,9 @@ export const user = pgTable("user", {
   subscriptionStatus: text("subscriptionStatus"),
   plan: text("plan"),
   currentPeriodEnd: timestamp("currentPeriodEnd"),
+  // True when the user has scheduled a cancellation: the subscription (or its
+  // trial) will end at `currentPeriodEnd` and will NOT be charged/renewed.
+  cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").notNull().default(false),
   // Whether this account has already used its one-time free trial.
   hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
   // Whether the user has completed the first-run onboarding flow.

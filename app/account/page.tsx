@@ -1,6 +1,10 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import {
+  getCurrentUser,
+  hasActiveSubscription,
+  isTrialActive,
+} from "@/lib/session"
 import { syncSubscription } from "@/app/actions/subscription"
 import { getPlan, formatPrice } from "@/lib/plans"
 import { SiteHeader } from "@/components/site-header"
@@ -8,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ManageBillingButton } from "@/components/manage-billing-button"
+import { CancelSubscriptionButton } from "@/components/cancel-subscription-button"
 
 export default async function AccountPage() {
   // Reconcile with Stripe on load so status is correct even without webhooks.
@@ -24,6 +29,10 @@ export default async function AccountPage() {
 
   const subscribed = hasActiveSubscription(user)
   const plan = user.plan ? getPlan(user.plan) : undefined
+  const trialing = isTrialActive(user)
+  const periodEndIso = user.currentPeriodEnd
+    ? new Date(user.currentPeriodEnd).toISOString()
+    : null
 
   return (
     <div className="min-h-screen">
@@ -70,9 +79,9 @@ export default async function AccountPage() {
                   {formatPrice(plan.priceInCents)} / {plan.interval}
                 </p>
               )}
-              {user.currentPeriodEnd && (
+              {user.currentPeriodEnd && !user.cancelAtPeriodEnd && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Renews on{" "}
+                  {trialing ? "Free trial — first charge on " : "Renews on "}
                   {new Date(user.currentPeriodEnd).toLocaleDateString(undefined, {
                     year: "numeric",
                     month: "long",
@@ -81,6 +90,16 @@ export default async function AccountPage() {
                 </p>
               )}
               <div className="mt-5">
+                <CancelSubscriptionButton
+                  cancelAtPeriodEnd={user.cancelAtPeriodEnd}
+                  periodEnd={periodEndIso}
+                  isTrialing={trialing}
+                />
+              </div>
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Update your card or view invoices in the billing portal.
+                </p>
                 <ManageBillingButton />
               </div>
             </div>

@@ -19,6 +19,7 @@ async function applySubscription(sub: Stripe.Subscription) {
       stripeSubscriptionId: sub.id,
       subscriptionStatus: sub.status,
       plan: planId,
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
       currentPeriodEnd: item?.current_period_end
         ? new Date(item.current_period_end * 1000)
         : null,

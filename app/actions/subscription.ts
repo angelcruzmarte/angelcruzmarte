@@ -137,6 +137,109 @@ export async function createSubscriptionCheckout(planId: string) {
   return { url: checkout.url }
 }
 
+/**
+ * Cancels the current subscription at the end of the paid period (or, for an
+ * account still in its free trial, at the end of the trial). This guarantees
+ * NO further charge: Stripe will not invoice the card when the trial converts —
+ * the subscription simply ends when the current period does. The user keeps
+ * access until then. This is the reliable in-app path (independent of the
+ * Stripe billing portal being configured).
+ */
+export async function cancelSubscription() {
+  const user = await getCurrentUser()
+  if (!user?.stripeCustomerId) {
+    return { error: "No billing account found." }
+  }
+
+  // Find the account's active/trialing subscription from Stripe directly so we
+  // never rely on a possibly-stale stored id.
+  let subs
+  try {
+    subs = await stripe.subscriptions.list({
+      customer: user.stripeCustomerId,
+      status: "all",
+      limit: 1,
+    })
+  } catch (error) {
+    console.error("[v0] cancelSubscription: failed to list:", error)
+    return { error: "Could not reach billing. Please try again." }
+  }
+
+  const sub = subs.data[0]
+  if (!sub || sub.status === "canceled") {
+    return { error: "No active subscription to cancel." }
+  }
+
+  try {
+    const updated = await stripe.subscriptions.update(sub.id, {
+      cancel_at_period_end: true,
+    })
+    const item = updated.items.data[0]
+    await db
+      .update(userTable)
+      .set({
+        subscriptionStatus: updated.status,
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: item?.current_period_end
+          ? new Date(item.current_period_end * 1000)
+          : user.currentPeriodEnd,
+        updatedAt: new Date(),
+      })
+      .where(eq(userTable.id, user.id))
+    return { ok: true }
+  } catch (error) {
+    console.error("[v0] cancelSubscription: update failed:", error)
+    return { error: "Could not cancel right now. Please try again." }
+  }
+}
+
+/**
+ * Reverses a scheduled cancellation (before the period ends) so the plan keeps
+ * renewing. Lets a user who changes their mind stay subscribed without
+ * re-entering payment details.
+ */
+export async function resumeSubscription() {
+  const user = await getCurrentUser()
+  if (!user?.stripeCustomerId) {
+    return { error: "No billing account found." }
+  }
+
+  let subs
+  try {
+    subs = await stripe.subscriptions.list({
+      customer: user.stripeCustomerId,
+      status: "all",
+      limit: 1,
+    })
+  } catch (error) {
+    console.error("[v0] resumeSubscription: failed to list:", error)
+    return { error: "Could not reach billing. Please try again." }
+  }
+
+  const sub = subs.data[0]
+  if (!sub || sub.status === "canceled") {
+    return { error: "No subscription to resume." }
+  }
+
+  try {
+    const updated = await stripe.subscriptions.update(sub.id, {
+      cancel_at_period_end: false,
+    })
+    await db
+      .update(userTable)
+      .set({
+        subscriptionStatus: updated.status,
+        cancelAtPeriodEnd: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(userTable.id, user.id))
+    return { ok: true }
+  } catch (error) {
+    console.error("[v0] resumeSubscription: update failed:", error)
+    return { error: "Could not resume right now. Please try again." }
+  }
+}
+
 /** Opens the Stripe billing portal so users can manage/cancel their plan. */
 export async function createBillingPortalSession() {
   const user = await getCurrentUser()
@@ -213,6 +316,7 @@ export async function refreshSubscriptionFor(userId: string | null) {
       subscriptionStatus: sub.status,
       plan: planId,
       hasUsedTrial: usedTrial,
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
       currentPeriodEnd: item?.current_period_end
         ? new Date(item.current_period_end * 1000)
         : null,
