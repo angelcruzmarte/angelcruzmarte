@@ -2,7 +2,13 @@ import "server-only"
 
 import Stripe from "stripe"
 
-const secretKey = process.env.STRIPE_SECRET_KEY
+// Prefer an explicit, integration-independent override when present. A
+// connected Stripe *integration* owns `STRIPE_SECRET_KEY`, so a manually-set
+// value there can be overridden by the integration. `STRIPE_LIVE_SECRET_KEY`
+// is a plain project variable no integration manages, so it reliably wins.
+// Falls back to the integration-provided key when the override isn't set.
+const secretKey =
+  process.env.STRIPE_LIVE_SECRET_KEY?.trim() || process.env.STRIPE_SECRET_KEY
 
 if (!secretKey) {
   throw new Error(

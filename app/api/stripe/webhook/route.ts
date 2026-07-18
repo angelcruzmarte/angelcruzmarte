@@ -31,7 +31,11 @@ async function applySubscription(sub: Stripe.Subscription) {
 export async function POST(req: Request) {
   const body = await req.text()
   const signature = (await headers()).get("stripe-signature")
-  const secret = process.env.STRIPE_WEBHOOK_SECRET
+  // Prefer the integration-independent override (see lib/stripe.ts) so the live
+  // webhook secret isn't shadowed by a connected Stripe integration.
+  const secret =
+    process.env.STRIPE_LIVE_WEBHOOK_SECRET?.trim() ||
+    process.env.STRIPE_WEBHOOK_SECRET
 
   let event: Stripe.Event
   try {
