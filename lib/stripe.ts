@@ -2,17 +2,27 @@ import "server-only"
 
 import Stripe from "stripe"
 
-// Prefer an explicit, integration-independent override when present. A
-// connected Stripe *integration* owns `STRIPE_SECRET_KEY`, so a manually-set
-// value there can be overridden by the integration. `STRIPE_LIVE_SECRET_KEY`
-// is a plain project variable no integration manages, so it reliably wins.
-// Falls back to the integration-provided key when the override isn't set.
+// Resolve the Stripe secret key from several possible sources, because this
+// project has multiple Stripe integrations connected that each expose their
+// key under a different variable:
+//   - STRIPE_LIVE_SECRET_KEY  → explicit manual override (plain project var)
+//   - STRIPE_ACCESS_TOKEN     → the LIVE integration (stripe-live-voxyfi)
+//   - STRIPE_SECRET_KEY       → the TEST integration (sandbox)
+// To guarantee real charges in production, we prefer whichever source holds a
+// LIVE key (sk_live_…); only if none is live do we fall back to the first
+// available value. This keeps working even if the manual override is removed.
+const candidates = [
+  process.env.STRIPE_LIVE_SECRET_KEY?.trim(),
+  process.env.STRIPE_ACCESS_TOKEN?.trim(),
+  process.env.STRIPE_SECRET_KEY?.trim(),
+].filter((v): v is string => Boolean(v))
+
 const secretKey =
-  process.env.STRIPE_LIVE_SECRET_KEY?.trim() || process.env.STRIPE_SECRET_KEY
+  candidates.find((k) => k.startsWith("sk_live_")) ?? candidates[0]
 
 if (!secretKey) {
   throw new Error(
-    "STRIPE_SECRET_KEY is not set. Add the Stripe integration in Project Settings.",
+    "No Stripe secret key found. Add the Stripe integration in Project Settings.",
   )
 }
 
