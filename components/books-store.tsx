@@ -16,6 +16,7 @@ import {
   Crown,
   Drama,
   Feather,
+  FileText,
   FlaskConical,
   Ghost,
   Headphones,
@@ -33,7 +34,6 @@ import {
   ShoppingBag,
   Sparkles,
   TrendingUp,
-  Upload,
   UserRound,
   X,
   Zap,
@@ -825,6 +825,25 @@ function UploadsShelf({ uploads }: { uploads: Document[] }) {
             doc.wordCount > 0
               ? Math.min(99, Math.round((doc.lastWord / doc.wordCount) * 100))
               : 0
+          const accent = UPLOAD_COLORS[i % UPLOAD_COLORS.length]
+          const mime = doc.originalMime ?? ""
+          const isImage = mime.startsWith("image/") && !!doc.originalUrl
+          const ext = (doc.title.split(".").pop() ?? "").toUpperCase()
+          const fileType = mime.includes("pdf")
+            ? "PDF"
+            : /word|officedocument|docx/.test(mime)
+              ? "DOCX"
+              : mime.includes("epub")
+                ? "EPUB"
+                : ext && ext.length >= 2 && ext.length <= 4
+                  ? ext
+                  : "DOC"
+          // A short first-page snippet, whitespace-normalized, so the cover
+          // shows the real beginning of the document.
+          const preview = doc.content.replace(/\s+/g, " ").trim().slice(0, 240)
+          // Drop a trailing file extension from the on-cover title for a
+          // cleaner "cover" look.
+          const displayTitle = doc.title.replace(/\.[a-z0-9]{2,4}$/i, "")
           return (
             <Link
               key={doc.id}
@@ -832,26 +851,51 @@ function UploadsShelf({ uploads }: { uploads: Document[] }) {
               className="group flex w-32 shrink-0 flex-col gap-2 sm:w-36"
             >
               <div className="relative">
-                <div
-                  className="relative flex aspect-[2/3] flex-col justify-between overflow-hidden rounded-lg p-3 shadow-md transition-transform group-hover:-translate-y-1"
-                  style={{
-                    backgroundColor: UPLOAD_COLORS[i % UPLOAD_COLORS.length],
-                  }}
-                >
-                  <Upload className="h-5 w-5 text-white/70" aria-hidden />
-                  <p
-                    className="text-pretty text-[0.95rem] font-bold leading-tight text-white"
-                    style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}
-                  >
-                    {doc.title}
-                  </p>
-                </div>
+                {isImage ? (
+                  <div className="relative aspect-[2/3] overflow-hidden rounded-lg shadow-md transition-transform group-hover:-translate-y-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={doc.originalUrl as string}
+                      alt={`Cover of ${displayTitle}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="relative flex aspect-[2/3] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-md transition-transform group-hover:-translate-y-1">
+                    <div
+                      className="h-1.5 w-full shrink-0"
+                      style={{ backgroundColor: accent }}
+                      aria-hidden
+                    />
+                    <div className="flex flex-1 flex-col gap-1.5 p-3">
+                      <span className="inline-flex w-fit items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        <FileText className="h-3 w-3" aria-hidden />
+                        {fileType}
+                      </span>
+                      <p className="line-clamp-3 text-pretty text-[0.82rem] font-bold leading-tight text-foreground">
+                        {displayTitle}
+                      </p>
+                      {preview && (
+                        <p
+                          className="overflow-hidden text-[0.6rem] leading-relaxed text-muted-foreground"
+                          style={{
+                            display: "-webkit-box",
+                            WebkitBoxOrient: "vertical",
+                            WebkitLineClamp: 6,
+                          }}
+                        >
+                          {preview}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <span className="absolute right-1.5 top-1.5 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-sm">
                   Free
                 </span>
               </div>
               <div>
-                <p className="truncate text-sm font-semibold">{doc.title}</p>
+                <p className="truncate text-sm font-semibold">{displayTitle}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   {progress > 0 ? `${progress}% listened` : "Tap to listen"}
                 </p>
