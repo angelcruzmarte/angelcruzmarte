@@ -154,26 +154,6 @@ export function ProfileView({
           </Link>
         )}
 
-        {/* Support */}
-        <section className="mt-8">
-          <h2 className="px-1 pb-3 text-xl font-extrabold tracking-tight">
-            Support
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
-            <SupportTile
-              href="mailto:support@voxyfi.com"
-              external
-              icon={<Mail className="h-6 w-6" />}
-              label="Email"
-            />
-            <SupportTile
-              href="/app/faq"
-              icon={<HelpCircle className="h-6 w-6" />}
-              label="FAQ"
-            />
-          </div>
-        </section>
-
         {/* Settings & support */}
         <section className="mt-6">
           <h2 className="px-1 pb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -193,8 +173,7 @@ export function ProfileView({
               />
             )}
             <RowLink
-              href="https://vercel.com/help"
-              external
+              href="/app/faq"
               icon={<HelpCircle className="h-5 w-5" />}
               label="Help & support"
             />
@@ -243,47 +222,6 @@ function StatTile({
         {label}
       </span>
     </div>
-  )
-}
-
-function SupportTile({
-  href,
-  icon,
-  label,
-  external,
-}: {
-  href: string
-  icon: React.ReactNode
-  label: string
-  external?: boolean
-}) {
-  const className =
-    "flex flex-col items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-6 text-center transition-colors hover:bg-accent"
-  const content = (
-    <>
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-primary">
-        {icon}
-      </span>
-      <span className="text-sm font-semibold">{label}</span>
-    </>
-  )
-
-  if (external) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-      >
-        {content}
-      </a>
-    )
-  }
-  return (
-    <Link href={href} className={className}>
-      {content}
-    </Link>
   )
 }
 

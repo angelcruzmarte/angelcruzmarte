@@ -38,7 +38,7 @@ const FAQS: QA[] = [
   },
   {
     q: "I need more help. How do I reach support?",
-    a: "Use the WhatsApp, Chat, or Email options on your Profile screen, or email us directly at support@voxyfi.com. We're happy to help.",
+    a: "Tap the Email support button below, or email us directly at support@voxyfi.com. We're happy to help.",
   },
 ]
 
