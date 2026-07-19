@@ -12,8 +12,6 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
-  MessageCircle,
-  MessagesSquare,
   Shield,
   Sparkles,
 } from "lucide-react"
@@ -162,18 +160,6 @@ export function ProfileView({
             Support
           </h2>
           <div className="grid grid-cols-2 gap-3">
-            <SupportTile
-              href="https://wa.me/10000000000"
-              external
-              icon={<MessageCircle className="h-6 w-6" />}
-              label="WhatsApp"
-            />
-            <SupportTile
-              href="mailto:support@voxyfi.com?subject=Voxyfi%20support%20chat"
-              external
-              icon={<MessagesSquare className="h-6 w-6" />}
-              label="Chat"
-            />
             <SupportTile
               href="mailto:support@voxyfi.com"
               external
