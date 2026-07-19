@@ -129,8 +129,26 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
     rows.push({ key: "bestsellers", title: "Best Sellers", books: bestSellers })
   }
 
-  // Hero: top featured title, otherwise the newest book.
-  const hero = editors[0] ?? newReleases[0] ?? all[0]
+  // Hero: rotate the Featured pick hourly so the spotlight stays fresh on
+  // repeat visits. The rotation pool prioritizes curated featured titles, then
+  // fills with new releases and best sellers (deduped) so there's always more
+  // than one book to cycle through even if only a few are flagged featured.
+  const heroPool: BookCard[] = []
+  const seen = new Set<number>()
+  for (const b of [...editors, ...newReleases, ...bestSellers]) {
+    if (!seen.has(b.id)) {
+      seen.add(b.id)
+      heroPool.push(b)
+    }
+  }
+  if (heroPool.length === 0 && all.length > 0) heroPool.push(all[0])
+
+  // Deterministic hourly bucket keeps the choice stable within the hour while
+  // advancing to the next book each hour.
+  const HOUR_MS = 60 * 60 * 1000
+  const bucket = Math.floor(Date.now() / HOUR_MS)
+  const hero =
+    heroPool.length > 0 ? heroPool[bucket % heroPool.length] : null
 
   return { hero, rows }
 }
