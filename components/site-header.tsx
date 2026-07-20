@@ -4,7 +4,7 @@ import { getCurrentUser, hasActiveSubscription, isAdmin } from "@/lib/session"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
-import { LogoMark } from "@/components/logo-mark"
+import { BrandLogo } from "@/components/brand-logo"
 
 export async function SiteHeader() {
   const user = await getCurrentUser()
@@ -14,11 +14,8 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <LogoMark className="h-5 w-5" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">VOXYFI</span>
+        <Link href="/">
+          <BrandLogo size="md" />
         </Link>
 
         <nav className="flex items-center gap-2 sm:gap-3">

@@ -13,10 +13,26 @@ const geistMono = Geist_Mono({
 const lora = Lora({ variable: '--font-lora', subsets: ['latin'] })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.voxyfi.com'),
   title: 'VOXYFI — Listen to anything',
   description:
     'VOXYFI turns any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
+  applicationName: 'VOXYFI',
   generator: 'v0.app',
+  openGraph: {
+    type: 'website',
+    siteName: 'VOXYFI',
+    url: 'https://www.voxyfi.com',
+    title: 'VOXYFI — Listen to anything',
+    description:
+      'Turn any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'VOXYFI — Listen to anything',
+    description:
+      'Turn any text into natural-sounding speech with word-by-word highlighting, adjustable speed, and multiple voices.',
+  },
   icons: {
     icon: [
       {

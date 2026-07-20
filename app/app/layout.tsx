@@ -7,7 +7,7 @@ import { CartProvider } from "@/components/cart-provider"
 import { CartDrawer } from "@/components/cart-drawer"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
-import { LogoMark } from "@/components/logo-mark"
+import { BrandLogo } from "@/components/brand-logo"
 import { Sparkles, ArrowUp } from "lucide-react"
 
 export default async function AppLayout({
@@ -29,11 +29,8 @@ export default async function AppLayout({
     <PlayerProvider>
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
-        <Link href="/app" className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <LogoMark className="h-4 w-4" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">VOXYFI</span>
+        <Link href="/app">
+          <BrandLogo size="sm" />
         </Link>
         <div className="flex items-center gap-2">
           {subscribed ? (
