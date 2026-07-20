@@ -15,11 +15,11 @@ export function LogoMark({ className }: { className?: string }) {
       role="img"
       aria-label="VOXYFI"
     >
-      <rect x="94" y="126" width="44" height="260" rx="22" />
-      <rect x="164" y="166" width="44" height="180" rx="22" />
-      <rect x="234" y="201" width="44" height="110" rx="22" />
-      <rect x="304" y="166" width="44" height="180" rx="22" />
-      <rect x="374" y="126" width="44" height="260" rx="22" />
+      <rect x="83" y="116" width="50" height="280" rx="25" />
+      <rect x="157" y="161" width="50" height="190" rx="25" />
+      <rect x="231" y="196" width="50" height="120" rx="25" />
+      <rect x="305" y="161" width="50" height="190" rx="25" />
+      <rect x="379" y="116" width="50" height="280" rx="25" />
     </svg>
   )
 }

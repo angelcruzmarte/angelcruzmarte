@@ -1,16 +1,15 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VOXYFI">
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="voxyfiBg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1f7a4d"/>
-      <stop offset="1" stop-color="#0f5836"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f8a55"/>
+      <stop offset="1" stop-color="#0e4d2e"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="120" fill="url(#voxyfiBg)"/>
-  <g fill="#ffffff">
-    <rect x="94"  y="126" width="44" height="260" rx="22"/>
-    <rect x="164" y="166" width="44" height="180" rx="22"/>
-    <rect x="234" y="201" width="44" height="110" rx="22"/>
-    <rect x="304" y="166" width="44" height="180" rx="22"/>
-    <rect x="374" y="126" width="44" height="260" rx="22"/>
-  </g>
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="114" fill="url(#shine)"/>
+  <rect x="83" y="116" width="50" height="280" rx="25" fill="#ffffff"/><rect x="157" y="161" width="50" height="190" rx="25" fill="#ffffff"/><rect x="231" y="196" width="50" height="120" rx="25" fill="#ffffff"/><rect x="305" y="161" width="50" height="190" rx="25" fill="#ffffff"/><rect x="379" y="116" width="50" height="280" rx="25" fill="#ffffff"/>
 </svg>
