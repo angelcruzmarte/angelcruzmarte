@@ -20,20 +20,20 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png?v=3',
+        url: '/icon-light-32x32.png?v=4',
         media: '(prefers-color-scheme: light)',
       },
       {
-        url: '/icon-dark-32x32.png?v=3',
+        url: '/icon-dark-32x32.png?v=4',
         media: '(prefers-color-scheme: dark)',
       },
       {
-        url: '/icon.svg?v=3',
+        url: '/icon.svg?v=4',
         type: 'image/svg+xml',
       },
     ],
-    shortcut: '/favicon.ico?v=3',
-    apple: '/apple-icon.png?v=3',
+    shortcut: '/favicon.ico?v=4',
+    apple: '/apple-icon.png?v=4',
   },
   manifest: '/manifest.webmanifest',
 }
