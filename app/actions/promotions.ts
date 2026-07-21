@@ -14,6 +14,18 @@ async function requireAdmin() {
   return user!
 }
 
+/**
+ * Revalidate every surface that reflects the active promotion so that
+ * creating, editing, toggling, or deleting a promo in the admin panel takes
+ * effect immediately across the whole app — not just the admin screen.
+ */
+function revalidatePromoSurfaces() {
+  revalidatePath("/admin/promotions")
+  revalidatePath("/") // marketing homepage pricing + banner
+  revalidatePath("/sign-up") // sign-up promo banner
+  revalidatePath("/subscribe") // in-app subscribe page
+}
+
 export async function listPromotions(): Promise<Promotion[]> {
   await requireAdmin()
   return db.select().from(promotion).orderBy(desc(promotion.createdAt))
@@ -48,7 +60,7 @@ export async function createPromotion(input: PromotionInput) {
     startsAt: input.startsAt ? new Date(input.startsAt) : null,
     endsAt: input.endsAt ? new Date(input.endsAt) : null,
   })
-  revalidatePath("/admin/promotions")
+  revalidatePromoSurfaces()
   return { success: true }
 }
 
@@ -73,21 +85,21 @@ export async function updatePromotion(id: number, input: PromotionInput) {
       stripeCouponId: null,
     })
     .where(eq(promotion.id, id))
-  revalidatePath("/admin/promotions")
+  revalidatePromoSurfaces()
   return { success: true }
 }
 
 export async function togglePromotion(id: number, active: boolean) {
   await requireAdmin()
   await db.update(promotion).set({ active }).where(eq(promotion.id, id))
-  revalidatePath("/admin/promotions")
+  revalidatePromoSurfaces()
   return { success: true }
 }
 
 export async function deletePromotion(id: number) {
   await requireAdmin()
   await db.delete(promotion).where(eq(promotion.id, id))
-  revalidatePath("/admin/promotions")
+  revalidatePromoSurfaces()
   return { success: true }
 }
 
