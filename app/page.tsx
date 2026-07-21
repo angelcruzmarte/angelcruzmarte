@@ -4,8 +4,10 @@ import { redirect } from "next/navigation"
 import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
 import { getCurrentUser } from "@/lib/session"
 import { PLANS, formatPrice } from "@/lib/plans"
+import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { LogoMark } from "@/components/logo-mark"
+import { PromoCountdown } from "@/components/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
@@ -17,6 +19,13 @@ export default async function HomePage() {
     redirect("/app")
   }
 
+  // Reflect any active promotion on the public homepage. This is the same
+  // promo that is applied as a real discount at checkout, so the prices shown
+  // here are truthful. The banner/countdown only appears while the promo is
+  // live (getActivePromotion respects the start/end window).
+  const promo = await getActivePromotion()
+  const showPromo = Boolean(promo && promo.showBanner)
+
   const primaryHref = user ? "/app" : "/sign-up"
   const primaryLabel = user ? "Open the app" : "Start listening free"
 
@@ -27,10 +36,20 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
         <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            Listen to anything, anywhere
-          </span>
+          {showPromo ? (
+            <a
+              href={user ? "/subscribe" : "/sign-up"}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Limited time: {promo!.percentOff}% off Premium
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              Listen to anything, anywhere
+            </span>
+          )}
           <h1 className="mt-5 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
             Turn reading into listening with VOXYFI
           </h1>
@@ -118,8 +137,38 @@ export default async function HomePage() {
               Unlimited listening across the entire library. Cancel anytime.
             </p>
           </div>
+
+          {showPromo && (
+            <div className="mx-auto mt-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Limited-time offer
+              </p>
+              <p className="mt-1 text-balance text-xl font-semibold">
+                {promo!.name} &mdash; {promo!.percentOff}% off Premium
+              </p>
+              {promo!.description && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {promo!.description}
+                </p>
+              )}
+              <PromoCountdown
+                endsAt={promo!.endsAt ? promo!.endsAt.toISOString() : null}
+              />
+              <p className="mt-3 text-sm font-medium text-primary">
+                Sign up now &mdash; discount applied automatically at checkout
+              </p>
+            </div>
+          )}
+
           <div className="mx-auto mt-8 grid max-w-2xl gap-4 sm:grid-cols-2">
-            {PLANS.map((plan) => (
+            {PLANS.map((plan) => {
+              const promoApplies =
+                showPromo &&
+                (promo!.planScope === "all" || promo!.planScope === plan.id)
+              const discounted = promoApplies
+                ? Math.round(plan.priceInCents * (1 - promo!.percentOff / 100))
+                : null
+              return (
               <Card
                 key={plan.id}
                 className={
@@ -137,11 +186,21 @@ export default async function HomePage() {
                   )}
                 </div>
                 <p className="mt-3 text-3xl font-semibold tracking-tight">
-                  {formatPrice(plan.priceInCents)}
+                  {discounted !== null && (
+                    <span className="mr-2 align-middle text-lg font-normal text-muted-foreground line-through">
+                      {formatPrice(plan.priceInCents)}
+                    </span>
+                  )}
+                  {formatPrice(discounted ?? plan.priceInCents)}
                   <span className="text-base font-normal text-muted-foreground">
                     /{plan.interval}
                   </span>
                 </p>
+                {discounted !== null && (
+                  <p className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                    Save {promo!.percentOff}% for a limited time
+                  </p>
+                )}
                 <Link
                   href={user ? "/subscribe" : "/sign-up"}
                   className={
@@ -153,7 +212,8 @@ export default async function HomePage() {
                   Get {plan.name}
                 </Link>
               </Card>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
