@@ -3,6 +3,7 @@ import { GoogleAnalytics } from '@next/third-parties/google'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Lora } from 'next/font/google'
 import { IdleLogout } from '@/components/idle-logout'
+import { ServiceWorkerRegister } from '@/components/sw-register'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -19,6 +20,14 @@ export const metadata: Metadata = {
     'VOXYFI turns any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
   applicationName: 'VOXYFI',
   generator: 'v0.app',
+  appleWebApp: {
+    capable: true,
+    title: 'VOXYFI',
+    statusBarStyle: 'default',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   openGraph: {
     type: 'website',
     siteName: 'VOXYFI',
@@ -56,6 +65,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   colorScheme: 'light dark',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f5f2ea' },
     { media: '(prefers-color-scheme: dark)', color: '#2b2926' },
@@ -75,6 +87,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         {children}
         <IdleLogout />
+        <ServiceWorkerRegister />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
       {process.env.NODE_ENV === 'production' && (
