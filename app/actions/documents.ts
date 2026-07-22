@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { detectLanguage } from "@/app/actions/ai"
 import { db } from "@/lib/db"
 import { document } from "@/lib/db/schema"
-import { and, desc, eq, isNull, isNotNull } from "drizzle-orm"
+import { and, desc, eq, isNull, isNotNull, inArray } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
@@ -177,6 +177,23 @@ export async function deleteDocument(id: number) {
     .update(document)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(document.id, id), eq(document.userId, userId)))
+  revalidatePath("/app/library")
+  revalidatePath("/app/books")
+  revalidatePath("/app")
+  revalidatePath("/app/profile/deleted")
+}
+
+/**
+ * Moves multiple documents to the trash at once (soft delete). Used by the
+ * library's "Select Multiple" bulk action.
+ */
+export async function deleteDocuments(ids: number[]) {
+  if (ids.length === 0) return
+  const userId = await getUserId()
+  await db
+    .update(document)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(document.userId, userId), inArray(document.id, ids)))
   revalidatePath("/app/library")
   revalidatePath("/app/books")
   revalidatePath("/app")
