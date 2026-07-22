@@ -148,7 +148,9 @@ export function DailyGoalRow({
               min={5}
               max={120}
               step={5}
-              onValueChange={(v) => setMinutes(v[0])}
+              onValueChange={(v) =>
+                setMinutes(Array.isArray(v) ? v[0] : v)
+              }
               aria-label="Daily goal minutes"
             />
             <div className="mt-2 flex justify-between text-xs text-muted-foreground">

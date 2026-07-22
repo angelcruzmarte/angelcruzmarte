@@ -6,7 +6,6 @@ import {
   document,
   listeningStat,
   aiQuota,
-  readingItem,
   userInterest,
   bookPurchase,
   bookFavorite,
@@ -66,7 +65,6 @@ export async function deleteAccount(): Promise<{ ok: boolean }> {
   await db.delete(document).where(eq(document.userId, userId))
   await db.delete(listeningStat).where(eq(listeningStat.userId, userId))
   await db.delete(aiQuota).where(eq(aiQuota.userId, userId))
-  await db.delete(readingItem).where(eq(readingItem.userId, userId))
   await db.delete(userInterest).where(eq(userInterest.userId, userId))
   await db.delete(bookPurchase).where(eq(bookPurchase.userId, userId))
   await db.delete(bookFavorite).where(eq(bookFavorite.userId, userId))

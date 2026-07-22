@@ -324,12 +324,47 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 function MiniPlayer() {
   const { session, status, index, fraction, fullPlayerMounted, toggle } =
     usePlayer()
+  const { autoHide } = useListeningPreferences()
+
+  // "Auto-Hide Player": when enabled, collapse the docked player after a few
+  // seconds of being paused. It reappears whenever playback resumes or the
+  // user taps the peek handle.
+  const [hidden, setHidden] = useState(false)
+  useEffect(() => {
+    if (!autoHide) {
+      setHidden(false)
+      return
+    }
+    if (status === "playing") {
+      setHidden(false)
+      return
+    }
+    // Paused/loading: schedule a hide after a short idle delay.
+    const t = setTimeout(() => setHidden(true), 4000)
+    return () => clearTimeout(t)
+  }, [autoHide, status])
 
   if (!session || status === "idle" || fullPlayerMounted) return null
 
   const total = Math.max(1, session.total)
   const progress = Math.min(100, ((index + fraction) / total) * 100)
   const busy = status === "loading"
+
+  if (hidden) {
+    return (
+      <div className="fixed inset-x-0 bottom-24 z-40 flex justify-center px-4">
+        <button
+          type="button"
+          onClick={() => setHidden(false)}
+          aria-label="Show player"
+          className="flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2 text-xs font-medium text-muted-foreground shadow-lg backdrop-blur"
+        >
+          <ChevronUp className="h-4 w-4" aria-hidden="true" />
+          Show player
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-x-0 bottom-24 z-40 px-4">
