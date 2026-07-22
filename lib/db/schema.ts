@@ -34,6 +34,17 @@ export const user = pgTable("user", {
   onboardingComplete: boolean("onboardingComplete").notNull().default(false),
   // Shareable referral code (generated on demand).
   referralCode: text("referralCode"),
+  // ----- Listening preferences (Speechify-style settings) -----
+  // Start playing a file as soon as it opens.
+  prefAutoPlay: boolean("prefAutoPlay").notNull().default(false),
+  // Auto-hide the docked player after a few seconds of inactivity.
+  prefAutoHide: boolean("prefAutoHide").notNull().default(false),
+  // Don't pause audio from other apps (native wrapper honors this).
+  prefMixAudio: boolean("prefMixAudio").notNull().default(false),
+  // Skip headers, footers, citations, and page numbers during narration.
+  prefAutoSkip: boolean("prefAutoSkip").notNull().default(false),
+  // Daily listening goal in minutes.
+  dailyGoalMinutes: integer("dailyGoalMinutes").notNull().default(30),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
@@ -110,6 +121,9 @@ export const document = pgTable("document", {
   sourceLang: text("sourceLang"),
   wordCount: integer("wordCount").notNull().default(0),
   lastWord: integer("lastWord").notNull().default(0),
+  // Soft-delete timestamp. Non-null means the document is in the trash and is
+  // hidden from the library but restorable from the "Deleted Files" screen.
+  deletedAt: timestamp("deletedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
