@@ -34,8 +34,10 @@ import {
 import { ReaderPanel } from "@/components/reader-panel"
 import { VoiceAvatar } from "@/components/voice-avatar"
 import { usePlayer } from "@/components/player-provider"
+import { useListeningPreferences } from "@/components/listening-preferences"
 import { cn } from "@/lib/utils"
 import { chunkForNarration } from "@/lib/chunk-text"
+import { stripBoilerplate } from "@/lib/strip-boilerplate"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
 import { translatePassage } from "@/app/actions/ai"
@@ -138,10 +140,23 @@ export function PremiumNarration({
     setRate,
   } = player
 
+  // Listening preferences from Settings (auto-play / auto-skip / …).
+  const preferences = useListeningPreferences()
+
+  // "Auto Skip Content": strip headers, footers, page numbers and citations
+  // from the narrated text so the voice reads only the real content.
+  const effectiveText = useMemo(
+    () => (preferences.autoSkip ? stripBoilerplate(text) : text),
+    [text, preferences.autoSkip],
+  )
+
   // Narration sections come from the ORIGINAL text so their boundaries stay
   // stable across languages. Translations are stored per section and filled in
   // progressively, so switching language and starting playback feels instant.
-  const sourceChunks = useMemo(() => chunkForNarration(text), [text])
+  const sourceChunks = useMemo(
+    () => chunkForNarration(effectiveText),
+    [effectiveText],
+  )
 
   // Translation state. `lang` is either the sentinel "original" (narrate the
   // document as-is) or a target language code we translate INTO.
@@ -372,6 +387,18 @@ export function PremiumNarration({
     setFullPlayerMounted(true)
     return () => setFullPlayerMounted(false)
   }, [setFullPlayerMounted])
+
+  // "Auto-Play Audio": start narration automatically the first time the reader
+  // opens, honoring the user's Settings preference. Runs once, only while idle
+  // and not force-paused (e.g. the free-tier cap). Navigating to the reader is
+  // itself a user gesture, so browser autoplay policies allow this.
+  const autoPlayedRef = useRef(false)
+  useEffect(() => {
+    if (!preferences.autoPlay || autoPlayedRef.current) return
+    if (paused || status !== "idle" || sourceChunks.length === 0) return
+    autoPlayedRef.current = true
+    void play(index)
+  }, [preferences.autoPlay, paused, status, sourceChunks.length, play, index])
 
   // When an AI tool panel opens (or any external force-pause), pause narration
   // so two audio sources don't overlap.

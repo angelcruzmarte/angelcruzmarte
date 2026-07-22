@@ -18,6 +18,12 @@ export default async function ProfilePage() {
     getOrCreateReferralCode(),
   ])
 
+  const memberSince = new Date(user.createdAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+
   return (
     <ProfileView
       name={user.name}
@@ -29,6 +35,14 @@ export default async function ProfilePage() {
       planName={user.plan ?? undefined}
       lifetime={lifetime}
       referralCode={referralCode}
+      preferences={{
+        prefAutoPlay: user.prefAutoPlay,
+        prefAutoHide: user.prefAutoHide,
+        prefMixAudio: user.prefMixAudio,
+        prefAutoSkip: user.prefAutoSkip,
+      }}
+      dailyGoalMinutes={user.dailyGoalMinutes}
+      memberSince={memberSince}
     />
   )
 }

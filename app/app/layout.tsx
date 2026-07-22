@@ -3,6 +3,7 @@ import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AppTabBar } from "@/components/app-tab-bar"
 import { PlayerProvider } from "@/components/player-provider"
+import { ListeningPreferencesProvider } from "@/components/listening-preferences"
 import { CartProvider } from "@/components/cart-provider"
 import { CartDrawer } from "@/components/cart-drawer"
 import { UserMenu } from "@/components/user-menu"
@@ -26,6 +27,14 @@ export default async function AppLayout({
 
   return (
     <CartProvider>
+    <ListeningPreferencesProvider
+      value={{
+        autoPlay: user.prefAutoPlay,
+        autoHide: user.prefAutoHide,
+        mixAudio: user.prefMixAudio,
+        autoSkip: user.prefAutoSkip,
+      }}
+    >
     <PlayerProvider>
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col bg-background">
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
@@ -65,6 +74,7 @@ export default async function AppLayout({
       <CartDrawer />
     </div>
     </PlayerProvider>
+    </ListeningPreferencesProvider>
     </CartProvider>
   )
 }

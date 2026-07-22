@@ -12,6 +12,7 @@ import {
 import Link from "next/link"
 import { Pause, Play, Loader2, ChevronUp } from "lucide-react"
 import { VoiceAvatar } from "@/components/voice-avatar"
+import { useListeningPreferences } from "@/components/listening-preferences"
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused"
 

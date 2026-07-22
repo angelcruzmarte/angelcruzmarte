@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { detectLanguage } from "@/app/actions/ai"
 import { db } from "@/lib/db"
 import { document } from "@/lib/db/schema"
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, isNull, isNotNull } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
@@ -23,7 +23,8 @@ export async function getDocuments() {
   return db
     .select()
     .from(document)
-    .where(eq(document.userId, userId))
+    // Exclude soft-deleted (trashed) documents from the library.
+    .where(and(eq(document.userId, userId), isNull(document.deletedAt)))
     .orderBy(desc(document.updatedAt))
 }
 
@@ -32,7 +33,13 @@ export async function getDocument(id: number) {
   const [doc] = await db
     .select()
     .from(document)
-    .where(and(eq(document.id, id), eq(document.userId, userId)))
+    .where(
+      and(
+        eq(document.id, id),
+        eq(document.userId, userId),
+        isNull(document.deletedAt),
+      ),
+    )
     .limit(1)
   return doc ?? null
 }
@@ -160,10 +167,65 @@ export async function updateProgress(id: number, lastWord: number) {
     .where(and(eq(document.id, id), eq(document.userId, userId)))
 }
 
+/**
+ * Moves a document to the trash (soft delete). It is hidden from the library
+ * but can be restored from the "Deleted Files" screen.
+ */
 export async function deleteDocument(id: number) {
   const userId = await getUserId()
   await db
-    .delete(document)
+    .update(document)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(document.id, id), eq(document.userId, userId)))
   revalidatePath("/app/library")
+  revalidatePath("/app/books")
+  revalidatePath("/app")
+  revalidatePath("/app/profile/deleted")
+}
+
+/** Lists the user's trashed documents, most recently deleted first. */
+export async function getDeletedDocuments() {
+  const userId = await getUserId()
+  return db
+    .select()
+    .from(document)
+    .where(and(eq(document.userId, userId), isNotNull(document.deletedAt)))
+    .orderBy(desc(document.deletedAt))
+}
+
+/** Restores a trashed document back into the library. */
+export async function restoreDocument(id: number) {
+  const userId = await getUserId()
+  await db
+    .update(document)
+    .set({ deletedAt: null, updatedAt: new Date() })
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+  revalidatePath("/app/library")
+  revalidatePath("/app/books")
+  revalidatePath("/app")
+  revalidatePath("/app/profile/deleted")
+}
+
+/** Permanently removes a single trashed document. Cannot be undone. */
+export async function permanentlyDeleteDocument(id: number) {
+  const userId = await getUserId()
+  await db
+    .delete(document)
+    .where(
+      and(
+        eq(document.id, id),
+        eq(document.userId, userId),
+        isNotNull(document.deletedAt),
+      ),
+    )
+  revalidatePath("/app/profile/deleted")
+}
+
+/** Empties the trash: permanently deletes every trashed document. */
+export async function emptyTrash() {
+  const userId = await getUserId()
+  await db
+    .delete(document)
+    .where(and(eq(document.userId, userId), isNotNull(document.deletedAt)))
+  revalidatePath("/app/profile/deleted")
 }
