@@ -55,10 +55,18 @@ text-to-speech, audiobooks, read aloud, TTS, PDF reader, ebook, listening
 | --- | --- | --- | --- |
 | App icon | `/public/icon-1024.png` | 1024x1024 | App Store & Play listing icon |
 | Feature graphic | `/public/store/play-feature-graphic.png` | 1024x500 | Google Play "Feature graphic" |
-| Phone screenshots | `/public/store/promo/promo-1..3.png` | 1290x2796 | App Store 6.7" + Play phone |
+| Phone screenshots | `/public/store/promo/promo-1..5.png` | 1290x2796 | App Store 6.7" + Play phone |
 | 7-inch tablet | `/public/store/tablet/tablet-7in-1..2.png` | 1600x1000 | Play 7-inch tablet |
 | 10-inch tablet | `/public/store/tablet/tablet-10in-1..2.png` | 2560x1600 | Play 10-inch tablet |
 | Share/OG image | `/public/opengraph-image.png` | 1200x630 | Social/link previews |
+
+### Phone screenshot captions (upload in this order for a strong narrative)
+
+1. `promo-1.png` — "Listen to anything, anywhere" (hero / landing)
+2. `promo-4.png` — "Natural voices, word-by-word" (in-app listening player)
+3. `promo-5.png` — "Upload PDFs, docs & books" (your uploads / library)
+4. `promo-2.png` — "Simple, premium pricing" (pricing with promo)
+5. `promo-3.png` — "Your whole library, out loud" (library grid)
 
 ---
 
