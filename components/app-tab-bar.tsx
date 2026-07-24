@@ -26,8 +26,14 @@ export function AppTabBar() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40">
-      <div className="mx-auto max-w-2xl px-4 pb-4">
-        <div className="flex items-center justify-between gap-1 rounded-full border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur">
+      {/* Fade the page content out before it reaches the floating bar so no
+          button ever appears to overlap or bleed through the tab bar. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background via-background to-transparent"
+      />
+      <div className="relative mx-auto max-w-2xl px-4 pb-4">
+        <div className="flex items-center justify-between gap-1 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
           {tabs.map((tab) => {
             const active = isActive(tab.href, tab.exact)
             const Icon = tab.icon

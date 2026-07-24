@@ -116,7 +116,7 @@ export function AuthForm({
               required
               autoComplete="name"
               aria-label="Name"
-              className="h-16 w-full rounded-2xl bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
+              className="h-16 w-full rounded-2xl border border-border bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
             />
           )}
 
@@ -129,7 +129,7 @@ export function AuthForm({
             required
             autoComplete="email"
             aria-label="Email"
-            className="h-16 w-full rounded-2xl bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-16 w-full rounded-2xl border border-border bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
           />
 
           <div className="relative">
@@ -143,7 +143,7 @@ export function AuthForm({
               minLength={8}
               autoComplete={isSignUp ? "new-password" : "current-password"}
               aria-label="Password"
-              className="h-16 w-full rounded-2xl bg-muted px-5 pr-14 text-lg font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring"
+              className="h-16 w-full rounded-2xl border border-border bg-muted px-5 pr-14 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <button
               type="button"
