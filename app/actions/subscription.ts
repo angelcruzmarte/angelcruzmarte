@@ -138,12 +138,54 @@ export async function createSubscriptionCheckout(planId: string) {
 }
 
 /**
- * Cancels the current subscription at the end of the paid period (or, for an
- * account still in its free trial, at the end of the trial). This guarantees
- * NO further charge: Stripe will not invoice the card when the trial converts —
- * the subscription simply ends when the current period does. The user keeps
- * access until then. This is the reliable in-app path (independent of the
- * Stripe billing portal being configured).
+ * Voids (or, failing that, marks uncollectible) every open invoice for a
+ * customer. An "open" invoice is a finalized, unpaid invoice that Stripe keeps
+ * retrying against the card via dunning ("Smart Retries"). Voiding it is what
+ * actually STOPS those repeated charge attempts — cancelling the subscription
+ * alone does not. VOXYFI's only recurring billing is subscriptions (one-time
+ * book purchases are paid immediately at checkout), so open invoices here are
+ * always failed subscription charges.
+ */
+async function stopOpenInvoiceRetries(customerId: string) {
+  let invoices
+  try {
+    invoices = await stripe.invoices.list({
+      customer: customerId,
+      status: "open",
+      limit: 100,
+    })
+  } catch (error) {
+    console.error("[v0] stopOpenInvoiceRetries: list failed:", error)
+    return
+  }
+
+  for (const inv of invoices.data) {
+    if (!inv.id) continue
+    try {
+      await stripe.invoices.voidInvoice(inv.id)
+    } catch {
+      // Some invoices can't be voided; mark uncollectible so retries stop.
+      try {
+        await stripe.invoices.markUncollectible(inv.id)
+      } catch (error) {
+        console.error("[v0] Could not stop invoice retries:", error)
+      }
+    }
+  }
+}
+
+/**
+ * Cancels the current subscription and guarantees NO further charge attempts.
+ *
+ * There are two cases:
+ *  - Healthy plan (trialing / active): schedule cancellation at period end so
+ *    the user keeps the access they've already paid for, with no future charge.
+ *  - Failing plan (past_due / unpaid / incomplete): the card is being retried
+ *    by Stripe's dunning on an open invoice. `cancel_at_period_end` does NOT
+ *    stop those retries, so we cancel the subscription IMMEDIATELY and void the
+ *    open invoice(s) to end the repeated charge attempts right away.
+ *
+ * This is the reliable in-app path (independent of the Stripe billing portal).
  */
 export async function cancelSubscription() {
   const user = await getCurrentUser()
@@ -151,42 +193,57 @@ export async function cancelSubscription() {
     return { error: "No billing account found." }
   }
 
-  // Find the account's active/trialing subscription from Stripe directly so we
-  // never rely on a possibly-stale stored id.
+  // Look at ALL of the customer's subscriptions from Stripe directly so we
+  // never rely on a possibly-stale stored id, and so we catch duplicates.
   let subs
   try {
     subs = await stripe.subscriptions.list({
       customer: user.stripeCustomerId,
       status: "all",
-      limit: 1,
+      limit: 20,
     })
   } catch (error) {
     console.error("[v0] cancelSubscription: failed to list:", error)
     return { error: "Could not reach billing. Please try again." }
   }
 
-  const sub = subs.data[0]
-  if (!sub || sub.status === "canceled") {
+  // Anything that could still bill the card (exclude already-ended ones).
+  const billable = subs.data.filter(
+    (s) => s.status !== "canceled" && s.status !== "incomplete_expired",
+  )
+  if (billable.length === 0) {
     return { error: "No active subscription to cancel." }
   }
 
   try {
-    const updated = await stripe.subscriptions.update(sub.id, {
-      cancel_at_period_end: true,
-    })
-    const item = updated.items.data[0]
-    await db
-      .update(userTable)
-      .set({
-        subscriptionStatus: updated.status,
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd: item?.current_period_end
-          ? new Date(item.current_period_end * 1000)
-          : user.currentPeriodEnd,
-        updatedAt: new Date(),
-      })
-      .where(eq(userTable.id, user.id))
-    return { ok: true }
+    let canceledImmediately = false
+    for (const sub of billable) {
+      const paymentIsFailing =
+        sub.status === "past_due" ||
+        sub.status === "unpaid" ||
+        sub.status === "incomplete"
+
+      if (paymentIsFailing) {
+        // Stop the dunning retries first, then end the subscription now.
+        await stopOpenInvoiceRetries(user.stripeCustomerId)
+        await stripe.subscriptions.cancel(sub.id)
+        canceledImmediately = true
+      } else {
+        await stripe.subscriptions.update(sub.id, {
+          cancel_at_period_end: true,
+        })
+      }
+    }
+
+    // Reconcile the stored state from Stripe (status, period end, flags).
+    await refreshSubscriptionFor(user.id)
+    if (canceledImmediately) {
+      await db
+        .update(userTable)
+        .set({ cancelAtPeriodEnd: false, updatedAt: new Date() })
+        .where(eq(userTable.id, user.id))
+    }
+    return { ok: true, canceledImmediately }
   } catch (error) {
     console.error("[v0] cancelSubscription: update failed:", error)
     return { error: "Could not cancel right now. Please try again." }
