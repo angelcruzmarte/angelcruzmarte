@@ -15,10 +15,13 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
-// Anthropic is a separate zero-config provider with its own free-tier quota;
-// OpenAI text models are aggressively rate-limited on the free tier, so we use
-// Claude for the higher-volume translation workload.
-const TRANSLATE_MODEL = "anthropic/claude-haiku-4.5"
+// Translation is the highest-volume workload, so we run it on a DIFFERENT
+// provider than MODEL (OpenAI). Google's Gemini Flash is fast, zero-config, and
+// accessible on the free tier, and using a separate provider means translation
+// draws from its own rate-limit bucket instead of competing with summaries/
+// quizzes/chat. If it fails, translateChunkOnce falls back to MODEL.
+// (Note: anthropic/* is NOT available to free-tier gateway users.)
+const TRANSLATE_MODEL = "google/gemini-2.5-flash"
 const MAX_INPUT = 16000
 // Upper bound on how much text we translate to keep latency/cost reasonable.
 const MAX_TRANSLATE = 24000
@@ -370,15 +373,21 @@ function stripAccents(text: string): string {
 }
 
 async function translateChunkOnce(chunk: string, language: string) {
-  const { text } = await generateText({
-    model: TRANSLATE_MODEL,
-    prompt:
-      `Translate the following text into ${language}. ` +
-      `Preserve the meaning, tone, and paragraph breaks. ` +
-      `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
-      chunk,
-  })
-  return stripAccents(text.trim())
+  const prompt =
+    `Translate the following text into ${language}. ` +
+    `Preserve the meaning, tone, and paragraph breaks. ` +
+    `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
+    chunk
+  try {
+    const { text } = await generateText({ model: TRANSLATE_MODEL, prompt })
+    return stripAccents(text.trim())
+  } catch {
+    // Cross-provider fallback: if the primary translation model is rate-limited
+    // or unavailable, retry once on the main OpenAI model (separate provider
+    // bucket) so a single provider hiccup doesn't break translation.
+    const { text } = await generateText({ model: MODEL, prompt })
+    return stripAccents(text.trim())
+  }
 }
 
 /** Translate one chunk with a single retry to ride out transient rate limits. */
