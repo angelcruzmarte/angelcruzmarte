@@ -52,21 +52,12 @@ export default async function HomePage() {
           Natural voices narrate your articles and books with word-by-word
           highlighting. Read with your ears while you commute, cook, or unwind.
         </p>
-        <div className="mt-8 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row">
+        <div className="mt-8">
           <Link
             href="/sign-up"
             className={buttonVariants({ size: "lg" }) + " w-full sm:w-auto"}
           >
             Start listening free
-          </Link>
-          <Link
-            href="/sign-in"
-            className={
-              buttonVariants({ variant: "secondary", size: "lg" }) +
-              " w-full sm:w-auto"
-            }
-          >
-            Sign in
           </Link>
         </div>
       </section>
