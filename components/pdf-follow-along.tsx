@@ -11,30 +11,7 @@ import {
 } from "react"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-// Polyfill Promise.withResolvers on the main thread. pdf.js relies on it, but
-// iOS Safari only shipped it in 17.4 — without this, older iPhones throw when
-// loading the PDF and the reader falls back to a single-page viewer.
-function ensurePromiseWithResolvers() {
-  const P = Promise as unknown as {
-    withResolvers?: () => {
-      promise: Promise<unknown>
-      resolve: (v?: unknown) => void
-      reject: (e?: unknown) => void
-    }
-  }
-  if (typeof P.withResolvers !== "function") {
-    P.withResolvers = function () {
-      let resolve!: (v?: unknown) => void
-      let reject!: (e?: unknown) => void
-      const promise = new Promise<unknown>((res, rej) => {
-        resolve = res
-        reject = rej
-      })
-      return { promise, resolve, reject }
-    }
-  }
-}
+import { loadPdfjs, type PdfjsModule } from "@/lib/pdfjs"
 
 // Temporary diagnostic beacon: reports client-side PDF load outcomes to the
 // server so we can see what happens on real devices via Vercel logs.
@@ -56,26 +33,6 @@ function pdfDiag(data: Record<string, unknown>) {
   } catch {
     // ignore
   }
-}
-
-// pdfjs is loaded dynamically (client only) so it never runs on the server.
-// We use the "legacy" build, which is transpiled for older browsers (e.g. the
-// iOS in-app browsers many users open the app from).
-type PdfjsModule = typeof import("pdfjs-dist")
-let pdfjsPromise: Promise<PdfjsModule> | null = null
-async function loadPdfjs(): Promise<PdfjsModule> {
-  if (!pdfjsPromise) {
-    ensurePromiseWithResolvers()
-    pdfjsPromise = (
-      import("pdfjs-dist/legacy/build/pdf.mjs") as unknown as Promise<PdfjsModule>
-    ).then((pdfjs) => {
-      // Served from /public (legacy worker + polyfill prelude) so it resolves
-      // reliably across bundlers and older browsers.
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs"
-      return pdfjs
-    })
-  }
-  return pdfjsPromise
 }
 
 /** A single narratable word with a link back to its rendered span. */

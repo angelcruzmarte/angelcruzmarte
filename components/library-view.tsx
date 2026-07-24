@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { deleteDocument, deleteDocuments } from "@/app/actions/documents"
 import { BookCover } from "@/components/book-cover"
+import { DocumentThumbnail } from "@/components/document-thumbnail"
 import { Input } from "@/components/ui/input"
 import {
   Popover,
@@ -71,6 +72,21 @@ function fileType(doc: Document): FileType {
   if (mime.includes("epub") || title.endsWith(".epub")) return "epub"
   if (mime.includes("text/plain") || title.endsWith(".txt")) return "txt"
   return "doc"
+}
+
+/**
+ * Returns a renderable first-page preview source for a document, or null when
+ * there's nothing visual to show (paste/type/link, or a non-viewable file).
+ */
+function docPreview(
+  doc: Document | undefined,
+): { src: string; mime: string } | null {
+  if (!doc?.originalUrl) return null
+  const mime = (doc.originalMime ?? "").toLowerCase()
+  if (mime.startsWith("image/") || mime.includes("pdf")) {
+    return { src: doc.originalUrl, mime }
+  }
+  return null
 }
 
 /** A book or document normalized into a single shape for the unified list. */
@@ -655,13 +671,11 @@ function DocThumb({
   className?: string
 }) {
   const style = typeStyle[item.type]
-  return (
-    <div
-      className={cn(
-        "relative flex aspect-[2/3] flex-col justify-between overflow-hidden rounded-lg border border-border bg-card p-2 shadow-sm",
-        className,
-      )}
-    >
+  const preview = docPreview(item.doc)
+
+  // Shown when there's no page to render (paste/type/link) or rendering fails.
+  const fallback = (
+    <div className="absolute inset-0 flex flex-col justify-between p-2">
       <span
         className={cn(
           "inline-flex w-fit rounded px-1.5 py-0.5 text-[0.6rem] font-bold",
@@ -674,6 +688,36 @@ function DocThumb({
       <p className="line-clamp-3 text-pretty text-[0.7rem] font-semibold leading-tight">
         {item.title}
       </p>
+    </div>
+  )
+
+  return (
+    <div
+      className={cn(
+        "relative aspect-[2/3] overflow-hidden rounded-lg border border-border bg-card shadow-sm",
+        className,
+      )}
+    >
+      {preview ? (
+        <DocumentThumbnail
+          src={preview.src}
+          mime={preview.mime}
+          fallback={fallback}
+          badge={
+            <span
+              className={cn(
+                "absolute left-1.5 top-1.5 inline-flex rounded px-1.5 py-0.5 text-[0.55rem] font-bold shadow-sm",
+                style.bg,
+                style.fg,
+              )}
+            >
+              {style.label}
+            </span>
+          }
+        />
+      ) : (
+        fallback
+      )}
     </div>
   )
 }
@@ -703,21 +747,36 @@ function LibListRow({
   const Icon = item.kind === "book" ? FileText : sourceIcon[item.doc!.sourceType] ?? FileText
   const style = typeStyle[item.type]
   const selectable = item.kind === "doc"
+  const preview = item.kind === "doc" ? docPreview(item.doc) : null
+
+  const iconFallback = (
+    <span
+      className={cn(
+        "absolute inset-0 flex flex-col items-center justify-center",
+        style.bg,
+        style.fg,
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="mt-0.5 text-[0.5rem] font-bold">{style.label}</span>
+    </span>
+  )
 
   const inner = (
     <>
       {item.kind === "book" && item.book ? (
         <BookCover book={item.book} className="h-14 w-10 shrink-0" />
       ) : (
-        <span
-          className={cn(
-            "flex h-14 w-10 shrink-0 flex-col items-center justify-center rounded-md",
-            style.bg,
-            style.fg,
+        <span className="relative flex h-14 w-10 shrink-0 overflow-hidden rounded-md border border-border">
+          {preview ? (
+            <DocumentThumbnail
+              src={preview.src}
+              mime={preview.mime}
+              fallback={iconFallback}
+            />
+          ) : (
+            iconFallback
           )}
-        >
-          <Icon className="h-4 w-4" />
-          <span className="mt-0.5 text-[0.5rem] font-bold">{style.label}</span>
         </span>
       )}
       <span className="min-w-0 flex-1">
