@@ -22,10 +22,13 @@ export function CancelSubscriptionButton({
   cancelAtPeriodEnd,
   periodEnd,
   isTrialing,
+  paymentFailing = false,
 }: {
   cancelAtPeriodEnd: boolean
   periodEnd: string | null
   isTrialing: boolean
+  /** When true, the card is failing and cancelling ends the plan immediately. */
+  paymentFailing?: boolean
 }) {
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
@@ -108,10 +111,11 @@ export function CancelSubscriptionButton({
             : "Cancel your subscription?"}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isTrialing
-            ? "Your card will not be charged. You keep premium access until your trial ends"
-            : "You won't be charged again and keep access until the end of your current period"}
-          {endLabel ? ` (${endLabel}).` : "."}
+          {paymentFailing
+            ? "This cancels your plan immediately and stops all further charge attempts on your card."
+            : isTrialing
+              ? `Your card will not be charged. You keep premium access until your trial ends${endLabel ? ` (${endLabel}).` : "."}`
+              : `You won't be charged again and keep access until the end of your current period${endLabel ? ` (${endLabel}).` : "."}`}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button

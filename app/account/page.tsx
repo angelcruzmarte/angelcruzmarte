@@ -34,6 +34,18 @@ export default async function AccountPage() {
     ? new Date(user.currentPeriodEnd).toISOString()
     : null
 
+  const status = user.subscriptionStatus
+  // A subscription is still "manageable" (can be cancelled / card updated) in
+  // any state except fully ended — this includes a past_due/unpaid plan whose
+  // card is failing. Those users MUST be able to reach the cancel and billing
+  // controls to stop repeated charge attempts, even though access is locked.
+  const manageable = Boolean(
+    status && status !== "canceled" && status !== "incomplete_expired",
+  )
+  // Payment is actively failing and Stripe is retrying the card.
+  const paymentFailing =
+    status === "past_due" || status === "unpaid" || status === "incomplete"
+
   return (
     <div className="min-h-screen">
       <SiteHeader />
@@ -62,14 +74,22 @@ export default async function AccountPage() {
             <h2 className="text-sm font-medium text-muted-foreground">
               Subscription
             </h2>
-            <Badge variant={subscribed ? "default" : "secondary"}>
+            <Badge
+              variant={
+                paymentFailing
+                  ? "destructive"
+                  : subscribed
+                    ? "default"
+                    : "secondary"
+              }
+            >
               {user.subscriptionStatus
                 ? user.subscriptionStatus
                 : "no subscription"}
             </Badge>
           </div>
 
-          {subscribed ? (
+          {manageable ? (
             <div className="mt-4">
               <p className="text-lg font-semibold">
                 {plan?.name ?? "VOXYFI Premium"}
@@ -79,7 +99,20 @@ export default async function AccountPage() {
                   {formatPrice(plan.priceInCents)} / {plan.interval}
                 </p>
               )}
-              {user.currentPeriodEnd && !user.cancelAtPeriodEnd && (
+              {paymentFailing && (
+                <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                  <p className="text-sm font-medium text-destructive">
+                    Your last payment failed.
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Update your card in the billing portal to keep your plan, or
+                    cancel below to stop further charge attempts.
+                  </p>
+                </div>
+              )}
+              {user.currentPeriodEnd &&
+                !user.cancelAtPeriodEnd &&
+                !paymentFailing && (
                 <p className="mt-1 text-sm text-muted-foreground">
                   {trialing ? "Free trial — first charge on " : "Renews on "}
                   {new Date(user.currentPeriodEnd).toLocaleDateString(undefined, {
@@ -94,6 +127,7 @@ export default async function AccountPage() {
                   cancelAtPeriodEnd={user.cancelAtPeriodEnd}
                   periodEnd={periodEndIso}
                   isTrialing={trialing}
+                  paymentFailing={paymentFailing}
                 />
               </div>
               <div className="mt-4 border-t border-border pt-4">
