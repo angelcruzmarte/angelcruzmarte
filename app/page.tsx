@@ -1,4 +1,3 @@
-import Image from "next/image"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
@@ -26,70 +25,49 @@ export default async function HomePage() {
   const promo = await getActivePromotion()
   const showPromo = Boolean(promo && promo.showBanner)
 
-  const primaryHref = user ? "/app" : "/sign-up"
-  const primaryLabel = user ? "Open the app" : "Start listening free"
-
   return (
     <div className="min-h-screen">
       <SiteHeader />
 
-      {/* Hero */}
-      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
-        <div>
-          {showPromo ? (
-            <a
-              href={user ? "/subscribe" : "/sign-up"}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Limited time: {promo!.percentOff}% off Premium
-            </a>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              Listen to anything, anywhere
-            </span>
-          )}
-          <h1 className="mt-5 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Turn reading into listening with VOXYFI
-          </h1>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-muted-foreground">
-            Subscribe to a growing library of articles and books, narrated with
-            natural voices and word-by-word highlighting. Read with your ears
-            while you commute, cook, or unwind.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link href={primaryHref} className={buttonVariants({ size: "lg" })}>
-              {primaryLabel}
-            </Link>
-            <Link
-              href={user ? "/app" : "/sign-up"}
-              className={buttonVariants({ variant: "secondary", size: "lg" })}
-            >
-              Browse the app
-            </Link>
-          </div>
-          {!user && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link
-                href="/sign-in"
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Sign in
-              </Link>
-            </p>
-          )}
-        </div>
-
-        <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-border bg-muted shadow-sm">
-          <Image
-            src="/images/hero-listening.png"
-            alt="A person listening to narrated text with headphones"
-            fill
-            className="object-cover"
-            priority
-          />
+      {/* Hero — clean, centered, no imagery */}
+      <section className="mx-auto flex max-w-2xl flex-col items-center px-4 py-20 text-center sm:px-6 lg:py-28">
+        {showPromo ? (
+          <a
+            href="/sign-up"
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Limited time: {promo!.percentOff}% off Premium
+          </a>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            Listen to anything, anywhere
+          </span>
+        )}
+        <h1 className="mt-6 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
+          Turn reading into listening
+        </h1>
+        <p className="mt-5 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
+          Natural voices narrate your articles and books with word-by-word
+          highlighting. Read with your ears while you commute, cook, or unwind.
+        </p>
+        <div className="mt-8 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row">
+          <Link
+            href="/sign-up"
+            className={buttonVariants({ size: "lg" }) + " w-full sm:w-auto"}
+          >
+            Start listening free
+          </Link>
+          <Link
+            href="/sign-in"
+            className={
+              buttonVariants({ variant: "secondary", size: "lg" }) +
+              " w-full sm:w-auto"
+            }
+          >
+            Sign in
+          </Link>
         </div>
       </section>
 
@@ -202,7 +180,7 @@ export default async function HomePage() {
                   </p>
                 )}
                 <Link
-                  href={user ? "/subscribe" : "/sign-up"}
+                  href="/sign-up"
                   className={
                     buttonVariants({
                       variant: plan.highlighted ? "default" : "secondary",
