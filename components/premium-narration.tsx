@@ -112,6 +112,9 @@ export function PremiumNarration({
   const player = usePlayer()
   // Cache of persistent audio URLs keyed by `${lang}:${voice}:${chunkIndex}`.
   const cacheRef = useRef<Map<string, string>>(new Map())
+  // Dedupe concurrent audio (translate + TTS) requests for the same key so a
+  // background prewarm and a user pressing play never generate speech twice.
+  const audioInflightRef = useRef<Map<string, Promise<string | null>>>(new Map())
 
   // Free (non-subscriber) users can only select the free preview voices.
   const canUseVoice = useCallback(
