@@ -40,7 +40,12 @@ import { chunkForNarration } from "@/lib/chunk-text"
 import { stripBoilerplate } from "@/lib/strip-boilerplate"
 import { tokenize } from "@/hooks/use-speech"
 import { generatePremiumSpeech } from "@/app/actions/speech"
-import { translatePassage } from "@/app/actions/ai"
+import {
+  translatePassage,
+  translateDocumentSection,
+  getDocumentTranslations,
+} from "@/app/actions/ai"
+import { sectionHash } from "@/lib/hash"
 import {
   PREMIUM_VOICES,
   getPremiumVoice,
@@ -75,6 +80,7 @@ function countWords(s: string) {
 export function PremiumNarration({
   text,
   title,
+  documentId,
   sourceLang,
   artworkUrl,
   showReader = true,
@@ -87,6 +93,12 @@ export function PremiumNarration({
 }: {
   text: string
   title: string
+  /**
+   * The owning document's id, when narrating a user document. Enables the
+   * durable translation cache (translated pages persist across reloads and are
+   * never re-translated). Omitted for books and other non-document sources.
+   */
+  documentId?: number
   /** Detected language of the document (BCP-47/ISO code), if known. */
   sourceLang?: string | null
   /**
@@ -268,7 +280,14 @@ export function PremiumNarration({
       const running = inflightRef.current.get(key)
       if (running) return running
       const p = (async () => {
-        const t = await translatePassage(sourceChunks[i], targetLang)
+        // Prefer the durable, cache-aware server action for user documents so a
+        // section is translated at most once ever (and persists across reloads).
+        // Fall back to the stateless passage translator for non-document
+        // sources (e.g. books) that have no id to key a cache by.
+        const t =
+          documentId !== undefined
+            ? await translateDocumentSection(documentId, targetLang, sourceChunks[i])
+            : await translatePassage(sourceChunks[i], targetLang)
         setSections((prev) => {
           const arr = prev[targetLang]
             ? prev[targetLang].slice()
@@ -282,14 +301,53 @@ export function PremiumNarration({
       void p.finally(() => inflightRef.current.delete(key))
       return p
     },
-    [sourceChunks],
+    [sourceChunks, documentId],
+  )
+
+  // Target languages already hydrated from the durable cache (once each).
+  const hydratedRef = useRef<Set<string>>(new Set())
+
+  // Load every already-translated page for `targetLang` from the durable cache
+  // in a single round trip and drop it straight into state — so previously
+  // translated pages appear instantly with zero translation-API calls. Matches
+  // cached rows to the current sections by source-text hash, so it stays correct
+  // even if section boundaries shifted. Best-effort and safe to call repeatedly.
+  const hydrateFromCache = useCallback(
+    async (targetLang: string) => {
+      if (documentId === undefined || targetLang === ORIGINAL) return
+      if (hydratedRef.current.has(targetLang)) return
+      hydratedRef.current.add(targetLang)
+      try {
+        const map = await getDocumentTranslations(documentId, targetLang)
+        if (langRef.current !== targetLang || Object.keys(map).length === 0) return
+        setSections((prev) => {
+          const arr = prev[targetLang]
+            ? prev[targetLang].slice()
+            : new Array<string | undefined>(sourceChunks.length).fill(undefined)
+          for (let i = 0; i < sourceChunks.length; i++) {
+            if (arr[i]) continue
+            const hit = map[sectionHash(sourceChunks[i])]
+            if (hit) arr[i] = hit
+          }
+          return { ...prev, [targetLang]: arr }
+        })
+      } catch {
+        hydratedRef.current.delete(targetLang) // allow a later retry
+      }
+    },
+    [documentId, sourceChunks],
   )
 
   // Progressively translate sections in the background (bounded concurrency),
-  // starting from `startAt` so the section about to play is ready first.
+  // starting from `startAt` (the visible/about-to-play section) so it's ready
+  // first, then fanning out. Cached pages are hydrated first, so this only
+  // spends API calls on pages that have never been translated.
   const translateInBackground = useCallback(
     async (targetLang: string, startAt: number) => {
       if (targetLang === ORIGINAL) return
+      // Instant: fill in anything already translated before doing any work.
+      await hydrateFromCache(targetLang)
+      if (langRef.current !== targetLang) return
       const total = sourceChunks.length
       const order: number[] = []
       for (let i = startAt; i < total && order.length < BACKGROUND_TRANSLATE_CAP; i++) {
@@ -323,7 +381,7 @@ export function PremiumNarration({
         if (langRef.current === targetLang) setTranslating(false)
       }
     },
-    [sourceChunks, translateSection],
+    [sourceChunks, translateSection, hydrateFromCache],
   )
 
   // Resolver handed to the global player: returns a persistent, cached MP3 URL
@@ -444,6 +502,16 @@ export function PremiumNarration({
     void loadChunk(0)
   }, [paused, status, sourceChunks.length, lang, voice, loadChunk])
 
+  // Preload the NEXT page while the user reads/listens: as the position moves,
+  // jump the current and next sections to the front of the translation queue so
+  // they're ready before the user gets there. translateSection dedupes and hits
+  // the cache, so this is free for already-translated pages.
+  useEffect(() => {
+    if (lang === ORIGINAL || sourceChunks.length === 0) return
+    void translateSection(lang, index)
+    if (index + 1 < sourceChunks.length) void translateSection(lang, index + 1)
+  }, [lang, index, sourceChunks.length, translateSection])
+
   const busy = status === "loading"
   const progress =
     chunks.length > 0 ? Math.round((index / chunks.length) * 100) : 0
@@ -508,12 +576,14 @@ export function PremiumNarration({
     setError(null)
     if (lang === ORIGINAL) {
       setLang(deviceLang)
-      void translateInBackground(deviceLang, 0)
+      // Start from where the reader currently is so the visible/about-to-play
+      // section is translated first.
+      void translateInBackground(deviceLang, index)
     } else {
       setLang(ORIGINAL)
       setTranslating(false)
     }
-  }, [lang, deviceLang, translateInBackground, stop])
+  }, [lang, deviceLang, index, translateInBackground, stop])
 
   // Automatically translate into the device language the first time we detect
   // that it differs from the document's language.

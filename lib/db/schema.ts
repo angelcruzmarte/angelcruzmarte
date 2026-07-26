@@ -134,6 +134,30 @@ export const document = pgTable("document", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
 
+// Durable, content-addressed cache of translated narration sections. Keyed by
+// (documentId, lang, sourceHash) so a page that has already been translated is
+// loaded instantly on reopen instead of re-calling the translation API. Because
+// the key is the hash of the SOURCE text (not a section index), it stays valid
+// even when section boundaries shift (e.g. toggling "skip boilerplate").
+export const documentTranslation = pgTable(
+  "document_translation",
+  {
+    id: serial("id").primaryKey(),
+    documentId: integer("documentId").notNull(),
+    userId: text("userId").notNull(),
+    // Target language code translated INTO (e.g. "en", "fr").
+    lang: text("lang").notNull(),
+    // Hash of the trimmed source passage (see lib/hash.ts sectionHash).
+    sourceHash: text("sourceHash").notNull(),
+    // The translated passage.
+    text: text("text").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqTranslation: unique().on(t.documentId, t.lang, t.sourceHash),
+  }),
+)
+
 // Per-user Discover interest selections
 export const userInterest = pgTable(
   "user_interest",

@@ -467,6 +467,7 @@ export function ListenPlayer({
             <PremiumNarration
               text={content}
               title={title}
+              documentId={documentId}
               sourceLang={sourceLang}
               artworkUrl={artworkUrl}
               subscribed={premium}
@@ -560,6 +561,7 @@ export function ListenPlayer({
           <PremiumNarration
             text={content}
             title={title}
+            documentId={documentId}
             sourceLang={sourceLang}
             artworkUrl={artworkUrl}
             subscribed={premium}

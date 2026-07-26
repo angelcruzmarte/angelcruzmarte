@@ -3,7 +3,8 @@
 import { chunkText } from "@/lib/chunk-text"
 import { languageName } from "@/lib/languages"
 import { db } from "@/lib/db"
-import { aiQuota } from "@/lib/db/schema"
+import { aiQuota, document, documentTranslation } from "@/lib/db/schema"
+import { sectionHash } from "@/lib/hash"
 import {
   FREE_AI_QUOTA_CAPACITY,
   FREE_AI_REFILL_AMOUNT,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/limits"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { generateObject, generateText } from "ai"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
@@ -479,6 +480,96 @@ export async function translatePassage(
   const source = (input ?? "").trim()
   if (!source) return ""
   return translateChunk(source, languageName(targetLang))
+}
+
+/**
+ * Confirms the given document belongs to the current (premium) user and returns
+ * the userId. Throws otherwise. Used to scope the translation cache.
+ */
+async function requireOwnedDocument(documentId: number): Promise<string> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Please sign in to use AI features.")
+  if (!hasActiveSubscription(user)) {
+    throw new Error("An active subscription is required to use AI features.")
+  }
+  const [row] = await db
+    .select({ id: document.id })
+    .from(document)
+    .where(and(eq(document.id, documentId), eq(document.userId, user.id)))
+    .limit(1)
+  if (!row) throw new Error("Document not found.")
+  return user.id
+}
+
+/**
+ * Returns every cached translation for a document + target language in ONE
+ * round trip, as a { sourceHash: translatedText } map. The client hydrates the
+ * reader from this instantly on open so already-translated pages never hit the
+ * translation API again. Empty object when nothing is cached yet.
+ */
+export async function getDocumentTranslations(
+  documentId: number,
+  targetLang: string,
+): Promise<Record<string, string>> {
+  const userId = await requireOwnedDocument(documentId)
+  const rows = await db
+    .select({
+      sourceHash: documentTranslation.sourceHash,
+      text: documentTranslation.text,
+    })
+    .from(documentTranslation)
+    .where(
+      and(
+        eq(documentTranslation.documentId, documentId),
+        eq(documentTranslation.userId, userId),
+        eq(documentTranslation.lang, targetLang),
+      ),
+    )
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.sourceHash] = r.text
+  return map
+}
+
+/**
+ * Cache-aware single-section translation. Looks the passage up by its source
+ * hash first (instant, no API call) and only translates + persists on a miss.
+ * This is the write-through path used for on-demand and background translation
+ * so a page is translated at most once, ever, per language.
+ */
+export async function translateDocumentSection(
+  documentId: number,
+  targetLang: string,
+  input: string,
+): Promise<string> {
+  const userId = await requireOwnedDocument(documentId)
+  const source = (input ?? "").trim()
+  if (!source) return ""
+  const hash = sectionHash(source)
+
+  const [cached] = await db
+    .select({ text: documentTranslation.text })
+    .from(documentTranslation)
+    .where(
+      and(
+        eq(documentTranslation.documentId, documentId),
+        eq(documentTranslation.userId, userId),
+        eq(documentTranslation.lang, targetLang),
+        eq(documentTranslation.sourceHash, hash),
+      ),
+    )
+    .limit(1)
+  if (cached) return cached.text
+
+  const translated = await translateChunk(source, languageName(targetLang))
+
+  // Persist for next time. Ignore unique-conflict races (another concurrent
+  // request cached the same section first) — the value is identical anyway.
+  await db
+    .insert(documentTranslation)
+    .values({ documentId, userId, lang: targetLang, sourceHash: hash, text: translated })
+    .onConflictDoNothing()
+
+  return translated
 }
 
 /**
