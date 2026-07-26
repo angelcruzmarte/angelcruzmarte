@@ -45,20 +45,20 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png?v=4',
+        url: '/icon-light-32x32.png?v=5',
         media: '(prefers-color-scheme: light)',
       },
       {
-        url: '/icon-dark-32x32.png?v=4',
+        url: '/icon-dark-32x32.png?v=5',
         media: '(prefers-color-scheme: dark)',
       },
       {
-        url: '/icon.svg?v=4',
+        url: '/icon.svg?v=5',
         type: 'image/svg+xml',
       },
     ],
-    shortcut: '/favicon.ico?v=4',
-    apple: '/apple-icon.png?v=4',
+    shortcut: '/favicon.ico?v=5',
+    apple: '/apple-icon.png?v=5',
   },
   manifest: '/manifest.webmanifest',
 }

@@ -1,11 +1,11 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VOXYFI">
   <defs>
-    <linearGradient id="voxyfiFavicon" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+    <linearGradient id="voxyfiBrand" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#123f2e"/>
       <stop offset="1" stop-color="#12b981"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="115" fill="url(#voxyfiFavicon)"/>
+  <rect width="512" height="512" rx="115" fill="url(#voxyfiBrand)"/>
   <g fill="#ffffff">
     <rect x="76" y="101" width="56" height="310" rx="28"/>
     <rect x="152" y="148" width="56" height="215" rx="28"/>

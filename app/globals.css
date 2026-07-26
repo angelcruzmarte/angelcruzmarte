@@ -37,6 +37,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-brand-green-deep: var(--brand-green-deep);
+  --color-brand-green-emerald: var(--brand-green-emerald);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -84,6 +86,16 @@
   /* Barnes & Noble deep hunter green — distinct from amber highlight & red destructive. */
   --primary: oklch(0.4 0.11 152);
   --primary-foreground: oklch(0.99 0.012 95);
+  /* Signature two-tone brand gradient: deep hunter green → bright emerald.
+     A brand constant used for the logo tile, icons and marketing — intentionally
+     identical in light and dark so the mark looks the same everywhere. */
+  --brand-green-deep: oklch(0.33 0.098 152);
+  --brand-green-emerald: oklch(0.72 0.16 160);
+  --brand-gradient: linear-gradient(
+    135deg,
+    var(--brand-green-deep) 0%,
+    var(--brand-green-emerald) 100%
+  );
   --secondary: oklch(0.93 0.013 85);
   --secondary-foreground: oklch(0.27 0.03 90);
   --muted: oklch(0.94 0.01 85);
@@ -168,6 +180,12 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Signature VOXYFI brand gradient fill (deep green → emerald). Used for the
+   logo tile and other brand surfaces so the two-tone identity is consistent. */
+.bg-brand-gradient {
+  background-image: var(--brand-gradient);
 }
 
 /* Pause the store hero marquee for users who prefer reduced motion. */
