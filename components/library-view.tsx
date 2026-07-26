@@ -80,11 +80,22 @@ function fileType(doc: Document): FileType {
  */
 function docPreview(
   doc: Document | undefined,
-): { src: string; mime: string } | null {
-  if (!doc?.originalUrl) return null
+): { src: string; mime: string; thumbnailUrl?: string | null; docId: number } | null {
+  if (!doc) return null
+  // A persisted thumbnail alone is enough to show a preview, even if we don't
+  // re-render the original.
+  if (doc.thumbnailUrl) {
+    return {
+      src: doc.originalUrl ?? doc.thumbnailUrl,
+      mime: (doc.originalMime ?? "image/jpeg").toLowerCase(),
+      thumbnailUrl: doc.thumbnailUrl,
+      docId: doc.id,
+    }
+  }
+  if (!doc.originalUrl) return null
   const mime = (doc.originalMime ?? "").toLowerCase()
   if (mime.startsWith("image/") || mime.includes("pdf")) {
-    return { src: doc.originalUrl, mime }
+    return { src: doc.originalUrl, mime, thumbnailUrl: null, docId: doc.id }
   }
   return null
 }
@@ -702,6 +713,8 @@ function DocThumb({
         <DocumentThumbnail
           src={preview.src}
           mime={preview.mime}
+          thumbnailUrl={preview.thumbnailUrl}
+          docId={preview.docId}
           fallback={fallback}
           badge={
             <span
@@ -772,6 +785,8 @@ function LibListRow({
             <DocumentThumbnail
               src={preview.src}
               mime={preview.mime}
+              thumbnailUrl={preview.thumbnailUrl}
+              docId={preview.docId}
               fallback={iconFallback}
             />
           ) : (

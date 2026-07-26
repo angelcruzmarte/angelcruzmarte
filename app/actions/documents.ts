@@ -7,6 +7,7 @@ import { document } from "@/lib/db/schema"
 import { and, desc, eq, isNull, isNotNull, inArray } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
+import { put } from "@vercel/blob"
 
 async function getUserId() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -42,6 +43,56 @@ export async function getDocument(id: number) {
     )
     .limit(1)
   return doc ?? null
+}
+
+/**
+ * Persists a client-generated first-page thumbnail (a small JPEG/PNG data URL)
+ * to Blob storage and stores its https URL on the document. Idempotent: if a
+ * thumbnail already exists, the existing URL is returned and nothing is written.
+ *
+ * This is a self-healing backfill — the first surface (a library preview or the
+ * player resolving now-playing artwork) that renders a document's page persists
+ * it, so every later view and the OS media artwork can use a real URL instead
+ * of re-rendering the PDF or relying on a data: URL that iOS won't display.
+ */
+export async function saveDocumentThumbnail(id: number, dataUrl: string) {
+  const userId = await getUserId()
+
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(
+    dataUrl,
+  )
+  if (!match) throw new Error("Invalid thumbnail data")
+  const [, mime, base64] = match
+  const buffer = Buffer.from(base64, "base64")
+  // Thumbnails are tiny; reject anything suspiciously large.
+  if (buffer.byteLength === 0 || buffer.byteLength > 2 * 1024 * 1024) {
+    throw new Error("Thumbnail out of size bounds")
+  }
+
+  // Ownership check + skip when one already exists (idempotent).
+  const [doc] = await db
+    .select({ thumbnailUrl: document.thumbnailUrl })
+    .from(document)
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+    .limit(1)
+  if (!doc) throw new Error("Not found")
+  if (doc.thumbnailUrl) return doc.thumbnailUrl
+
+  const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg"
+  const blob = await put(
+    `documents/${userId}/thumbnails/${id}-${Date.now()}.${ext}`,
+    buffer,
+    { access: "public", addRandomSuffix: true, contentType: mime },
+  )
+
+  await db
+    .update(document)
+    .set({ thumbnailUrl: blob.url, updatedAt: new Date() })
+    .where(and(eq(document.id, id), eq(document.userId, userId)))
+
+  revalidatePath("/app/library")
+  revalidatePath("/app")
+  return blob.url
 }
 
 export async function createDocument(input: {

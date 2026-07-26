@@ -34,6 +34,7 @@ export default async function AppListenPage({
       initialWord={doc.lastWord}
       originalUrl={doc.originalUrl}
       originalMime={doc.originalMime}
+      thumbnailUrl={doc.thumbnailUrl}
       sourceType={doc.sourceType}
       sourceLang={doc.sourceLang}
       initialListenSeconds={initialListenSeconds}

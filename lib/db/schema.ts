@@ -117,6 +117,12 @@ export const document = pgTable("document", {
   originalUrl: text("originalUrl"),
   // MIME type of the original file (e.g. application/pdf, image/png).
   originalMime: text("originalMime"),
+  // Persisted first-page thumbnail (small JPEG in Blob storage), generated once
+  // from the original PDF/image. Preferred everywhere a preview is shown, and
+  // used as OS now-playing artwork (iPhone Lock Screen, Live Activities, Apple
+  // Watch, notifications) — a real https URL those surfaces will render, unlike
+  // a client-generated data: URL. Null until generated / for non-visual sources.
+  thumbnailUrl: text("thumbnailUrl"),
   // Detected BCP-47 language code of the document content (e.g. "en", "fr").
   sourceLang: text("sourceLang"),
   wordCount: integer("wordCount").notNull().default(0),

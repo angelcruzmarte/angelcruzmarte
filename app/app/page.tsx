@@ -130,13 +130,14 @@ export default async function AppHome() {
             </Link>
           </div>
           <ContinueListening
-            docs={docs.slice(0, 3).map((doc) => ({
+            docs={            docs.slice(0, 3).map((doc) => ({
               id: doc.id,
               title: doc.title,
               content: doc.content,
               wordCount: doc.wordCount,
               originalUrl: doc.originalUrl,
               originalMime: doc.originalMime,
+              thumbnailUrl: doc.thumbnailUrl,
             }))}
           />
         </section>

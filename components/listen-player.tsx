@@ -50,6 +50,8 @@ type Props = {
   originalUrl?: string | null
   /** MIME type of the original file. */
   originalMime?: string | null
+  /** Persisted first-page thumbnail URL, used directly as OS artwork if set. */
+  thumbnailUrl?: string | null
   /** How the document was created ("file", "ai", "url", …). */
   sourceType?: string | null
   /** Detected language (ISO/BCP-47) of the document content. */
@@ -74,6 +76,7 @@ export function ListenPlayer({
   allowDownload = false,
   originalUrl,
   originalMime,
+  thumbnailUrl,
   sourceType,
   sourceLang,
   initialListenSeconds = 0,
@@ -151,13 +154,18 @@ export function ListenPlayer({
   const [artworkUrl, setArtworkUrl] = useState<string | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
-    void resolveDocumentArtwork({ originalUrl, originalMime }).then((url) => {
+    void resolveDocumentArtwork({
+      originalUrl,
+      originalMime,
+      thumbnailUrl,
+      docId: documentId,
+    }).then((url) => {
       if (!cancelled) setArtworkUrl(url)
     })
     return () => {
       cancelled = true
     }
-  }, [originalUrl, originalMime])
+  }, [originalUrl, originalMime, thumbnailUrl, documentId])
 
   const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
   // Offer translation only when the document language is known, the device

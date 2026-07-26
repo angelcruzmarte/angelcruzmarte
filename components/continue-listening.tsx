@@ -13,6 +13,8 @@ export type ContinueDoc = {
   originalUrl?: string | null
   /** MIME type of the original file. */
   originalMime?: string | null
+  /** Persisted first-page thumbnail URL, if generated. */
+  thumbnailUrl?: string | null
 }
 
 /**
@@ -21,11 +23,18 @@ export type ContinueDoc = {
  */
 function docPreview(
   doc: ContinueDoc,
-): { src: string; mime: string } | null {
+): { src: string; mime: string; thumbnailUrl?: string | null } | null {
+  if (doc.thumbnailUrl) {
+    return {
+      src: doc.originalUrl ?? doc.thumbnailUrl,
+      mime: (doc.originalMime ?? "image/jpeg").toLowerCase(),
+      thumbnailUrl: doc.thumbnailUrl,
+    }
+  }
   if (!doc.originalUrl) return null
   const mime = (doc.originalMime ?? "").toLowerCase()
   if (mime.startsWith("image/") || mime.includes("pdf")) {
-    return { src: doc.originalUrl, mime }
+    return { src: doc.originalUrl, mime, thumbnailUrl: null }
   }
   return null
 }
@@ -54,6 +63,8 @@ export function ContinueListening({ docs }: { docs: ContinueDoc[] }) {
                 <DocumentThumbnail
                   src={preview.src}
                   mime={preview.mime}
+                  thumbnailUrl={preview.thumbnailUrl}
+                  docId={doc.id}
                   fallback={iconFallback}
                 />
               ) : (
