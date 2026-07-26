@@ -326,24 +326,36 @@ export function PremiumNarration({
       const key = `${lang}:${voice}:${i}`
       const cached = cacheRef.current.get(key)
       if (cached) return cached
-      let sectionText = sourceChunks[i]
-      if (lang !== ORIGINAL) {
-        try {
-          sectionText = await translateSection(lang, i)
-        } catch {
-          setError(
-            "Translation is temporarily unavailable — playing the original text for this section.",
-          )
-          sectionText = sourceChunks[i]
+      // Dedupe concurrent requests for the same section so a background prewarm
+      // and the user pressing play (or the provider's next-section prefetch)
+      // never translate + generate speech twice.
+      const running = audioInflightRef.current.get(key)
+      if (running) return running
+
+      const work = (async (): Promise<string | null> => {
+        let sectionText = sourceChunks[i]
+        if (lang !== ORIGINAL) {
+          try {
+            sectionText = await translateSection(lang, i)
+          } catch {
+            setError(
+              "Translation is temporarily unavailable — playing the original text for this section.",
+            )
+            sectionText = sourceChunks[i]
+          }
         }
-      }
-      const res = await generatePremiumSpeech(sectionText, voice)
-      if ("error" in res) {
-        setError(res.error)
-        return null
-      }
-      cacheRef.current.set(key, res.url)
-      return res.url
+        const res = await generatePremiumSpeech(sectionText, voice)
+        if ("error" in res) {
+          setError(res.error)
+          return null
+        }
+        cacheRef.current.set(key, res.url)
+        return res.url
+      })()
+
+      audioInflightRef.current.set(key, work)
+      void work.finally(() => audioInflightRef.current.delete(key))
+      return work
     },
     [sourceChunks, voice, lang, translateSection],
   )
@@ -408,6 +420,20 @@ export function PremiumNarration({
   useEffect(() => {
     if (paused) pause()
   }, [paused, pause])
+
+  // Prewarm the first section's audio while the reader sits idle — translating
+  // it first when in a translated language — so pressing Play starts almost
+  // instantly instead of waiting on translation + TTS. loadChunk caches and
+  // dedupes, so this never duplicates the work a subsequent play(0) does.
+  // Re-runs whenever the language or voice changes.
+  const prewarmKeyRef = useRef<string>("")
+  useEffect(() => {
+    if (paused || status !== "idle" || sourceChunks.length === 0) return
+    const key = `${lang}:${voice}`
+    if (prewarmKeyRef.current === key) return
+    prewarmKeyRef.current = key
+    void loadChunk(0)
+  }, [paused, status, sourceChunks.length, lang, voice, loadChunk])
 
   const busy = status === "loading"
   const progress =
