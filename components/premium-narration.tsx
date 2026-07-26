@@ -76,6 +76,7 @@ export function PremiumNarration({
   text,
   title,
   sourceLang,
+  artworkUrl,
   showReader = true,
   immersive = false,
   topSlot,
@@ -88,6 +89,12 @@ export function PremiumNarration({
   title: string
   /** Detected language of the document (BCP-47/ISO code), if known. */
   sourceLang?: string | null
+  /**
+   * High-res artwork (image/data URL) shown on OS now-playing surfaces (Lock
+   * Screen, Apple Watch, notifications, media controls). Defaults to the VOXYFI
+   * logo when omitted.
+   */
+  artworkUrl?: string
   /** When false, the internal text reader is hidden (e.g. showing original). */
   showReader?: boolean
   /**
@@ -381,6 +388,7 @@ export function PremiumNarration({
         total: sourceChunks.length,
         voiceName: selectedVoice.name,
         voiceImage: selectedVoice.image,
+        artworkUrl,
       },
       loadChunk,
     )
@@ -392,6 +400,7 @@ export function PremiumNarration({
     sourceChunks.length,
     selectedVoice.name,
     selectedVoice.image,
+    artworkUrl,
     loadChunk,
   ])
 

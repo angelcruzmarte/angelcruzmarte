@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import { baseLang, voiceQualityScore } from "@/lib/voices"
 import { normalizeLang, isSupportedLang, languageLabel } from "@/lib/languages"
 import { translateText } from "@/app/actions/ai"
+import { resolveDocumentArtwork } from "@/lib/document-artwork"
 import {
   trackerAddWords,
   trackerPause,
@@ -143,6 +144,20 @@ export function ListenPlayer({
   useEffect(() => {
     setDeviceLang(normalizeLang(navigator.language))
   }, [])
+
+  // Resolve high-res artwork (first PDF page / image) for the OS now-playing
+  // surfaces. Falls back to the VOXYFI logo inside the resolver. Recomputes
+  // whenever the source document changes.
+  const [artworkUrl, setArtworkUrl] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    void resolveDocumentArtwork({ originalUrl, originalMime }).then((url) => {
+      if (!cancelled) setArtworkUrl(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [originalUrl, originalMime])
 
   const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
   // Offer translation only when the document language is known, the device
@@ -445,6 +460,7 @@ export function ListenPlayer({
               text={content}
               title={title}
               sourceLang={sourceLang}
+              artworkUrl={artworkUrl}
               subscribed={premium}
               showReader={false}
               immersive
@@ -537,6 +553,7 @@ export function ListenPlayer({
             text={content}
             title={title}
             sourceLang={sourceLang}
+            artworkUrl={artworkUrl}
             subscribed={premium}
             showReader={view === "text"}
             paused={capReached}

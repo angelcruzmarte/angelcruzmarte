@@ -13,6 +13,7 @@ import Link from "next/link"
 import { Pause, Play, Loader2, ChevronUp } from "lucide-react"
 import { VoiceAvatar } from "@/components/voice-avatar"
 import { useListeningPreferences } from "@/components/listening-preferences"
+import { VOXYFI_ARTWORK, buildMediaArtwork } from "@/lib/document-artwork"
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused"
 
@@ -32,6 +33,12 @@ export interface PlayerSession {
   voiceName: string
   /** Active voice avatar image, if any. */
   voiceImage?: string
+  /**
+   * High-res artwork source (image URL or data URL) for OS now-playing surfaces
+   * (Lock Screen, Live Activities, Apple Watch, notifications, media controls).
+   * Falls back to the VOXYFI logo when omitted.
+   */
+  artworkUrl?: string
 }
 
 interface PlayerContextValue {
@@ -242,7 +249,92 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const audio = audioRef.current
     if (!audio || !audio.duration || Number.isNaN(audio.duration)) return
     setFraction(Math.min(1, audio.currentTime / audio.duration))
+    // Drive the Lock Screen / Now Playing scrubber for the current section.
+    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.setPositionState?.({
+          duration: audio.duration,
+          position: Math.min(audio.currentTime, audio.duration),
+          playbackRate: audio.playbackRate || 1,
+        })
+      } catch {
+        // Some browsers reject partial position state; safe to ignore.
+      }
+    }
   }, [])
+
+  // --- OS media integration (MediaSession API) ------------------------------
+  // Setting metadata + handlers here is what populates the iPhone Lock Screen,
+  // Live Activities, Apple Watch Now Playing, Android notification, and the
+  // hardware/media-key controls. Artwork uses the document thumbnail when
+  // available, otherwise the VOXYFI logo.
+  const hasMediaSession =
+    typeof navigator !== "undefined" && "mediaSession" in navigator
+
+  // Metadata (title + artwork) — refreshes whenever the playing document,
+  // its artwork, or the active voice changes.
+  useEffect(() => {
+    if (!hasMediaSession) return
+    if (!session) {
+      navigator.mediaSession.metadata = null
+      return
+    }
+    const art = session.artworkUrl || VOXYFI_ARTWORK
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: session.title,
+      artist: session.voiceName ? `VOXYFI · ${session.voiceName}` : "VOXYFI",
+      album: "VOXYFI",
+      artwork: buildMediaArtwork(art),
+    })
+  }, [hasMediaSession, session])
+
+  // Transport action handlers (play/pause/next/prev/seek/stop). Registered once
+  // and kept current via the stable callbacks above.
+  useEffect(() => {
+    if (!hasMediaSession) return
+    const ms = navigator.mediaSession
+    const set = (
+      action: MediaSessionAction,
+      handler: MediaSessionActionHandler | null,
+    ) => {
+      try {
+        ms.setActionHandler(action, handler)
+      } catch {
+        // Unsupported action in this browser — ignore.
+      }
+    }
+    set("play", () => {
+      if (statusRef.current !== "playing") toggle()
+    })
+    set("pause", () => {
+      if (statusRef.current === "playing") toggle()
+    })
+    set("previoustrack", () => prev())
+    set("nexttrack", () => next())
+    set("seekbackward", () => prev())
+    set("seekforward", () => next())
+    set("stop", () => stop())
+    return () => {
+      ;(
+        [
+          "play",
+          "pause",
+          "previoustrack",
+          "nexttrack",
+          "seekbackward",
+          "seekforward",
+          "stop",
+        ] as MediaSessionAction[]
+      ).forEach((a) => set(a, null))
+    }
+  }, [hasMediaSession, toggle, prev, next, stop])
+
+  // Keep the OS play/pause indicator in sync with our transport state.
+  useEffect(() => {
+    if (!hasMediaSession) return
+    navigator.mediaSession.playbackState =
+      status === "playing" ? "playing" : status === "paused" ? "paused" : "none"
+  }, [hasMediaSession, status])
 
   // When the docked mini-player is visible it floats above the tab bar, so flag
   // <body> and let global CSS add extra bottom padding to the page content.

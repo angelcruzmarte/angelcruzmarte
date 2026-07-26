@@ -135,6 +135,8 @@ export default async function AppHome() {
               title: doc.title,
               content: doc.content,
               wordCount: doc.wordCount,
+              originalUrl: doc.originalUrl,
+              originalMime: doc.originalMime,
             }))}
           />
         </section>
