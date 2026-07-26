@@ -115,39 +115,6 @@ export async function resolveDocumentArtwork(opts: {
 }
 
 /**
- * Persists an already-hosted image URL as the document's thumbnail by fetching
- * and re-encoding it to a small JPEG. Best-effort; deduped via
- * persistDocumentThumbnail. Used for image documents (originalUrl is already a
- * real URL, but storing a normalized thumbnail keeps every surface consistent).
- */
-async function persistImageThumbnail(docId: number, src: string) {
-  if (persistInflight.has(docId)) return
-  try {
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    const loaded = new Promise<void>((res, rej) => {
-      img.onload = () => res()
-      img.onerror = () => rej(new Error("image load failed"))
-    })
-    img.src = src
-    await loaded
-    const width = Math.min(512, img.naturalWidth || 512)
-    const scale = width / (img.naturalWidth || width)
-    const canvas = document.createElement("canvas")
-    canvas.width = width
-    canvas.height = Math.floor((img.naturalHeight || width) * scale)
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    void persistDocumentThumbnail(docId, canvas.toDataURL("image/jpeg", 0.85))
-  } catch {
-    // best-effort only
-  }
-}
-
-/**
  * Builds a MediaImage[] artwork array (multiple sizes pointing at the same
  * high-res source) for MediaMetadata. Infers a MIME type when possible so the
  * OS can pick the image correctly.
