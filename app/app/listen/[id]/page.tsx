@@ -1,11 +1,68 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getDocument } from "@/app/actions/documents"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getTodayListenSeconds } from "@/app/actions/stats"
+import { languageLabel } from "@/lib/languages"
 import { ListenPlayer } from "@/components/listen-player"
 
 // Allow time for on-demand translation of long documents.
 export const maxDuration = 60
+
+// Human-friendly label for a document's source type, used on the share card.
+function kindLabel(sourceType: string | null | undefined, mime?: string | null): string {
+  if (mime?.includes("pdf")) return "PDF"
+  switch (sourceType) {
+    case "link":
+      return "Article"
+    case "file":
+      return "Document"
+    case "text":
+      return "Note"
+    default:
+      return "Document"
+  }
+}
+
+// Per-document branded share card via the dynamic /og generator.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const docId = Number(id)
+  if (Number.isNaN(docId)) return {}
+  const doc = await getDocument(docId)
+  if (!doc) return {}
+
+  const og = new URL("/og", "https://www.voxyfi.com")
+  og.searchParams.set("title", doc.title)
+  og.searchParams.set("kind", kindLabel(doc.sourceType, doc.originalMime))
+  if (doc.sourceLang) og.searchParams.set("lang", languageLabel(doc.sourceLang))
+  if (doc.wordCount) og.searchParams.set("words", String(doc.wordCount))
+  const image = og.pathname + og.search
+
+  const title = `${doc.title} — VOXYFI`
+  const description = `Listen to "${doc.title}" with natural-sounding AI narration, word-by-word highlighting, and instant translation on VOXYFI.`
+
+  return {
+    title,
+    description,
+    openGraph: {
+      type: "article",
+      title,
+      description,
+      images: [{ url: image, width: 1200, height: 630, alt: doc.title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [image],
+    },
+  }
+}
 
 export default async function AppListenPage({
   params,

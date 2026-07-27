@@ -70,8 +70,9 @@ const line = (w, hl = false) =>
     },
   })
 
-// The faithful in-app reader screen shown inside the phone frame.
-function screen(mark, { title, highlightTranslate, emphasizeTools }) {
+// The faithful in-app reader screen shown inside the phone frame. `t` carries
+// the localized chrome strings so the mock matches each store locale.
+function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
   const toolItem = (label, active) =>
     h(
       "div",
@@ -168,7 +169,7 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }) {
             fontSize: 15,
           },
         },
-        "Premium",
+        t.premium,
       ),
     ),
     // Document title
@@ -176,7 +177,7 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }) {
       "div",
       { style: { display: "flex", flexDirection: "column", gap: 6, padding: "6px 30px 18px" } },
       h("div", { style: { fontSize: 22, fontWeight: 700 } }, title),
-      h("div", { style: { fontSize: 16, color: MUTED } }, "Page 2 of 2"),
+      h("div", { style: { fontSize: 16, color: MUTED } }, t.pageLabel),
     ),
     // Reader body
     h(
@@ -194,7 +195,7 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }) {
           boxShadow: "0 10px 40px rgba(18,63,46,0.08)",
         },
       },
-      h("div", { style: { fontSize: 19, fontWeight: 700, marginBottom: 2 } }, "The Declaration of Independence"),
+      h("div", { style: { fontSize: 19, fontWeight: 700, marginBottom: 2 } }, t.heading),
       line("100%", highlightTranslate),
       line("96%", highlightTranslate),
       line("92%", highlightTranslate),
@@ -222,10 +223,10 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }) {
       h(
         "div",
         { style: { display: "flex", gap: 6 } },
-        toolItem("Chat", emphasizeTools),
-        toolItem("Summary", emphasizeTools),
-        toolItem("Podcast", emphasizeTools),
-        toolItem("Quiz", emphasizeTools),
+        toolItem(t.tools[0], emphasizeTools),
+        toolItem(t.tools[1], emphasizeTools),
+        toolItem(t.tools[2], emphasizeTools),
+        toolItem(t.tools[3], emphasizeTools),
       ),
       // Controls
       h(
@@ -277,8 +278,8 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }) {
       h(
         "div",
         { style: { display: "flex", gap: 10 } },
-        toggle("Translated to English", highlightTranslate),
-        toggle("Original", !highlightTranslate),
+        toggle(t.translated, highlightTranslate),
+        toggle(t.original, !highlightTranslate),
       ),
     ),
   )
@@ -358,11 +359,83 @@ function frame(mark, caption, screenNode, W, H) {
   )
 }
 
-const SHOTS = [
-  { key: "01-listen", caption: "Turn any document into audio", opts: { title: "Declaration of Independence", highlightTranslate: false, emphasizeTools: false } },
-  { key: "02-translate", caption: "Translate as you listen", opts: { title: "Spanish translation · U.S. Declaration", highlightTranslate: true, emphasizeTools: false } },
-  { key: "03-tools", caption: "Summaries, podcasts & quizzes", opts: { title: "Research paper.pdf", highlightTranslate: false, emphasizeTools: true } },
+// Shot flags shared across every locale (which panel to emphasize).
+const SHOT_FLAGS = [
+  { key: "01-listen", highlightTranslate: false, emphasizeTools: false },
+  { key: "02-translate", highlightTranslate: true, emphasizeTools: false },
+  { key: "03-tools", highlightTranslate: false, emphasizeTools: true },
 ]
+
+// Localized copy for each store locale. Limited to Latin-script languages that
+// the bundled Geist renders cleanly (no tofu). `captions`/`titles` are indexed
+// to match SHOT_FLAGS; `ui` holds the in-app chrome strings.
+const LOCALES = {
+  en: {
+    label: "English",
+    captions: ["Turn any document into audio", "Translate as you listen", "Summaries, podcasts & quizzes"],
+    titles: ["Declaration of Independence", "Spanish translation · U.S. Declaration", "Research paper.pdf"],
+    ui: {
+      premium: "Premium",
+      pageLabel: "Page 2 of 2",
+      heading: "The Declaration of Independence",
+      tools: ["Chat", "Summary", "Podcast", "Quiz"],
+      translated: "Translated to English",
+      original: "Original",
+    },
+  },
+  es: {
+    label: "Español",
+    captions: ["Convierte cualquier documento en audio", "Traduce mientras escuchas", "Resúmenes, podcasts y cuestionarios"],
+    titles: ["Declaración de Independencia", "Traducción · Declaración de EE. UU.", "Artículo de investigación.pdf"],
+    ui: {
+      premium: "Premium",
+      pageLabel: "Página 2 de 2",
+      heading: "La Declaración de Independencia",
+      tools: ["Chat", "Resumen", "Podcast", "Cuestionario"],
+      translated: "Traducido al español",
+      original: "Original",
+    },
+  },
+  fr: {
+    label: "Français",
+    captions: ["Transformez tout document en audio", "Traduisez en écoutant", "Résumés, podcasts et quiz"],
+    titles: ["Déclaration d'indépendance", "Traduction · Déclaration des États-Unis", "Article de recherche.pdf"],
+    ui: {
+      premium: "Premium",
+      pageLabel: "Page 2 sur 2",
+      heading: "La Déclaration d'indépendance",
+      tools: ["Chat", "Résumé", "Podcast", "Quiz"],
+      translated: "Traduit en français",
+      original: "Original",
+    },
+  },
+  de: {
+    label: "Deutsch",
+    captions: ["Jedes Dokument in Audio verwandeln", "Übersetze beim Zuhören", "Zusammenfassungen, Podcasts & Quiz"],
+    titles: ["Unabhängigkeitserklärung", "Übersetzung · US-Erklärung", "Forschungsarbeit.pdf"],
+    ui: {
+      premium: "Premium",
+      pageLabel: "Seite 2 von 2",
+      heading: "Die Unabhängigkeitserklärung",
+      tools: ["Chat", "Zusammenf.", "Podcast", "Quiz"],
+      translated: "Auf Deutsch übersetzt",
+      original: "Original",
+    },
+  },
+  "pt-BR": {
+    label: "Português (BR)",
+    captions: ["Transforme qualquer documento em áudio", "Traduza enquanto ouve", "Resumos, podcasts e quizzes"],
+    titles: ["Declaração de Independência", "Tradução · Declaração dos EUA", "Artigo de pesquisa.pdf"],
+    ui: {
+      premium: "Premium",
+      pageLabel: "Página 2 de 2",
+      heading: "A Declaração de Independência",
+      tools: ["Chat", "Resumo", "Podcast", "Quiz"],
+      translated: "Traduzido para português",
+      original: "Original",
+    },
+  },
+}
 
 const SIZES = [
   { name: "ios-6.7", w: 1290, h: 2796 },
@@ -384,17 +457,25 @@ async function main() {
     { name: "Geist", data: geistBold, weight: 700, style: "normal" },
   ]
 
-  for (const size of SIZES) {
-    for (const shot of SHOTS) {
-      const node = frame(mark, shot.caption, screen(mark, shot.opts), size.w, size.h)
-      const png = await new ImageResponse(node, {
-        width: size.w,
-        height: size.h,
-        fonts,
-      }).arrayBuffer()
-      const file = path.join(OUT, `${shot.key}-${size.name}.png`)
-      await fs.writeFile(file, Buffer.from(png))
-      console.log("wrote", path.relative(ROOT, file))
+  for (const [locale, pack] of Object.entries(LOCALES)) {
+    // English stays at the top level (backward compatible); other locales get
+    // their own subfolder so store uploads stay organized.
+    const dir = locale === "en" ? OUT : path.join(OUT, locale)
+    await fs.mkdir(dir, { recursive: true })
+    for (const size of SIZES) {
+      for (let i = 0; i < SHOT_FLAGS.length; i++) {
+        const flags = SHOT_FLAGS[i]
+        const opts = {
+          title: pack.titles[i],
+          highlightTranslate: flags.highlightTranslate,
+          emphasizeTools: flags.emphasizeTools,
+        }
+        const node = frame(mark, pack.captions[i], screen(mark, opts, pack.ui), size.w, size.h)
+        const png = await new ImageResponse(node, { width: size.w, height: size.h, fonts }).arrayBuffer()
+        const file = path.join(dir, `${flags.key}-${size.name}.png`)
+        await fs.writeFile(file, Buffer.from(png))
+        console.log("wrote", path.relative(ROOT, file))
+      }
     }
   }
 }
