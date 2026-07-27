@@ -395,6 +395,8 @@ export default function BrandPage() {
                 { code: "fr", label: "Français" },
                 { code: "de", label: "Deutsch" },
                 { code: "pt-BR", label: "Português (BR)" },
+                { code: "ar", label: "العربية", rtl: true },
+                { code: "he", label: "עברית", rtl: true },
               ].map((l) => (
                 <a
                   key={l.code}
@@ -405,9 +407,14 @@ export default function BrandPage() {
                   }
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-full border border-border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted"
                 >
                   {l.label}
+                  {l.rtl ? (
+                    <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary">
+                      RTL
+                    </span>
+                  ) : null}
                 </a>
               ))}
             </div>
@@ -418,8 +425,9 @@ export default function BrandPage() {
             <p className="text-sm font-semibold">Email templates</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Table-based, inline-styled HTML that renders across Gmail, Outlook
-              and Apple Mail, in matching light and dark variants. Swap the
-              placeholders and paste into your ESP.
+              and Apple Mail, in matching light and dark variants — each with a
+              plain-text fallback (same copy and placeholders) for maximum
+              deliverability. Swap the placeholders and paste into your ESP.
             </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Card className="flex flex-col overflow-hidden p-0">
@@ -434,14 +442,24 @@ export default function BrandPage() {
                     <p className="text-sm font-medium">Email header · Light</p>
                     <p className="font-mono text-xs text-muted-foreground">Cream card</p>
                   </div>
-                  <a
-                    href="/brand/email/email-header.html"
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                  >
-                    Preview
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="/brand/email/email-header.txt"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                    >
+                      Text
+                    </a>
+                    <a
+                      href="/brand/email/email-header.html"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    >
+                      Preview
+                    </a>
+                  </div>
                 </div>
               </Card>
               <Card className="flex flex-col overflow-hidden p-0">
@@ -488,14 +506,24 @@ export default function BrandPage() {
                     <p className="text-sm font-medium">Email signature</p>
                     <p className="font-mono text-xs text-muted-foreground">Staff template</p>
                   </div>
-                  <a
-                    href="/brand/email/email-signature.html"
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                  >
-                    Preview
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="/brand/email/email-signature.txt"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                    >
+                      Text
+                    </a>
+                    <a
+                      href="/brand/email/email-signature.html"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    >
+                      Preview
+                    </a>
+                  </div>
                 </div>
               </Card>
             </div>
@@ -509,11 +537,17 @@ export default function BrandPage() {
               the fly at{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                 /og
-              </code>{" "}
-              from the title, kind, language, and length — no design work per share.
+              </code>
+              . When a real first-page thumbnail exists it renders a two-column
+              layout with the page preview, title and byline; otherwise it falls
+              back to a centered branded card — no design work per share.
             </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {[
+                {
+                  label: "With first-page preview + byline",
+                  q: "?title=The Declaration of Independence&kind=PDF&lang=Spanish&words=1200&author=archives.gov&thumb=https://www.voxyfi.com/brand/screenshots/01-listen-ios-6.7.png",
+                },
                 {
                   label: "PDF · Spanish · 1,200 words",
                   q: "?title=The Declaration of Independence&kind=PDF&lang=Spanish&words=1200",
