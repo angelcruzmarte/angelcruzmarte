@@ -349,6 +349,109 @@ export default function BrandPage() {
               ))}
             </div>
           </div>
+
+          {/* App Store screenshots */}
+          <div className="mt-10">
+            <p className="text-sm font-semibold">App Store &amp; Play Store screenshots</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Store-ready marketing frames at native resolution (iOS 6.7&Prime; ·
+              1290×2796, Android · 1080×1920).
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {[
+                { src: "/brand/screenshots/01-listen-ios-6.7.png", title: "Listen", meta: "1290×2796" },
+                { src: "/brand/screenshots/02-translate-ios-6.7.png", title: "Translate", meta: "1290×2796" },
+                { src: "/brand/screenshots/03-tools-ios-6.7.png", title: "AI tools", meta: "1290×2796" },
+              ].map((g) => (
+                <Card key={g.src} className="flex flex-col overflow-hidden p-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={g.src || "/placeholder.svg"}
+                    alt={`${g.title} screenshot`}
+                    className="aspect-[1290/2796] w-full object-cover"
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                    <div>
+                      <p className="text-sm font-medium">{g.title}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{g.meta}</p>
+                    </div>
+                    <a
+                      href={g.src}
+                      download
+                      className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+                      aria-label={`Download ${g.title} screenshot`}
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                    </a>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Email templates */}
+          <div className="mt-10">
+            <p className="text-sm font-semibold">Email templates</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Table-based, inline-styled HTML that renders across Gmail, Outlook
+              and Apple Mail. Swap the placeholders and paste into your ESP.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Card className="flex flex-col overflow-hidden p-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/brand/email/email-banner.png"
+                  alt="Branded email header banner"
+                  className="aspect-[1200/320] w-full bg-primary object-contain"
+                />
+                <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Email header</p>
+                    <p className="font-mono text-xs text-muted-foreground">HTML shell + banner</p>
+                  </div>
+                  <a
+                    href="/brand/email/email-header.html"
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                  >
+                    Preview
+                  </a>
+                </div>
+              </Card>
+              <Card className="flex flex-col overflow-hidden p-0">
+                <div className="flex flex-1 items-center gap-3 p-5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/brand/email/signature-logo.png"
+                    alt="VOXYFI signature logo"
+                    className="h-12 w-12 rounded-xl"
+                  />
+                  <div className="border-l border-border pl-3 leading-tight">
+                    <p className="text-sm font-semibold text-foreground">Ada Lovelace</p>
+                    <p className="text-xs text-muted-foreground">
+                      Product · <span className="font-semibold text-primary">VOXYFI</span>
+                    </p>
+                    <p className="text-xs text-primary">voxyfi.com</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Email signature</p>
+                    <p className="font-mono text-xs text-muted-foreground">Staff template</p>
+                  </div>
+                  <a
+                    href="/brand/email/email-signature.html"
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                  >
+                    Preview
+                  </a>
+                </div>
+              </Card>
+            </div>
+          </div>
         </div>
       </section>
 
