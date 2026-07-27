@@ -43,6 +43,13 @@ async function geistFont(name) {
   return fs.readFile(hits[0])
 }
 
+// RTL script fonts (Noto) live in public/brand/fonts. Geist has no Arabic/Hebrew
+// glyphs, so those locales need Noto to avoid tofu boxes.
+const FONT_DIR = path.join(ROOT, "public", "brand", "fonts")
+function brandFont(file) {
+  return fs.readFile(path.join(FONT_DIR, file))
+}
+
 // White waveform mark as a transparent PNG data URI.
 async function whiteMark(size = 320) {
   const svg = `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><g fill="#ffffff">
@@ -71,8 +78,12 @@ const line = (w, hl = false) =>
   })
 
 // The faithful in-app reader screen shown inside the phone frame. `t` carries
-// the localized chrome strings so the mock matches each store locale.
-function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
+// the localized chrome strings so the mock matches each store locale. When
+// `rtl` is set the reading layout mirrors: the logo lockup moves to the right,
+// text and reader lines align right, and the tool/toggle rows reverse. Media
+// transport controls stay LTR to match native iOS/Android behavior (play/skip
+// are not mirrored in RTL locales).
+function screen(mark, { title, highlightTranslate, emphasizeTools, rtl }, t) {
   const toolItem = (label, active) =>
     h(
       "div",
@@ -134,6 +145,7 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
       {
         style: {
           display: "flex",
+          flexDirection: rtl ? "row-reverse" : "row",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "28px 30px 18px",
@@ -175,8 +187,16 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
     // Document title
     h(
       "div",
-      { style: { display: "flex", flexDirection: "column", gap: 6, padding: "6px 30px 18px" } },
-      h("div", { style: { fontSize: 22, fontWeight: 700 } }, title),
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          alignItems: rtl ? "flex-end" : "flex-start",
+          gap: 6,
+          padding: "6px 30px 18px",
+        },
+      },
+      h("div", { style: { fontSize: 22, fontWeight: 700, textAlign: rtl ? "right" : "left" } }, title),
       h("div", { style: { fontSize: 16, color: MUTED } }, t.pageLabel),
     ),
     // Reader body
@@ -186,6 +206,7 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
         style: {
           display: "flex",
           flexDirection: "column",
+          alignItems: rtl ? "flex-end" : "flex-start",
           gap: 14,
           flex: 1,
           margin: "0 22px",
@@ -195,7 +216,11 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
           boxShadow: "0 10px 40px rgba(18,63,46,0.08)",
         },
       },
-      h("div", { style: { fontSize: 19, fontWeight: 700, marginBottom: 2 } }, t.heading),
+      h(
+        "div",
+        { style: { fontSize: 19, fontWeight: 700, marginBottom: 2, textAlign: rtl ? "right" : "left" } },
+        t.heading,
+      ),
       line("100%", highlightTranslate),
       line("96%", highlightTranslate),
       line("92%", highlightTranslate),
@@ -219,10 +244,10 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
           boxShadow: "0 -6px 40px rgba(18,63,46,0.10)",
         },
       },
-      // AI tools row
+      // AI tools row (reversed for RTL reading order)
       h(
         "div",
-        { style: { display: "flex", gap: 6 } },
+        { style: { display: "flex", flexDirection: rtl ? "row-reverse" : "row", gap: 6 } },
         toolItem(t.tools[0], emphasizeTools),
         toolItem(t.tools[1], emphasizeTools),
         toolItem(t.tools[2], emphasizeTools),
@@ -274,10 +299,10 @@ function screen(mark, { title, highlightTranslate, emphasizeTools }, t) {
           "1x",
         ),
       ),
-      // Translate toggles
+      // Translate toggles (reversed for RTL reading order)
       h(
         "div",
-        { style: { display: "flex", gap: 10 } },
+        { style: { display: "flex", flexDirection: rtl ? "row-reverse" : "row", gap: 10 } },
         toggle(t.translated, highlightTranslate),
         toggle(t.original, !highlightTranslate),
       ),
@@ -435,6 +460,37 @@ const LOCALES = {
       original: "Original",
     },
   },
+  // ----- RTL locales (mirrored layout, Noto script fonts) -----
+  ar: {
+    label: "العربية",
+    rtl: true,
+    script: "arabic",
+    captions: ["حوّل أي مستند إلى صوت", "ترجم أثناء الاستماع", "ملخصات وبودكاست واختبارات"],
+    titles: ["إعلان الاستقلال", "ترجمة · إعلان الاستقلال الأمريكي", "ورقة بحثية.pdf"],
+    ui: {
+      premium: "بريميوم",
+      pageLabel: "صفحة ٢ من ٢",
+      heading: "إعلان الاستقلال",
+      tools: ["دردشة", "ملخّص", "بودكاست", "اختبار"],
+      translated: "مترجم إلى العربية",
+      original: "الأصلي",
+    },
+  },
+  he: {
+    label: "עברית",
+    rtl: true,
+    script: "hebrew",
+    captions: ["הפכו כל מסמך לאודיו", "תרגמו תוך כדי האזנה", "סיכומים, פודקאסטים וחידונים"],
+    titles: ["הכרזת העצמאות", "תרגום · הכרזת העצמאות של ארה\u201cב", "מאמר מחקר.pdf"],
+    ui: {
+      premium: "פרימיום",
+      pageLabel: "עמוד 2 מתוך 2",
+      heading: "הכרזת העצמאות",
+      tools: ["צ׳אט", "סיכום", "פודקאסט", "חידון"],
+      translated: "תורגם לעברית",
+      original: "מקור",
+    },
+  },
 }
 
 const SIZES = [
@@ -452,16 +508,31 @@ async function main() {
     geistBold = geist
   }
   const mark = await whiteMark(64)
-  const fonts = [
+  const baseFonts = [
     { name: "Geist", data: geist, weight: 400, style: "normal" },
     { name: "Geist", data: geistBold, weight: 700, style: "normal" },
   ]
+
+  // Load RTL script fonts once. Satori uses the fonts array as a per-glyph
+  // fallback stack, so Latin brand text ("VOXYFI", "1x") still renders in Geist
+  // while Arabic/Hebrew glyphs render in Noto.
+  const scriptFonts = {
+    arabic: [
+      { name: "Noto Sans Arabic", data: await brandFont("NotoSansArabic-Regular.ttf"), weight: 400, style: "normal" },
+      { name: "Noto Sans Arabic", data: await brandFont("NotoSansArabic-Bold.ttf"), weight: 700, style: "normal" },
+    ],
+    hebrew: [
+      { name: "Noto Sans Hebrew", data: await brandFont("NotoSansHebrew-Regular.ttf"), weight: 400, style: "normal" },
+      { name: "Noto Sans Hebrew", data: await brandFont("NotoSansHebrew-Bold.ttf"), weight: 700, style: "normal" },
+    ],
+  }
 
   for (const [locale, pack] of Object.entries(LOCALES)) {
     // English stays at the top level (backward compatible); other locales get
     // their own subfolder so store uploads stay organized.
     const dir = locale === "en" ? OUT : path.join(OUT, locale)
     await fs.mkdir(dir, { recursive: true })
+    const fonts = pack.script ? [...baseFonts, ...scriptFonts[pack.script]] : baseFonts
     for (const size of SIZES) {
       for (let i = 0; i < SHOT_FLAGS.length; i++) {
         const flags = SHOT_FLAGS[i]
@@ -469,6 +540,7 @@ async function main() {
           title: pack.titles[i],
           highlightTranslate: flags.highlightTranslate,
           emphasizeTools: flags.emphasizeTools,
+          rtl: Boolean(pack.rtl),
         }
         const node = frame(mark, pack.captions[i], screen(mark, opts, pack.ui), size.w, size.h)
         const png = await new ImageResponse(node, { width: size.w, height: size.h, fonts }).arrayBuffer()

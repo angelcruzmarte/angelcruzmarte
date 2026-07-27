@@ -24,6 +24,18 @@ function kindLabel(sourceType: string | null | undefined, mime?: string | null):
   }
 }
 
+// Byline for the share card: the source website's hostname for link/article
+// docs (e.g. "nytimes.com"). Documents have no author field, so this is the
+// most meaningful attribution available. Returns null for non-link sources.
+function sourceByline(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl) return null
+  try {
+    return new URL(sourceUrl).hostname.replace(/^www\./, "")
+  } catch {
+    return null
+  }
+}
+
 // Per-document branded share card via the dynamic /og generator.
 export async function generateMetadata({
   params,
@@ -55,7 +67,13 @@ export async function generateMetadata({
   og.searchParams.set("kind", kindLabel(doc.sourceType, doc.originalMime))
   if (doc.sourceLang) og.searchParams.set("lang", languageLabel(doc.sourceLang))
   if (doc.wordCount) og.searchParams.set("words", String(doc.wordCount))
-  const image = og.pathname + og.search
+  // Real first-page preview when we have one (renders the two-column card).
+  if (doc.thumbnailUrl) og.searchParams.set("thumb", doc.thumbnailUrl)
+  // Documents have no author field; use the source site as a byline for links.
+  const byline = sourceByline(doc.sourceUrl)
+  if (byline) og.searchParams.set("author", byline)
+  // Absolute URL so social crawlers can always resolve it.
+  const image = og.toString()
 
   const title = `${doc.title} — VOXYFI`
   const description = `Listen to "${doc.title}" with natural-sounding AI narration, word-by-word highlighting, and instant translation on VOXYFI.`
