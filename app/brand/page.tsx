@@ -355,7 +355,7 @@ export default function BrandPage() {
             <p className="text-sm font-semibold">App Store &amp; Play Store screenshots</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Store-ready marketing frames at native resolution (iOS 6.7&Prime; ·
-              1290×2796, Android · 1080×1920).
+              1290×2796, Android · 1080×1920), localized for every launch market.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
               {[
@@ -387,6 +387,30 @@ export default function BrandPage() {
                 </Card>
               ))}
             </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Localized sets:</span>
+              {[
+                { code: "en", label: "English" },
+                { code: "es", label: "Español" },
+                { code: "fr", label: "Français" },
+                { code: "de", label: "Deutsch" },
+                { code: "pt-BR", label: "Português (BR)" },
+              ].map((l) => (
+                <a
+                  key={l.code}
+                  href={
+                    l.code === "en"
+                      ? "/brand/screenshots/02-translate-ios-6.7.png"
+                      : `/brand/screenshots/${l.code}/02-translate-ios-6.7.png`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-border px-3 py-1 text-xs font-medium transition-colors hover:bg-muted"
+                >
+                  {l.label}
+                </a>
+              ))}
+            </div>
           </div>
 
           {/* Email templates */}
@@ -394,23 +418,47 @@ export default function BrandPage() {
             <p className="text-sm font-semibold">Email templates</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Table-based, inline-styled HTML that renders across Gmail, Outlook
-              and Apple Mail. Swap the placeholders and paste into your ESP.
+              and Apple Mail, in matching light and dark variants. Swap the
+              placeholders and paste into your ESP.
             </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Card className="flex flex-col overflow-hidden p-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/brand/email/email-banner.png"
-                  alt="Branded email header banner"
+                  alt="Branded email header banner, light"
                   className="aspect-[1200/320] w-full bg-primary object-contain"
                 />
                 <div className="flex items-center justify-between gap-2 border-t border-border p-3">
                   <div>
-                    <p className="text-sm font-medium">Email header</p>
-                    <p className="font-mono text-xs text-muted-foreground">HTML shell + banner</p>
+                    <p className="text-sm font-medium">Email header · Light</p>
+                    <p className="font-mono text-xs text-muted-foreground">Cream card</p>
                   </div>
                   <a
                     href="/brand/email/email-header.html"
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                  >
+                    Preview
+                  </a>
+                </div>
+              </Card>
+              <Card className="flex flex-col overflow-hidden p-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/brand/email/email-banner-dark.png"
+                  alt="Branded email header banner, dark"
+                  className="aspect-[1200/320] w-full object-contain"
+                  style={{ backgroundColor: "#0c1b14" }}
+                />
+                <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Email header · Dark</p>
+                    <p className="font-mono text-xs text-muted-foreground">Ink card · emerald CTA</p>
+                  </div>
+                  <a
+                    href="/brand/email/email-header-dark.html"
                     target="_blank"
                     rel="noreferrer"
                     className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
@@ -450,6 +498,51 @@ export default function BrandPage() {
                   </a>
                 </div>
               </Card>
+            </div>
+          </div>
+
+          {/* Dynamic per-document share cards */}
+          <div className="mt-10">
+            <p className="text-sm font-semibold">Dynamic share cards</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Every document gets its own branded Open Graph image, rendered on
+              the fly at{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                /og
+              </code>{" "}
+              from the title, kind, language, and length — no design work per share.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {[
+                {
+                  label: "PDF · Spanish · 1,200 words",
+                  q: "?title=The Declaration of Independence&kind=PDF&lang=Spanish&words=1200",
+                },
+                {
+                  label: "Article · English · 640 words",
+                  q: "?title=How transformers actually work&kind=Article&lang=English&words=640",
+                },
+              ].map((c) => (
+                <Card key={c.q} className="flex flex-col overflow-hidden p-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/og${c.q}`}
+                    alt={`Example share card — ${c.label}`}
+                    className="aspect-[1200/630] w-full object-cover"
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                    <p className="font-mono text-xs text-muted-foreground">{c.label}</p>
+                    <a
+                      href={`/og${c.q}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    >
+                      Open
+                    </a>
+                  </div>
+                </Card>
+              ))}
             </div>
           </div>
         </div>

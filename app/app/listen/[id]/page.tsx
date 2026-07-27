@@ -33,8 +33,22 @@ export async function generateMetadata({
   const { id } = await params
   const docId = Number(id)
   if (Number.isNaN(docId)) return {}
-  const doc = await getDocument(docId)
-  if (!doc) return {}
+  // getDocument throws for unauthenticated requests (e.g. social crawlers) and
+  // returns null for missing/other-user docs. Either way, fall back to generic
+  // branding rather than breaking metadata generation.
+  let doc: Awaited<ReturnType<typeof getDocument>> | null = null
+  try {
+    doc = await getDocument(docId)
+  } catch {
+    doc = null
+  }
+  if (!doc) {
+    const fallback = new URL("/og", "https://www.voxyfi.com").toString()
+    return {
+      openGraph: { images: [{ url: fallback, width: 1200, height: 630 }] },
+      twitter: { card: "summary_large_image", images: [fallback] },
+    }
+  }
 
   const og = new URL("/og", "https://www.voxyfi.com")
   og.searchParams.set("title", doc.title)
