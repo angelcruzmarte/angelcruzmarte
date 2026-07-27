@@ -11,6 +11,7 @@ import {
   Type,
 } from "lucide-react"
 import { createDocument, importFromUrl } from "@/app/actions/documents"
+import { generateUploadThumbnail } from "@/lib/document-artwork"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -230,6 +231,10 @@ function FileImport({
         setUploading(false)
         return
       }
+      // Automatically generate the branded first-page thumbnail from the PDF
+      // the user just uploaded, so the library grid and OG share card have a
+      // real preview immediately. Best-effort and bounded (no-op for non-PDFs).
+      await generateUploadThumbnail(data.id, file)
       onDone(data.id)
     } catch {
       onError("Upload failed. Please try again.")

@@ -66,6 +66,47 @@ export function persistDocumentThumbnail(
   return work
 }
 
+/** True for PDFs, detected by MIME type or file extension. */
+function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+}
+
+/**
+ * Automatically generates and persists a branded first-page thumbnail for a
+ * freshly uploaded PDF, so the document has a real preview (library grid + the
+ * `/og` share card) immediately — without waiting for the first playback.
+ *
+ * Runs in the browser (pdf.js needs <canvas>) using the File the user just
+ * uploaded, then persists to Blob via the existing dedup/idempotent path. It is
+ * best-effort and bounded: if rendering a large/slow PDF exceeds `timeoutMs`,
+ * it resolves so navigation is never blocked; the render + persist still finish
+ * in the background (and the player also self-heals the thumbnail on load).
+ * Never throws.
+ */
+export async function generateUploadThumbnail(
+  docId: number,
+  file: File,
+  timeoutMs = 6000,
+): Promise<string | null> {
+  if (!isPdfFile(file)) return null
+  const work = (async () => {
+    let objectUrl: string | null = null
+    try {
+      objectUrl = URL.createObjectURL(file)
+      const dataUrl = await renderPdfFirstPageToJpeg(objectUrl, 640)
+      return await persistDocumentThumbnail(docId, dataUrl)
+    } catch {
+      return null
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  })()
+  const timeout = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), timeoutMs),
+  )
+  return Promise.race([work, timeout])
+}
+
 /**
  * Returns an artwork source usable in a MediaImage `src`:
  * - a persisted thumbnail URL (best — a real https URL iOS surfaces render),

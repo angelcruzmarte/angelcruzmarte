@@ -134,6 +134,25 @@ export default function BrandPage() {
               <span className="text-3xl font-semibold tracking-tight">VOXYFI</span>
             </span>
           </div>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <a
+              href="/brand/voxyfi-brand-kit.zip"
+              download
+              className={cn(buttonVariants({ size: "lg" }), "gap-2")}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download brand kit
+            </a>
+            <Link
+              href="/press"
+              className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
+            >
+              Press kit
+            </Link>
+            <span className="text-xs text-muted-foreground">
+              Logos, icons, colors, type &amp; social — one ZIP.
+            </span>
+          </div>
         </div>
       </section>
 

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Upload } from "lucide-react"
+import { generateUploadThumbnail } from "@/lib/document-artwork"
 import { cn } from "@/lib/utils"
 
 const ACCEPT =
@@ -41,6 +42,9 @@ export function UploadBook() {
         setUploading(false)
         return
       }
+      // Auto-generate the branded first-page thumbnail so the doc has a real
+      // preview immediately. Best-effort and bounded (no-op for non-PDFs).
+      await generateUploadThumbnail(data.id, file)
       router.push(`/app/listen/${data.id}`)
     } catch {
       setError("Upload failed. Please try again.")

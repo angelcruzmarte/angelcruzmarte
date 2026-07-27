@@ -85,6 +85,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} bg-background`}
     >
       <body className="font-sans antialiased">
+        {/* Discoverability for humans.txt (React 19 hoists this into <head>). */}
+        <link rel="author" type="text/plain" href="/humans.txt" />
         {children}
         <IdleLogout />
         <ServiceWorkerRegister />
