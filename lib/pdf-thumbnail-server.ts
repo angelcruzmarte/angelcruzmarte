@@ -11,23 +11,22 @@
 
 import "server-only"
 
-// pdf.js reaches for a handful of browser globals (DOMMatrix, Path2D,
-// ImageData) at module + render time. @napi-rs/canvas provides Node
-// implementations; install them globally before pdf.js renders.
-import {
-  createCanvas,
-  DOMMatrix as NapiDOMMatrix,
-  Path2D as NapiPath2D,
-  ImageData as NapiImageData,
-} from "@napi-rs/canvas"
-
 type Globalish = Record<string, unknown>
 
-function ensurePdfGlobals() {
+// @napi-rs/canvas ships a native .node binding that the bundler can't place in
+// a chunk, so it must be imported lazily at runtime (never statically) — that
+// keeps it fully out of the build graph. pdf.js also reaches for a few browser
+// globals (DOMMatrix, Path2D, ImageData) at render time; we install the native
+// implementations globally before rendering.
+type NapiCanvas = typeof import("@napi-rs/canvas")
+
+async function loadCanvas(): Promise<NapiCanvas> {
+  const napi = (await import("@napi-rs/canvas")) as unknown as NapiCanvas
   const g = globalThis as unknown as Globalish
-  if (typeof g.DOMMatrix === "undefined") g.DOMMatrix = NapiDOMMatrix
-  if (typeof g.Path2D === "undefined") g.Path2D = NapiPath2D
-  if (typeof g.ImageData === "undefined") g.ImageData = NapiImageData
+  if (typeof g.DOMMatrix === "undefined") g.DOMMatrix = napi.DOMMatrix
+  if (typeof g.Path2D === "undefined") g.Path2D = napi.Path2D
+  if (typeof g.ImageData === "undefined") g.ImageData = napi.ImageData
+  return napi
 }
 
 /**
@@ -40,7 +39,8 @@ export async function renderPdfFirstPageToJpegBuffer(
   width = 640,
 ): Promise<Buffer | null> {
   try {
-    ensurePdfGlobals()
+    // Load the native canvas first (also installs the pdf.js browser globals).
+    const { createCanvas } = await loadCanvas()
 
     // Legacy build is transpiled and Node-friendly. Import lazily so the native
     // canvas globals are in place first and so client bundles never pull it in.
