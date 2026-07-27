@@ -99,6 +99,19 @@ export async function generateMetadata({
   if (details.length) altParts.push(`(${details.join(", ")})`)
   const imageAlt = `${altParts.join(" ")}.`
 
+  // Enhanced article Open Graph tags for richer link previews and better search
+  // understanding. Author is the source site's byline when available (links),
+  // otherwise VOXYFI. Timestamps come straight off the document row; section and
+  // tags mirror the card facts (kind + language) so crawlers get structured
+  // topical signals.
+  const publishedTime =
+    doc.createdAt instanceof Date ? doc.createdAt.toISOString() : undefined
+  const modifiedTime =
+    doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : undefined
+  const tags = [kind, doc.sourceLang ? languageLabel(doc.sourceLang) : null].filter(
+    (t): t is string => Boolean(t),
+  )
+
   return {
     title,
     description,
@@ -107,6 +120,11 @@ export async function generateMetadata({
       title,
       description,
       images: [{ url: image, width: 1200, height: 630, alt: imageAlt }],
+      authors: [byline ?? "VOXYFI"],
+      publishedTime,
+      modifiedTime,
+      section: kind,
+      tags,
     },
     twitter: {
       card: "summary_large_image",
