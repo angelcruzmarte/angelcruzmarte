@@ -4,6 +4,7 @@ import { Check, Download, X } from "lucide-react"
 import { SiteHeader } from "@/components/site-header"
 import { BrandLogo } from "@/components/brand-logo"
 import { LogoMark } from "@/components/logo-mark"
+import { AnimatedLogoMark } from "@/components/animated-logo-mark"
 import { ColorSwatch } from "@/components/brand/color-swatch"
 import { Card } from "@/components/ui/card"
 import { buttonVariants } from "@/components/ui/button"
@@ -189,6 +190,37 @@ export default function BrandPage() {
               <li>Place the lockup on low-contrast backgrounds.</li>
             </ul>
           </Card>
+        </div>
+
+        {/* Animated mark */}
+        <div className="mt-12">
+          <h3 className="text-lg font-semibold tracking-tight">Animated mark</h3>
+          <p className="mt-2 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
+            The waveform bars pulse like an equalizer for loading and playback
+            states, then settle into the resting mark. Motion is pure CSS and
+            automatically stops for visitors who prefer reduced motion.
+          </p>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <Card
+              className="flex flex-col items-center justify-center gap-4 p-8"
+              style={{ background: GRADIENT }}
+            >
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 text-white">
+                <AnimatedLogoMark className="h-9 w-9" />
+              </span>
+              <span className="text-xs text-white/80">Animated (playing)</span>
+            </Card>
+            <Card className="flex flex-col items-center justify-center gap-4 bg-card p-8">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-gradient text-white">
+                <AnimatedLogoMark className="h-9 w-9" playing={false} />
+              </span>
+              <span className="text-xs text-muted-foreground">Resting</span>
+            </Card>
+            <Card className="flex flex-col items-center justify-center gap-4 bg-foreground p-8">
+              <AnimatedLogoMark className="h-12 w-12 text-background" />
+              <span className="text-xs text-background/70">Monochrome</span>
+            </Card>
+          </div>
         </div>
       </section>
 
