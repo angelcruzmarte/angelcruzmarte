@@ -4,7 +4,13 @@ const nextConfig = {
   // bundler so they run correctly in Node server routes. @napi-rs/canvas ships
   // a native .node binding and pdfjs-dist's legacy build isn't bundler-friendly,
   // so both must stay external and be loaded at runtime by the Node server.
-  serverExternalPackages: ["unpdf", "mammoth", "@napi-rs/canvas", "pdfjs-dist"],
+  serverExternalPackages: [
+    "unpdf",
+    "mammoth",
+    "@napi-rs/canvas",
+    "pdfjs-dist",
+    "sharp",
+  ],
   typescript: {
     ignoreBuildErrors: true,
   },

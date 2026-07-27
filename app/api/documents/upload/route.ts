@@ -2,6 +2,7 @@ import { createDocument } from "@/app/actions/documents"
 import { extractTextFromImage } from "@/app/actions/ai"
 import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
+import { generateAndStoreDocumentThumbnail } from "@/lib/document-thumbnail"
 import { put } from "@vercel/blob"
 import { NextResponse } from "next/server"
 
@@ -126,6 +127,20 @@ export async function POST(req: Request) {
       originalUrl,
       originalMime,
     })
+
+    // Same shared thumbnail pipeline as every other import source: render a
+    // cover from the PDF's first page (or downscale the uploaded image itself)
+    // so the document has a consistent preview server-side, no matter how it
+    // was added. Best-effort, idempotent, and non-blocking to the response
+    // contract — the client self-heal path becomes a redundant safety net.
+    await generateAndStoreDocumentThumbnail({
+      userId: user.id,
+      docId: doc.id,
+      buffer,
+      name: file.name,
+      mimeType: file.type,
+    })
+
     return NextResponse.json({ id: doc.id })
   } catch (err) {
     const message =

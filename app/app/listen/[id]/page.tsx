@@ -56,9 +56,18 @@ export async function generateMetadata({
   }
   if (!doc) {
     const fallback = new URL("/og", "https://www.voxyfi.com").toString()
+    const fallbackAlt =
+      "VOXYFI — turn anything you read into natural-sounding audio."
     return {
-      openGraph: { images: [{ url: fallback, width: 1200, height: 630 }] },
-      twitter: { card: "summary_large_image", images: [fallback] },
+      openGraph: {
+        images: [{ url: fallback, width: 1200, height: 630, alt: fallbackAlt }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        site: "@voxyfi",
+        creator: "@voxyfi",
+        images: [{ url: fallback, alt: fallbackAlt }],
+      },
     }
   }
 
@@ -78,6 +87,18 @@ export async function generateMetadata({
   const title = `${doc.title} — VOXYFI`
   const description = `Listen to "${doc.title}" with natural-sounding AI narration, word-by-word highlighting, and instant translation on VOXYFI.`
 
+  // Descriptive alt text for the share image so screen readers (and platforms
+  // that surface alt text) get meaningful context, not just a filename. Built
+  // from the same facts shown on the card: kind, language, length, and byline.
+  const kind = kindLabel(doc.sourceType, doc.originalMime)
+  const altParts = [`VOXYFI share card for the ${kind.toLowerCase()} "${doc.title}"`]
+  if (byline) altParts.push(`from ${byline}`)
+  const details: string[] = []
+  if (doc.sourceLang) details.push(`in ${languageLabel(doc.sourceLang)}`)
+  if (doc.wordCount) details.push(`${doc.wordCount.toLocaleString()} words`)
+  if (details.length) altParts.push(`(${details.join(", ")})`)
+  const imageAlt = `${altParts.join(" ")}.`
+
   return {
     title,
     description,
@@ -85,13 +106,15 @@ export async function generateMetadata({
       type: "article",
       title,
       description,
-      images: [{ url: image, width: 1200, height: 630, alt: doc.title }],
+      images: [{ url: image, width: 1200, height: 630, alt: imageAlt }],
     },
     twitter: {
       card: "summary_large_image",
+      site: "@voxyfi",
+      creator: "@voxyfi",
       title,
       description,
-      images: [image],
+      images: [{ url: image, alt: imageAlt }],
     },
   }
 }
