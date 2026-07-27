@@ -80,10 +80,17 @@ export function AddSheet({
     driveFiles,
     selectDriveFile,
     closeDrive,
-  } = useCloudImport((id) => {
-    onClose()
-    router.push(`/app/listen/${id}`)
-  })
+  } = useCloudImport(
+    (id) => {
+      onClose()
+      router.push(`/app/listen/${id}`)
+    },
+    {
+      // Background delta-sync refreshed one or more Drive documents — refresh
+      // the library so the updated content/covers show without a manual reload.
+      onSynced: () => router.refresh(),
+    },
+  )
 
   // Drive enter/exit animation.
   useEffect(() => {

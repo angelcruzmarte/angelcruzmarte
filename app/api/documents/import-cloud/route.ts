@@ -1,4 +1,4 @@
-import { createDocument } from "@/app/actions/documents"
+import { createDocument, resyncCloudDocument } from "@/app/actions/documents"
 import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
 import { generateAndStoreDocumentThumbnail } from "@/lib/document-thumbnail"
@@ -19,6 +19,16 @@ type Body = {
   auth?: string
   // Optional explicit MIME type from the picker.
   mimeType?: string
+  // ----- Cloud delta-sync origin -----
+  // Provider id + the provider's stable file id + its change token (Drive
+  // modifiedTime / OneDrive eTag / Dropbox rev). Persisted so we can detect
+  // upstream changes later and re-import in place.
+  provider?: string
+  fileId?: string
+  revision?: string
+  // When present, re-sync (update in place) this existing document instead of
+  // creating a new one. Ownership + file id are re-checked server-side.
+  docId?: number
 }
 
 export async function POST(req: Request) {
@@ -74,10 +84,46 @@ export async function POST(req: Request) {
       body.mimeType || res.headers.get("content-type") || ""
 
     const { title, text } = await parseDocumentBuffer(name, mimeType, buffer)
+
+    const provider = (body.provider ?? "").trim() || null
+    const fileId = (body.fileId ?? "").trim() || null
+    const revision = (body.revision ?? "").trim() || null
+
+    // Delta-sync path: the upstream file changed, so update the existing
+    // document in place (revision-guarded, ownership-scoped) and force a fresh
+    // cover instead of creating a duplicate.
+    if (body.docId && fileId) {
+      const updatedId = await resyncCloudDocument({
+        docId: body.docId,
+        cloudFileId: fileId,
+        cloudRevision: revision ?? "",
+        title,
+        content: text,
+      })
+      if (!updatedId) {
+        return NextResponse.json(
+          { error: "That document could not be re-synced." },
+          { status: 404 },
+        )
+      }
+      await generateAndStoreDocumentThumbnail({
+        userId: user.id,
+        docId: updatedId,
+        buffer,
+        name,
+        mimeType,
+        force: true,
+      })
+      return NextResponse.json({ id: updatedId, resynced: true })
+    }
+
     const doc = await createDocument({
       title,
       content: text,
       sourceType: "file",
+      cloudProvider: provider,
+      cloudFileId: fileId,
+      cloudRevision: revision,
     })
 
     // Every cloud import (Google Drive, OneDrive, Dropbox, …) runs through the

@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/backfill-thumbnails",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-cloud",
+      "schedule": "0 9 * * *"
     }
   ]
 }

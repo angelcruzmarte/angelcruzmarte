@@ -38,6 +38,11 @@ export type ThumbnailInput = {
   name?: string | null
   /** Explicit MIME type when known (from the picker / upload / response). */
   mimeType?: string | null
+  /**
+   * Re-render and replace the cover even if one already exists. Used by cloud
+   * delta-sync when the upstream file changed. Default false (idempotent).
+   */
+  force?: boolean
 }
 
 function isPdf(name: string, mime: string): boolean {
@@ -105,7 +110,9 @@ export async function generateAndStoreDocumentThumbnail(
       .where(and(eq(document.id, docId), eq(document.userId, userId)))
       .limit(1)
     if (!existing) return null
-    if (existing.thumbnailUrl) return existing.thumbnailUrl
+    // Skip when a cover already exists — unless the caller forces a refresh
+    // (delta-sync after the upstream cloud file changed).
+    if (existing.thumbnailUrl && !input.force) return existing.thumbnailUrl
 
     const jpeg = await renderCoverJpeg(buffer, name, mime)
     if (!jpeg || jpeg.byteLength === 0) return null

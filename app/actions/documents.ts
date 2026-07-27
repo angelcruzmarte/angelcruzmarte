@@ -103,6 +103,10 @@ export async function createDocument(input: {
   originalUrl?: string | null
   originalMime?: string | null
   sourceLang?: string | null
+  // Cloud delta-sync origin (set by the cloud import route).
+  cloudProvider?: string | null
+  cloudFileId?: string | null
+  cloudRevision?: string | null
 }) {
   const userId = await getUserId()
   const title = input.title.trim() || "Untitled"
@@ -120,6 +124,9 @@ export async function createDocument(input: {
     }
   }
 
+  // A document that carries cloud origin is considered "synced as of now".
+  const isCloud = Boolean(input.cloudProvider && input.cloudFileId)
+
   const [doc] = await db
     .insert(document)
     .values({
@@ -132,11 +139,85 @@ export async function createDocument(input: {
       originalMime: input.originalMime ?? null,
       sourceLang,
       wordCount: countWords(content),
+      cloudProvider: input.cloudProvider ?? null,
+      cloudFileId: input.cloudFileId ?? null,
+      cloudRevision: input.cloudRevision ?? null,
+      lastSyncedAt: isCloud ? new Date() : null,
     })
     .returning()
 
   revalidatePath("/app/library")
   return doc
+}
+
+/**
+ * Lists the current user's documents that originated from a given cloud
+ * provider, with just the fields delta-sync needs to detect upstream changes.
+ * The client compares each `cloudRevision` against the provider's live change
+ * token (e.g. Drive modifiedTime) and re-imports the ones that differ.
+ */
+export async function getCloudTrackedDocuments(provider: string) {
+  const userId = await getUserId()
+  return db
+    .select({
+      id: document.id,
+      cloudFileId: document.cloudFileId,
+      cloudRevision: document.cloudRevision,
+    })
+    .from(document)
+    .where(
+      and(
+        eq(document.userId, userId),
+        eq(document.cloudProvider, provider),
+        isNull(document.deletedAt),
+        isNotNull(document.cloudFileId),
+      ),
+    )
+}
+
+/**
+ * Updates an existing cloud-sourced document in place after its upstream file
+ * changed (delta-sync). Refreshes the content, word count, and stored revision,
+ * and stamps `lastSyncedAt`. Ownership-scoped and revision-guarded: it only
+ * applies when the document still belongs to the user and carries the expected
+ * cloud file id, so a stale client can't clobber an unrelated document. Returns
+ * the document id on success, or null when nothing was updated.
+ */
+export async function resyncCloudDocument(input: {
+  docId: number
+  cloudFileId: string
+  cloudRevision: string
+  title: string
+  content: string
+}) {
+  const userId = await getUserId()
+  const content = input.content.trim()
+  if (!content) return null
+
+  const rows = await db
+    .update(document)
+    .set({
+      title: input.title.trim() || "Untitled",
+      content,
+      wordCount: countWords(content),
+      cloudRevision: input.cloudRevision,
+      lastSyncedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(document.id, input.docId),
+        eq(document.userId, userId),
+        eq(document.cloudFileId, input.cloudFileId),
+        isNull(document.deletedAt),
+      ),
+    )
+    .returning({ id: document.id })
+
+  if (rows.length === 0) return null
+  revalidatePath("/app/library")
+  revalidatePath(`/app/listen/${input.docId}`)
+  return rows[0].id
 }
 
 /**

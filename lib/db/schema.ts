@@ -127,6 +127,18 @@ export const document = pgTable("document", {
   sourceLang: text("sourceLang"),
   wordCount: integer("wordCount").notNull().default(0),
   lastWord: integer("lastWord").notNull().default(0),
+  // ----- Cloud delta-sync (Google Drive / OneDrive / Dropbox) -----
+  // When a document originated from a cloud provider, we record enough to
+  // detect upstream changes and re-import in place. `cloudProvider` is the
+  // provider id ("google-drive" | "onedrive" | "dropbox"); `cloudFileId` is
+  // that provider's stable file id; `cloudRevision` is the change token we
+  // compare against (Drive modifiedTime, OneDrive eTag, Dropbox rev). All null
+  // for non-cloud sources (paste/type/link/direct upload).
+  cloudProvider: text("cloudProvider"),
+  cloudFileId: text("cloudFileId"),
+  cloudRevision: text("cloudRevision"),
+  // Last time we checked/synced this document against its cloud source.
+  lastSyncedAt: timestamp("lastSyncedAt"),
   // Soft-delete timestamp. Non-null means the document is in the trash and is
   // hidden from the library but restorable from the "Deleted Files" screen.
   deletedAt: timestamp("deletedAt"),

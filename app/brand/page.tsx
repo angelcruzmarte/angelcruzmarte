@@ -618,6 +618,119 @@ export default function BrandPage() {
         </div>
       </section>
 
+      <section className="border-t border-border bg-card">
+        <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6">
+          <SectionHeading eyebrow="Setup & automation" title="Imports, sync & scheduled jobs">
+            How cloud imports, automatic thumbnail generation, and delta-sync are
+            wired — and the environment variables that switch each piece on. Every
+            feature degrades gracefully: nothing here is required for the core app
+            to run.
+          </SectionHeading>
+
+          {/* Cloud import providers */}
+          <div className="mt-8">
+            <p className="text-sm font-semibold">Cloud import providers</p>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Each provider needs one public key from its developer console. Until
+              the key is set, the provider stays visible in the Add sheet with a
+              &ldquo;Set up&rdquo; hint instead of being clickable — so it turns on
+              automatically the moment the key is added, with no code change.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {[
+                {
+                  name: "Google Drive",
+                  env: "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
+                  sync: "Full delta-sync",
+                },
+                {
+                  name: "Dropbox",
+                  env: "NEXT_PUBLIC_DROPBOX_APP_KEY",
+                  sync: "Import + origin tracked",
+                },
+                {
+                  name: "Microsoft OneDrive",
+                  env: "NEXT_PUBLIC_ONEDRIVE_CLIENT_ID",
+                  sync: "Import + origin tracked",
+                },
+              ].map((p) => (
+                <Card key={p.env} className="p-4">
+                  <p className="text-sm font-medium">{p.name}</p>
+                  <code className="mt-2 block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                    {p.env}
+                  </code>
+                  <p className="mt-2 text-xs text-muted-foreground">{p.sync}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Delta-sync */}
+          <div className="mt-8">
+            <p className="text-sm font-semibold">How delta-sync works</p>
+            <ul className="mt-2 max-w-3xl space-y-2 text-sm text-muted-foreground">
+              <li>
+                On import, every cloud document records its origin — provider, file
+                id, and a change token (Drive{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                  modifiedTime
+                </code>
+                , OneDrive eTag, Dropbox rev).
+              </li>
+              <li>
+                When you reopen the Google Drive picker, VOXYFI silently compares
+                your tracked files against their live revisions and re-imports any
+                that changed — refreshing text and cover in place, no duplicates.
+                This reuses the token you just granted, so it needs no extra
+                consent.
+              </li>
+              <li>
+                Token-gated providers (Drive/OneDrive/Dropbox) can only be
+                re-fetched with a live user token, so the actual re-import runs
+                client-side on your next connect — never from a stored credential.
+              </li>
+            </ul>
+          </div>
+
+          {/* Scheduled jobs */}
+          <div className="mt-8">
+            <p className="text-sm font-semibold">Scheduled jobs (Vercel Cron)</p>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Two daily crons keep everything consistent. Both are secured by{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                CRON_SECRET
+              </code>{" "}
+              (sent as a Bearer token) and emit a structured JSON summary to the
+              logs and Vercel cron dashboard for monitoring.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {[
+                {
+                  path: "/api/cron/backfill-thumbnails",
+                  when: "Daily · 08:00 UTC",
+                  what: "Safety-net cover generation for any document missing a thumbnail but with retrievable original bytes. Batched, retry-guarded, idempotent.",
+                },
+                {
+                  path: "/api/cron/sync-cloud",
+                  when: "Daily · 09:00 UTC",
+                  what: "Delta-sync heartbeat: reports tracked vs. stale cloud documents per provider so drift is observable. Read-only and idempotent.",
+                },
+              ].map((c) => (
+                <Card key={c.path} className="p-4">
+                  <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                    {c.path}
+                  </code>
+                  <p className="mt-2 text-xs font-medium text-primary">{c.when}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {c.what}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span className="flex items-center gap-2">
