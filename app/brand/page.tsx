@@ -6,6 +6,7 @@ import { BrandLogo } from "@/components/brand-logo"
 import { LogoMark } from "@/components/logo-mark"
 import { AnimatedLogoMark } from "@/components/animated-logo-mark"
 import { ColorSwatch } from "@/components/brand/color-swatch"
+import { OgEmbed } from "@/components/brand/og-embed"
 import { Card } from "@/components/ui/card"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -596,6 +597,22 @@ export default function BrandPage() {
                   </div>
                 </Card>
               ))}
+            </div>
+
+            {/* One-click Copy Embed for the dynamic cards */}
+            <div className="mt-8">
+              <p className="text-sm font-semibold">Copy embed</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Compose a card, preview it live, and copy a ready-to-paste
+                snippet — Open Graph meta tags, an{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                  &lt;img&gt;
+                </code>{" "}
+                tag, Markdown, or the raw URL — in one click.
+              </p>
+              <div className="mt-4">
+                <OgEmbed />
+              </div>
             </div>
           </div>
         </div>

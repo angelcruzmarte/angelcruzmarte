@@ -48,6 +48,62 @@ const COLORS = [
   { name: "Ink", hex: "#0C1B14", css: "#0c1b14" },
 ]
 
+const SITE_URL = "https://www.voxyfi.com"
+
+// Structured data for rich search results. A single @graph links the
+// Organization, WebSite, and SoftwareApplication so Google can surface the
+// logo, name, description, and app details. Values mirror the approved
+// boilerplate and fast facts above so the page and markup never diverge.
+const PRESS_JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "VOXYFI",
+      url: SITE_URL,
+      logo: {
+        "@type": "ImageObject",
+        url: `${SITE_URL}/icon-1024.png`,
+        width: 1024,
+        height: 1024,
+      },
+      image: `${SITE_URL}/opengraph-image.png`,
+      description:
+        "VOXYFI turns anything you read — PDFs, documents, articles, and web pages — into natural, human-quality audio you can listen to anywhere, in dozens of languages.",
+      contactPoint: {
+        "@type": "ContactPoint",
+        contactType: "press",
+        email: PRESS_EMAIL,
+        url: `${SITE_URL}/press`,
+      },
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: SITE_URL,
+      name: "VOXYFI",
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "VOXYFI",
+      operatingSystem: "Web, iOS, Android",
+      applicationCategory: "ProductivityApplication",
+      url: SITE_URL,
+      description:
+        "A listening app for everything you'd normally read. Upload a PDF, paste a link, or import a document and VOXYFI reads it aloud in a natural voice — following along on the original page, translating on the fly, and syncing playback across phone, browser, and Apple Watch.",
+      publisher: { "@id": `${SITE_URL}/#organization` },
+      screenshot: SCREENSHOTS.map((s) => `${SITE_URL}${s.src}`),
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+    },
+  ],
+}
+
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
     <div className="max-w-2xl">
@@ -61,6 +117,11 @@ function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: 
 export default function PressPage() {
   return (
     <div className="min-h-screen">
+      {/* Organization + SoftwareApplication structured data for rich results. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(PRESS_JSON_LD) }}
+      />
       <SiteHeader />
 
       {/* Hero */}

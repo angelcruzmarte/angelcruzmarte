@@ -1,6 +1,11 @@
 import { createDocument } from "@/app/actions/documents"
 import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
+import { renderPdfFirstPageToJpegBuffer } from "@/lib/pdf-thumbnail-server"
+import { db } from "@/lib/db"
+import { document } from "@/lib/db/schema"
+import { and, eq } from "drizzle-orm"
+import { put } from "@vercel/blob"
 import { NextResponse } from "next/server"
 
 // Downloading + parsing large PDFs/EPUBs can take a moment.
@@ -78,6 +83,43 @@ export async function POST(req: Request) {
       content: text,
       sourceType: "file",
     })
+
+    // Automatically render a high-quality first-page thumbnail on the server so
+    // cloud-imported PDFs (e.g. Google Drive) get a real branded preview right
+    // away — for the library grid and the /og share card — without depending on
+    // the client-side self-heal path (which never fires here because we only
+    // store extracted text, not the original PDF). Best-effort: any failure
+    // leaves the document usable with the logo fallback.
+    const isPdf =
+      mimeType.includes("pdf") || /\.pdf$/i.test(name)
+    if (isPdf) {
+      try {
+        const jpeg = await renderPdfFirstPageToJpegBuffer(buffer, 640)
+        if (jpeg && jpeg.byteLength > 0) {
+          const blob = await put(
+            `documents/${user.id}/thumbnails/${doc.id}-${Date.now()}.jpg`,
+            jpeg,
+            {
+              access: "public",
+              addRandomSuffix: true,
+              contentType: "image/jpeg",
+            },
+          )
+          await db
+            .update(document)
+            .set({ thumbnailUrl: blob.url, updatedAt: new Date() })
+            .where(
+              and(eq(document.id, doc.id), eq(document.userId, user.id)),
+            )
+        }
+      } catch (thumbErr) {
+        console.log(
+          "[v0] cloud import thumbnail skipped:",
+          thumbErr instanceof Error ? thumbErr.message : String(thumbErr),
+        )
+      }
+    }
+
     return NextResponse.json({ id: doc.id })
   } catch (err) {
     const message =
