@@ -22,6 +22,9 @@ const bookCardColumns = {
   description: book.description,
   excerpt: book.excerpt,
   priceInCents: book.priceInCents,
+  fulfillment: book.fulfillment,
+  isbn: book.isbn,
+  buyUrl: book.buyUrl,
   coverImageUrl: book.coverImageUrl,
   gutenbergId: book.gutenbergId,
   coverColor: book.coverColor,
@@ -321,6 +324,15 @@ export async function createBookCheckout(bookId: number) {
   const target = await getBook(bookId)
   if (!target) return { error: "Book not found." }
 
+  // Guardrail: commercial (affiliate) titles are never sold through our Stripe
+  // checkout — they're purchased on the partner store. The client should route
+  // these to the affiliate buy link instead of calling this action.
+  if (target.fulfillment === "affiliate") {
+    return {
+      error: "This title is sold on our partner bookstore, not in-app.",
+    }
+  }
+
   if (await ownsBook(bookId)) {
     // Already owned — send them straight to listening.
     return { url: `${getBaseUrl()}/app/listen/book/${bookId}` }
@@ -520,7 +532,11 @@ export async function createCartCheckout(bookIds: number[]) {
 
   const rows = await db.select().from(book).where(inArray(book.id, uniqueIds))
   const ownedIds = await getOwnedBookIds()
-  const toBuy = rows.filter((b) => !ownedIds.has(b.id))
+  // Skip already-owned titles AND affiliate titles (which are never charged
+  // in-app — they're bought on the partner store).
+  const toBuy = rows.filter(
+    (b) => !ownedIds.has(b.id) && b.fulfillment !== "affiliate",
+  )
 
   if (toBuy.length === 0) {
     // Everything in the cart is already owned — nothing to charge.

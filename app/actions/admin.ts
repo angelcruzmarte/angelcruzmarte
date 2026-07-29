@@ -11,7 +11,7 @@ import {
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
-import { count, desc, eq, isNotNull, sql } from "drizzle-orm"
+import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 async function requireAdmin() {
@@ -392,5 +392,160 @@ export async function setUserRole(userId: string, role: "admin" | "user") {
     .set({ role, updatedAt: new Date() })
     .where(eq(userTable.id, userId))
   revalidatePath("/admin/subscribers")
+  return { success: true }
+}
+
+// ----- Commercial (affiliate) book management -----
+
+export type AdminBook = {
+  id: number
+  title: string
+  author: string
+  category: string
+  description: string
+  excerpt: string
+  fulfillment: string
+  isbn: string | null
+  buyUrl: string | null
+  sampleText: string | null
+  priceInCents: number
+  coverImageUrl: string | null
+  coverColor: string
+  accentColor: string
+  featured: boolean
+  createdAt: Date
+}
+
+/** All commercial (affiliate) titles, newest first, for the admin manager. */
+export async function listCommercialBooks(): Promise<AdminBook[]> {
+  await requireAdmin()
+  return db
+    .select({
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      category: book.category,
+      description: book.description,
+      excerpt: book.excerpt,
+      fulfillment: book.fulfillment,
+      isbn: book.isbn,
+      buyUrl: book.buyUrl,
+      sampleText: book.sampleText,
+      priceInCents: book.priceInCents,
+      coverImageUrl: book.coverImageUrl,
+      coverColor: book.coverColor,
+      accentColor: book.accentColor,
+      featured: book.featured,
+      createdAt: book.createdAt,
+    })
+    .from(book)
+    .where(eq(book.fulfillment, "affiliate"))
+    .orderBy(desc(book.createdAt))
+}
+
+export type CommercialBookInput = {
+  title: string
+  author: string
+  category?: string
+  description: string
+  excerpt: string
+  sampleText: string
+  isbn?: string | null
+  buyUrl?: string | null
+  coverImageUrl?: string | null
+  coverColor?: string
+  accentColor?: string
+  featured?: boolean
+}
+
+function cleanBookInput(input: CommercialBookInput) {
+  const title = input.title.trim()
+  const author = input.author.trim()
+  const description = input.description.trim()
+  const excerpt = input.excerpt.trim()
+  const sampleText = input.sampleText.trim()
+  if (!title) throw new Error("Title is required.")
+  if (!author) throw new Error("Author is required.")
+  if (!sampleText) throw new Error("A listenable sample is required.")
+  const isbn = (input.isbn || "").replace(/[^0-9Xx]/g, "") || null
+  const buyUrl = (input.buyUrl || "").trim() || null
+  if (!isbn && !buyUrl) {
+    throw new Error("Provide an ISBN or an explicit buy URL for the partner store.")
+  }
+  return {
+    title,
+    author,
+    category: input.category?.trim() || "General",
+    description: description || excerpt,
+    // `excerpt` doubles as the marketing blurb and sample fallback.
+    excerpt: excerpt || sampleText.slice(0, 400),
+    sampleText,
+    isbn,
+    buyUrl,
+    coverImageUrl: (input.coverImageUrl || "").trim() || null,
+    coverColor: input.coverColor?.trim() || "#1f3a5f",
+    accentColor: input.accentColor?.trim() || "#f4b740",
+    featured: Boolean(input.featured),
+  }
+}
+
+/** Creates a commercial (affiliate) book. Never stores full copyrighted text. */
+export async function createCommercialBook(input: CommercialBookInput) {
+  await requireAdmin()
+  try {
+    const v = cleanBookInput(input)
+    const [row] = await db
+      .insert(book)
+      .values({
+        ...v,
+        fulfillment: "affiliate",
+        // Affiliate titles are not sold in-app, so price/content stay empty.
+        priceInCents: 0,
+        content: "",
+      })
+      .returning({ id: book.id })
+    revalidatePath("/app/books")
+    revalidatePath("/admin/books")
+    return { id: row?.id }
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Could not create the book.",
+    }
+  }
+}
+
+/** Updates an existing commercial (affiliate) book. */
+export async function updateCommercialBook(
+  id: number,
+  input: CommercialBookInput,
+) {
+  await requireAdmin()
+  try {
+    const v = cleanBookInput(input)
+    await db
+      .update(book)
+      .set(v)
+      .where(and(eq(book.id, id), eq(book.fulfillment, "affiliate")))
+    revalidatePath("/app/books")
+    revalidatePath(`/app/books/${id}`)
+    revalidatePath("/admin/books")
+    return { success: true }
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Could not update the book.",
+    }
+  }
+}
+
+/** Deletes a commercial (affiliate) book. */
+export async function deleteCommercialBook(id: number) {
+  await requireAdmin()
+  await db
+    .delete(book)
+    .where(and(eq(book.id, id), eq(book.fulfillment, "affiliate")))
+  revalidatePath("/app/books")
+  revalidatePath("/admin/books")
   return { success: true }
 }

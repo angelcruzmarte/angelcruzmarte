@@ -192,10 +192,28 @@ export const book = pgTable("book", {
   category: text("category").notNull().default("General"),
   description: text("description").notNull(),
   excerpt: text("excerpt").notNull(),
-  // Full book text used for text-to-speech once purchased.
+  // Full book text used for text-to-speech once purchased. Only populated for
+  // in-app (public-domain / licensed / owned) titles. Affiliate titles never
+  // store full copyrighted text — see `fulfillment` below.
   content: text("content").notNull().default(""),
-  // One-time purchase price in cents.
+  // One-time purchase price in cents. Ignored for affiliate titles (the price
+  // lives on the partner store).
   priceInCents: integer("priceInCents").notNull().default(499),
+  // How this title is fulfilled:
+  //  - "in_app"   → sold via our Stripe checkout; full text streamed in-app
+  //                 (public-domain / licensed / owned inventory).
+  //  - "affiliate"→ commercial title; users listen to a FREE sample in-app and
+  //                 buy the full book on the partner store (Bookshop.org). We
+  //                 never serve the full copyrighted text.
+  fulfillment: text("fulfillment").notNull().default("in_app"),
+  // 13-digit ISBN, used to build a deep affiliate link to the exact edition.
+  isbn: text("isbn"),
+  // Free, in-app listenable sample/excerpt for affiliate titles (publisher- or
+  // admin-provided). Distinct from `excerpt`, which is a short marketing blurb.
+  sampleText: text("sampleText"),
+  // Optional explicit buy URL. When null, an affiliate link is derived from
+  // isbn/title at render time.
+  buyUrl: text("buyUrl"),
   // Real cover image URL (e.g. Project Gutenberg). Falls back to the color
   // design when null.
   coverImageUrl: text("coverImageUrl"),
@@ -318,7 +336,8 @@ export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
 // Lightweight book shape for listings/storefront: everything except the heavy
-// full-text `content` column, which is only needed on the reader/detail pages.
-export type BookCard = Omit<Book, "content">
+// full-text `content` and `sampleText` columns, which are only needed on the
+// reader/detail pages.
+export type BookCard = Omit<Book, "content" | "sampleText">
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect

@@ -33,6 +33,11 @@ export default async function BookListenPage({
   const [row] = await db.select().from(book).where(eq(book.id, bookId)).limit(1)
   if (!row) notFound()
 
+  // Defensive: commercial (affiliate) titles never have full in-app text, so
+  // the full-book player is never valid for them — send back to the detail
+  // page (with its free sample + partner buy link).
+  if (row.fulfillment === "affiliate") redirect(`/app/books/${bookId}`)
+
   return (
     <ListenPlayer
       title={row.title}

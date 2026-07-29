@@ -33,8 +33,13 @@ export default async function BookDetailPage({
   const book = await getBook(bookId)
   if (!book) notFound()
 
+  // Commercial titles are fulfilled by our partner bookstore (Bookshop.org):
+  // users listen to a free in-app sample and buy the full book on the partner
+  // store. We never sell them via Stripe or serve their full copyrighted text.
+  const isAffiliate = book.fulfillment === "affiliate"
+
   // Fallback grant in case the webhook hasn't landed yet after redirect.
-  if (purchased && session_id) {
+  if (purchased && session_id && !isAffiliate) {
     await confirmBookCheckout(session_id)
   }
 
@@ -78,7 +83,11 @@ export default async function BookDetailPage({
             {book.title}
           </h1>
           <p className="mt-1 text-muted-foreground">{book.author}</p>
-          {owned ? (
+          {isAffiliate ? (
+            <p className="mt-3 text-sm font-medium text-muted-foreground">
+              Free sample to listen · Full book on Bookshop.org
+            </p>
+          ) : owned ? (
             <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
               <BadgeCheck className="h-4 w-4" />
               In your library
@@ -88,18 +97,35 @@ export default async function BookDetailPage({
               {formatPrice(book.priceInCents)}
             </p>
           )}
-          <BuyBookButton
-            bookId={book.id}
-            priceInCents={book.priceInCents}
-            owned={owned}
-            className="mt-3 gap-2"
-          />
-          {!owned && (
+
+          {isAffiliate ? (
+            // Commercial title: primary action is the affiliate buy link.
             <BuyElsewhereButton
               title={book.title}
               author={book.author}
-              className="mt-2 w-full sm:w-auto"
+              isbn={book.isbn}
+              buyUrl={book.buyUrl}
+              primary
+              className="mt-3 w-full sm:w-auto"
             />
+          ) : (
+            <>
+              <BuyBookButton
+                bookId={book.id}
+                priceInCents={book.priceInCents}
+                owned={owned}
+                className="mt-3 gap-2"
+              />
+              {!owned && (
+                <BuyElsewhereButton
+                  title={book.title}
+                  author={book.author}
+                  isbn={book.isbn}
+                  buyUrl={book.buyUrl}
+                  className="mt-2 w-full sm:w-auto"
+                />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -107,26 +133,44 @@ export default async function BookDetailPage({
       <p className="mt-6 leading-relaxed text-pretty">{book.description}</p>
 
       <h2 className="mb-2 mt-8 text-lg font-semibold">
-        {owned ? "Listen to the full book" : "Listen to a preview"}
+        {isAffiliate
+          ? "Listen to a sample"
+          : owned
+            ? "Listen to the full book"
+            : "Listen to a preview"}
       </h2>
 
-      {!owned && (
+      {isAffiliate ? (
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
           <Sparkles className="h-4 w-4 shrink-0" />
-          Buy this book to unlock the full text-to-speech audio and save it to
-          your library.
+          Enjoy this free sample, then get the full book from our partner
+          Bookshop.org — supporting independent bookstores.
         </div>
+      ) : (
+        !owned && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
+            <Sparkles className="h-4 w-4 shrink-0" />
+            Buy this book to unlock the full text-to-speech audio and save it to
+            your library.
+          </div>
+        )
       )}
 
       <ListenPlayer
         title={book.title}
         author={book.author}
-        content={owned ? book.content : book.excerpt.slice(0, 600)}
+        content={
+          isAffiliate
+            ? book.sampleText?.trim() || book.excerpt
+            : owned
+              ? book.content
+              : book.excerpt.slice(0, 600)
+        }
         backHref="/app/books"
         backLabel="Book Store"
         premium={premiumNarration}
-        bookId={owned ? book.id : undefined}
-        allowDownload={owned}
+        bookId={!isAffiliate && owned ? book.id : undefined}
+        allowDownload={!isAffiliate && owned}
         initialListenSeconds={initialListenSeconds}
       />
     </div>

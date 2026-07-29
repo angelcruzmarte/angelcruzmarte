@@ -10,6 +10,7 @@ const ADMIN_SECTIONS = [
   "/subscribers",
   "/users",
   "/promotions",
+  "/books",
   "/funnel",
 ]
 

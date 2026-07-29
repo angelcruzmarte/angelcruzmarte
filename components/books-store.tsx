@@ -520,6 +520,7 @@ function BookHero({
 }) {
   const { has, add, remove } = useCart()
   const inCart = has(book.id)
+  const isAffiliate = book.fulfillment === "affiliate"
 
   return (
     <section
@@ -563,6 +564,14 @@ function BookHero({
               >
                 <Headphones className="h-4 w-4" />
                 Listen now
+              </Link>
+            ) : isAffiliate ? (
+              <Link
+                href={`/app/books/${book.id}`}
+                className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Headphones className="h-4 w-4" />
+                Listen to sample
               </Link>
             ) : inCart ? (
               <button
@@ -746,6 +755,7 @@ function StoreBookCard({
 }) {
   const { has, add, remove } = useCart()
   const inCart = has(book.id)
+  const isAffiliate = book.fulfillment === "affiliate"
 
   return (
     <div className="group flex flex-col gap-2">
@@ -770,7 +780,7 @@ function StoreBookCard({
               : "bg-card/90 text-foreground backdrop-blur",
           )}
         >
-          {owned ? "Owned" : formatPrice(book.priceInCents)}
+          {owned ? "Owned" : isAffiliate ? "Sample" : formatPrice(book.priceInCents)}
         </span>
       </div>
       <div className="min-w-0">
@@ -788,6 +798,14 @@ function StoreBookCard({
         >
           <Headphones className="h-3.5 w-3.5" />
           Listen
+        </Link>
+      ) : isAffiliate ? (
+        <Link
+          href={`/app/books/${book.id}`}
+          className="flex h-8 items-center justify-center gap-1.5 rounded-full bg-secondary text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80"
+        >
+          <Headphones className="h-3.5 w-3.5" />
+          Sample
         </Link>
       ) : inCart ? (
         <button

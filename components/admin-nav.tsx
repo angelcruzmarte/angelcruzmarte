@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  BookOpen,
   CircleDollarSign,
   Filter,
   LayoutDashboard,
@@ -19,6 +20,7 @@ const LINKS = [
   { href: "/finance", label: "Finance", icon: CircleDollarSign },
   { href: "/funnel", label: "Pricing funnel", icon: Filter },
   { href: "/promotions", label: "Promotions", icon: Tag },
+  { href: "/books", label: "Books", icon: BookOpen },
   { href: "/users", label: "Users", icon: Users },
   { href: "/content", label: "Content", icon: Library },
 ]

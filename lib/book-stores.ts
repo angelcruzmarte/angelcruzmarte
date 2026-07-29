@@ -69,15 +69,55 @@ export const BOOK_STORES: BookStore[] = [
 ]
 
 /**
+ * Optional Bookshop.org affiliate/partner id. When set, buy links become
+ * commission-earning affiliate links; when absent, they gracefully fall back to
+ * plain Bookshop.org links so the feature still works before the partnership is
+ * finalized. Exposed as NEXT_PUBLIC_ so it can be read on the client too.
+ */
+export const BOOKSHOP_AFFILIATE_ID =
+  process.env.NEXT_PUBLIC_BOOKSHOP_AFFILIATE_ID || ""
+
+/**
+ * Builds the best Bookshop.org buy link for a title:
+ *  - With an ISBN → a deep link to that exact edition
+ *    (`/a/<affiliate>/<isbn>` when an affiliate id exists, otherwise
+ *    `/book/<isbn>`).
+ *  - Without an ISBN → a keyword search (affiliate-tagged when possible).
+ * An explicit `buyUrl` override always wins and is returned as-is.
+ */
+export function bookshopBuyUrl(input: {
+  title: string
+  author?: string | null
+  isbn?: string | null
+  buyUrl?: string | null
+}) {
+  if (input.buyUrl && input.buyUrl.trim()) return input.buyUrl.trim()
+
+  const isbn = (input.isbn || "").replace(/[^0-9Xx]/g, "")
+  const aff = BOOKSHOP_AFFILIATE_ID
+
+  if (isbn) {
+    return aff
+      ? `https://bookshop.org/a/${aff}/${isbn}`
+      : `https://bookshop.org/book/${isbn}`
+  }
+
+  const query = encodeURIComponent(
+    [input.title, input.author].filter(Boolean).join(" ").trim(),
+  )
+  return aff
+    ? `https://bookshop.org/a/${aff}/search?keywords=${query}`
+    : `https://bookshop.org/search?keywords=${query}`
+}
+
+/**
  * The single bookstore the app is connected to for one-tap buying (like
  * Speechify). Bookshop.org carries essentially every in-print book, so users
- * can buy any title without choosing a retailer.
+ * can buy any title without choosing a retailer. Affiliate-tagged when an id is
+ * configured.
  */
 export function bookstoreUrl(title: string, author?: string | null) {
-  const query = encodeURIComponent(
-    [title, author].filter(Boolean).join(" ").trim(),
-  )
-  return `https://bookshop.org/search?keywords=${query}`
+  return bookshopBuyUrl({ title, author })
 }
 
 /** Returns store links for a specific book (title + author). */
