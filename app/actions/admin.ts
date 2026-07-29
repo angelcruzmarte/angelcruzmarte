@@ -14,6 +14,15 @@ import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
 import { runLinkCheck } from "@/lib/book-link-check"
 import {
+  countPrunable,
+  fetchPrunable,
+  getRetentionPolicy,
+  prunePolicy,
+  retentionCutoff,
+  saveRetentionPolicy,
+  type AuditRetentionPolicy,
+} from "@/lib/audit-retention"
+import {
   diffBookChanges,
   logBookAudit,
   type AuditActor,
@@ -1182,6 +1191,23 @@ export async function exportAuditLogCsv(
     .orderBy(desc(bookAuditLog.createdAt), desc(bookAuditLog.id))
     .limit(10000)
 
+  return auditRowsToCsv(rows)
+}
+
+type AuditCsvRow = {
+  createdAt: Date
+  action: string
+  bookId: number | null
+  bookTitle: string
+  field: string | null
+  oldValue: string | null
+  newValue: string | null
+  actorName: string
+  actorEmail: string
+}
+
+/** Serializes audit rows to a CSV string (RFC-4180 quoting). */
+function auditRowsToCsv(rows: AuditCsvRow[]): string {
   const header = [
     "Timestamp",
     "Action",
@@ -1217,6 +1243,124 @@ export async function exportAuditLogCsv(
     )
   }
   return lines.join("\r\n")
+}
+
+// ----- Audit log retention policy -----
+
+export type RetentionStats = {
+  policy: AuditRetentionPolicy
+  /** Total audit entries currently stored. */
+  totalEntries: number
+  /** Entries eligible for pruning under the current policy right now. */
+  prunable: number
+  /** The cutoff date (entries older than this are prunable). */
+  cutoff: Date
+  /** Timestamp of the oldest retained entry, if any. */
+  oldestEntry: Date | null
+}
+
+/** Reads the retention policy plus live stats for the admin settings card. */
+export async function getRetentionStats(): Promise<RetentionStats> {
+  await requireAdmin()
+  const policy = await getRetentionPolicy()
+  const now = new Date()
+
+  const [totalRow] = await db.select({ v: count() }).from(bookAuditLog)
+  const [oldestRow] = await db
+    .select({ v: sql<string | null>`min(${bookAuditLog.createdAt})` })
+    .from(bookAuditLog)
+
+  const prunable = await countPrunable(policy, now)
+  const oldestRaw = oldestRow?.v ?? null
+
+  return {
+    policy,
+    totalEntries: totalRow?.v ?? 0,
+    prunable,
+    cutoff: retentionCutoff(policy.months, now),
+    oldestEntry: oldestRaw ? new Date(oldestRaw) : null,
+  }
+}
+
+/** Updates the retention policy (admin only) and returns fresh stats. */
+export async function updateRetentionPolicy(
+  input: Partial<AuditRetentionPolicy>,
+): Promise<RetentionStats> {
+  const admin = await requireAdmin()
+  const saved = await saveRetentionPolicy(input)
+  // Record the configuration change itself as a permanent (critical) entry.
+  await logBookAudit(actorOf(admin), [
+    {
+      bookId: null,
+      bookTitle: "Audit retention policy",
+      action: "retention_prune",
+      field: "policy",
+      oldValue: null,
+      newValue: saved.enabled
+        ? `Auto-prune ON · keep ${saved.months} months · exempt critical: ${saved.exemptCritical ? "yes" : "no"}`
+        : `Auto-prune OFF · keep ${saved.months} months · exempt critical: ${saved.exemptCritical ? "yes" : "no"}`,
+    },
+  ])
+  revalidatePath("/admin/audit")
+  return getRetentionStats()
+}
+
+/**
+ * Archival export of exactly the entries eligible for pruning right now, in
+ * CSV or JSON. Intended to be downloaded BEFORE pruning.
+ */
+export async function exportPrunableAuditLog(
+  format: "csv" | "json" = "csv",
+): Promise<string> {
+  await requireAdmin()
+  const policy = await getRetentionPolicy()
+  const rows = await fetchPrunable(policy)
+  if (format === "json") {
+    return JSON.stringify(
+      {
+        exportedAt: new Date().toISOString(),
+        policy,
+        cutoff: retentionCutoff(policy.months).toISOString(),
+        count: rows.length,
+        entries: rows.map((r) => ({
+          ...r,
+          createdAt: r.createdAt.toISOString(),
+        })),
+      },
+      null,
+      2,
+    )
+  }
+  return auditRowsToCsv(rows)
+}
+
+/**
+ * Immediately prunes entries eligible under the current policy. This is
+ * destructive; callers must confirm and are encouraged to export first. The
+ * critical-event exemption still applies. Returns how many were removed.
+ */
+export async function pruneAuditLogNow(): Promise<{
+  deleted: number
+  stats: RetentionStats
+}> {
+  const admin = await requireAdmin()
+  const policy = await getRetentionPolicy()
+  const deleted = await prunePolicy(policy)
+  if (deleted > 0) {
+    // Permanent record of the prune (exempt from future pruning).
+    await logBookAudit(actorOf(admin), [
+      {
+        bookId: null,
+        bookTitle: "Audit log prune (manual)",
+        action: "retention_prune",
+        field: null,
+        oldValue: null,
+        newValue: `Pruned ${deleted} entries older than ${policy.months} months${policy.exemptCritical ? " (critical events kept)" : ""}`,
+      },
+    ])
+  }
+  revalidatePath("/admin/audit")
+  return { deleted, stats: await getRetentionStats() }
 }
 
 export type IsbnMetadata = {

@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/check-book-links",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/prune-audit-log",
+      "schedule": "0 3 * * 0"
     }
   ]
 }

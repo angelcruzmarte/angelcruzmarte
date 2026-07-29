@@ -1,5 +1,10 @@
-import { listAuditActors, queryAuditLog } from "@/app/actions/admin"
+import {
+  getRetentionStats,
+  listAuditActors,
+  queryAuditLog,
+} from "@/app/actions/admin"
 import { AdminAuditLog } from "@/components/admin-audit-log"
+import { AdminAuditRetention } from "@/components/admin-audit-retention"
 
 export const dynamic = "force-dynamic"
 
@@ -20,9 +25,10 @@ export default async function AdminAuditPage({
   const page = Math.max(1, Number(first(sp.page)) || 1)
   const pageSize = Number(first(sp.pageSize)) || 50
 
-  const [result, actors] = await Promise.all([
+  const [result, actors, retention] = await Promise.all([
     queryAuditLog({ q, action, actor, page, pageSize }),
     listAuditActors(),
+    getRetentionStats(),
   ])
 
   return (
@@ -33,6 +39,9 @@ export default async function AdminAuditPage({
         who did what, when, and the before/after values. Search, filter, and
         export to CSV. Only admins can view this page.
       </p>
+      <div className="mt-8">
+        <AdminAuditRetention stats={retention} />
+      </div>
       <div className="mt-8">
         <AdminAuditLog
           result={result}

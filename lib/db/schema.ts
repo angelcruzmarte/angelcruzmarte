@@ -296,6 +296,14 @@ export const bookAuditLog = pgTable("book_audit_log", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 })
 
+// Generic key/value store for admin-configurable app settings (e.g. the audit
+// log retention policy). Values are JSON-encoded strings.
+export const appSetting = pgTable("app_setting", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+})
+
 // Per-user daily aggregate of listening time (seconds) and words listened.
 export const listeningStat = pgTable(
   "listening_stat",
@@ -386,3 +394,4 @@ export type BookCard = Omit<
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect
 export type BookAuditLog = typeof bookAuditLog.$inferSelect
+export type AppSetting = typeof appSetting.$inferSelect
