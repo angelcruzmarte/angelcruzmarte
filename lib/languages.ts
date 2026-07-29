@@ -19,6 +19,17 @@ export const READING_LANGUAGES = [
   { code: "ru", label: "Russian", name: "Russian" },
   { code: "tr", label: "Turkish", name: "Turkish" },
   { code: "pl", label: "Polish", name: "Polish" },
+  // Additional languages present in the public-domain catalog. These are
+  // display labels for the Book Store's language filter/badges; TTS still
+  // auto-detects the language for narration.
+  { code: "sv", label: "Swedish", name: "Swedish" },
+  { code: "fi", label: "Finnish", name: "Finnish" },
+  { code: "da", label: "Danish", name: "Danish" },
+  { code: "hu", label: "Hungarian", name: "Hungarian" },
+  { code: "el", label: "Greek", name: "Greek" },
+  { code: "la", label: "Latin", name: "Latin" },
+  { code: "cs", label: "Czech", name: "Czech" },
+  { code: "eo", label: "Esperanto", name: "Esperanto" },
 ] as const
 
 export type ReadingLanguageCode = (typeof READING_LANGUAGES)[number]["code"]
