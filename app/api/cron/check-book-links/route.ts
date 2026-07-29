@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     // Cap per run so a large catalog is covered gradually across days.
     const result = await runLinkCheck(undefined, 150)
     const summary = {
-      ok: true,
+      success: true,
       ...result,
       durationMs: Date.now() - startedAt,
       ranAt: new Date().toISOString(),

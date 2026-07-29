@@ -43,6 +43,7 @@ export async function runLinkCheck(ids?: number[], max = 100) {
 
   let ok = 0
   let broken = 0
+  let unknown = 0
   const now = new Date()
 
   // Small concurrency to be gentle on the partner store.
@@ -57,25 +58,37 @@ export async function runLinkCheck(ids?: number[], max = 100) {
           isbn: r.isbn,
           buyUrl: r.buyUrl,
         })
-        const healthy = await isUrlHealthy(url)
-        if (healthy) {
+        const verdict = await checkUrl(url)
+
+        if (verdict === "ok") {
           ok++
           await db
             .update(book)
             .set({ linkStatus: "ok", linkCheckedAt: now })
             .where(eq(book.id, r.id))
-        } else {
+        } else if (verdict === "broken") {
           broken++
           await db
             .update(book)
             .set({
               linkStatus: "broken",
               linkCheckedAt: now,
+              // Only auto-flag titles on an automatic status so a deliberate
+              // "unavailable"/"coming_soon"/etc. is never overwritten.
               ...(r.availability === "available" ||
               r.availability === "affiliate_only"
                 ? { availability: "needs_review" }
                 : {}),
             })
+            .where(eq(book.id, r.id))
+        } else {
+          // Inconclusive (bot-blocked / timeout / network). Record that we
+          // tried and mark for human review WITHOUT calling it broken, so we
+          // never hide a title on a false positive.
+          unknown++
+          await db
+            .update(book)
+            .set({ linkStatus: "needs_review", linkCheckedAt: now })
             .where(eq(book.id, r.id))
         }
       }),
@@ -83,11 +96,19 @@ export async function runLinkCheck(ids?: number[], max = 100) {
   }
 
   revalidatePath("/admin/books")
-  return { checked: rows.length, ok, broken }
+  return { checked: rows.length, ok, broken, unknown }
 }
 
-/** GET with a timeout; treats <400 as healthy. */
-async function isUrlHealthy(url: string): Promise<boolean> {
+type LinkVerdict = "ok" | "broken" | "unknown"
+
+/**
+ * Classifies a buy link. Bookshop.org (like many retailers) blocks datacenter
+ * traffic with 403/429, so a plain "status < 400" check produces false
+ * positives from serverless. We therefore treat only a definitive 404/410 as
+ * genuinely broken; 2xx/3xx as ok; and everything else (403/429/5xx/timeout/
+ * network error) as "unknown" — surfaced for review but never auto-hidden.
+ */
+async function checkUrl(url: string): Promise<LinkVerdict> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
   try {
@@ -95,12 +116,21 @@ async function isUrlHealthy(url: string): Promise<boolean> {
       method: "GET",
       redirect: "follow",
       signal: controller.signal,
-      headers: { "User-Agent": "VOXYFI-LinkChecker/1.0" },
+      // Browser-like headers reduce bot-blocking on the partner store.
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
       cache: "no-store",
     })
-    return res.status < 400
+    if (res.status === 404 || res.status === 410) return "broken"
+    if (res.status < 400) return "ok"
+    return "unknown"
   } catch {
-    return false
+    return "unknown"
   } finally {
     clearTimeout(timer)
   }

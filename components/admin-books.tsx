@@ -369,7 +369,8 @@ export function AdminBooks({
       afterBulk(`${n} title${n === 1 ? "" : "s"} ${published ? "published" : "hidden"}.`)
     })
   }
-  function bulkAvailability(availability: string) {
+  function bulkAvailability(availability: string | null) {
+    if (!availability) return
     const n = selected.size
     startTransition(async () => {
       await setBooksAvailability(ids(), availability)
@@ -387,7 +388,9 @@ export function AdminBooks({
     const n = selected.size
     startTransition(async () => {
       const res = await checkBookLinks(ids())
-      afterBulk(`Link check: ${res.ok} OK, ${res.broken} broken (of ${res.checked} affiliate of ${n}).`)
+      afterBulk(
+        `Link check: ${res.ok} OK, ${res.broken} broken, ${res.unknown} need review (checked ${res.checked} affiliate of ${n} selected).`,
+      )
     })
   }
   function bulkDelete() {
@@ -475,7 +478,7 @@ export function AdminBooks({
               <Label htmlFor="availability">Availability</Label>
               <Select
                 value={form.availability ?? "available"}
-                onValueChange={(v) => set("availability", v)}
+                onValueChange={(v) => v && set("availability", v)}
               >
                 <SelectTrigger id="availability">
                   <SelectValue />
@@ -595,7 +598,7 @@ export function AdminBooks({
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <Select value={query.source} onValueChange={(v) => pushParams({ source: v })}>
+          <Select value={query.source} onValueChange={(v) => v && pushParams({ source: v })}>
             <SelectTrigger className="w-36"><SelectValue placeholder="Source" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All sources</SelectItem>
@@ -603,7 +606,7 @@ export function AdminBooks({
               <SelectItem value="affiliate">Bookshop.org</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={query.status} onValueChange={(v) => pushParams({ status: v })}>
+          <Select value={query.status} onValueChange={(v) => v && pushParams({ status: v })}>
             <SelectTrigger className="w-32"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All status</SelectItem>
@@ -611,7 +614,7 @@ export function AdminBooks({
               <SelectItem value="hidden">Hidden</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={query.availability} onValueChange={(v) => pushParams({ availability: v })}>
+          <Select value={query.availability} onValueChange={(v) => v && pushParams({ availability: v })}>
             <SelectTrigger className="w-44"><SelectValue placeholder="Availability" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All availability</SelectItem>
@@ -909,7 +912,7 @@ export function AdminBooks({
                 <Label htmlFor="q-availability">Availability</Label>
                 <Select
                   value={quickForm.availability ?? "available"}
-                  onValueChange={(v) => setQuickForm((f) => ({ ...f, availability: v }))}
+                  onValueChange={(v) => v && setQuickForm((f) => ({ ...f, availability: v }))}
                 >
                   <SelectTrigger id="q-availability"><SelectValue /></SelectTrigger>
                   <SelectContent>
