@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Library,
   ScrollText,
+  Settings,
   Tag,
   Users,
 } from "lucide-react"
@@ -25,6 +26,7 @@ const LINKS = [
   { href: "/audit", label: "Audit log", icon: ScrollText },
   { href: "/users", label: "Users", icon: Users },
   { href: "/content", label: "Content", icon: Library },
+  { href: "/settings", label: "Settings", icon: Settings },
 ]
 
 export function AdminNav() {
