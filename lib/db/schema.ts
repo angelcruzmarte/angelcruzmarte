@@ -226,7 +226,18 @@ export const book = pgTable("book", {
   // hidden from the public store listing. Defaults true so existing books stay
   // visible.
   published: boolean("published").notNull().default(true),
+  // Merchandising status, independent of `published`. One of the values in
+  // lib/book-availability.ts (available, out_of_stock, affiliate_only,
+  // coming_soon, preorder, unavailable, needs_review, hidden).
+  availability: text("availability").notNull().default("available"),
+  // Health of the affiliate buy link, set by the broken-link checker:
+  // unknown | ok | broken | needs_review.
+  linkStatus: text("linkStatus").notNull().default("unknown"),
+  // When the buy link was last checked.
+  linkCheckedAt: timestamp("linkCheckedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
+  // Last edit/refresh time, for "last updated" sorting in admin.
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 })
 
 // One-time book purchases. A row means the user owns the book forever.
@@ -339,9 +350,17 @@ export type ReadingItem = typeof readingItem.$inferSelect
 export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
-// Lightweight book shape for listings/storefront: everything except the heavy
-// full-text `content` and `sampleText` columns, which are only needed on the
-// reader/detail pages.
-export type BookCard = Omit<Book, "content" | "sampleText">
+// Lightweight book shape for listings/storefront: excludes the heavy full-text
+// `content`/`sampleText` columns (only needed on reader/detail pages) and the
+// admin-only merchandising fields (availability/link health/updatedAt).
+export type BookCard = Omit<
+  Book,
+  | "content"
+  | "sampleText"
+  | "availability"
+  | "linkStatus"
+  | "linkCheckedAt"
+  | "updatedAt"
+>
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect

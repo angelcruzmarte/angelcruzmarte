@@ -11,7 +11,25 @@ import {
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
-import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { runLinkCheck } from "@/lib/book-link-check"
+import {
+  DEFAULT_AVAILABILITY,
+  isAvailability,
+  type Availability,
+} from "@/lib/book-availability"
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 async function requireAdmin() {
@@ -414,7 +432,11 @@ export type AdminBook = {
   accentColor: string
   featured: boolean
   published: boolean
+  availability: string
+  linkStatus: string
+  linkCheckedAt: Date | null
   createdAt: Date
+  updatedAt: Date
 }
 
 const adminBookColumns = {
@@ -434,16 +456,139 @@ const adminBookColumns = {
   accentColor: book.accentColor,
   featured: book.featured,
   published: book.published,
+  availability: book.availability,
+  linkStatus: book.linkStatus,
+  linkCheckedAt: book.linkCheckedAt,
   createdAt: book.createdAt,
+  updatedAt: book.updatedAt,
 }
 
+export type CatalogSort =
+  | "title"
+  | "author"
+  | "isbn"
+  | "source"
+  | "category"
+  | "availability"
+  | "status"
+  | "updated"
+  | "created"
+
+export type CatalogQueryParams = {
+  page?: number
+  pageSize?: number
+  q?: string
+  source?: "all" | "in_app" | "affiliate"
+  status?: "all" | "published" | "hidden"
+  availability?: "all" | Availability
+  sort?: CatalogSort
+  dir?: "asc" | "desc"
+}
+
+export type CatalogQueryResult = {
+  rows: AdminBook[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+}
+
+// Valid page sizes. Not exported (a "use server" file may only export async
+// functions); the client keeps its own copy for the page-size selector.
+const PAGE_SIZES = [25, 50, 100, 200]
+
 /**
- * Every catalog title (in-app + affiliate), newest first, for the admin
- * manager. The list UI handles search/sort/filter client-side.
+ * Server-side paginated / filtered / sorted catalog query. Built to scale to
+ * thousands of titles: filtering, sorting and paging all run in Postgres (with
+ * supporting indexes) instead of shipping the whole catalog to the client.
  */
-export async function listCatalogBooks(): Promise<AdminBook[]> {
+export async function queryCatalogBooks(
+  params: CatalogQueryParams = {},
+): Promise<CatalogQueryResult> {
   await requireAdmin()
-  return db.select(adminBookColumns).from(book).orderBy(desc(book.createdAt))
+
+  const pageSize = PAGE_SIZES.includes(params.pageSize as number)
+    ? (params.pageSize as number)
+    : 50
+  const page = Math.max(1, Math.floor(params.page ?? 1))
+
+  const conditions: SQL[] = []
+
+  if (params.source === "in_app" || params.source === "affiliate") {
+    conditions.push(eq(book.fulfillment, params.source))
+  }
+  if (params.status === "published") conditions.push(eq(book.published, true))
+  if (params.status === "hidden") conditions.push(eq(book.published, false))
+  if (params.availability && params.availability !== "all") {
+    conditions.push(eq(book.availability, params.availability))
+  }
+
+  const q = (params.q ?? "").trim()
+  if (q) {
+    const like = `%${q}%`
+    const search = or(
+      ilike(book.title, like),
+      ilike(book.author, like),
+      ilike(book.isbn, like),
+      ilike(book.category, like),
+    )
+    if (search) conditions.push(search)
+  }
+
+  const where = conditions.length ? and(...conditions) : undefined
+
+  const dir = params.dir === "asc" ? asc : desc
+  const sortColumn = (() => {
+    switch (params.sort) {
+      case "title":
+        return book.title
+      case "author":
+        return book.author
+      case "isbn":
+        return book.isbn
+      case "source":
+        return book.fulfillment
+      case "category":
+        return book.category
+      case "availability":
+        return book.availability
+      case "status":
+        return book.published
+      case "updated":
+        return book.updatedAt
+      default:
+        return book.createdAt
+    }
+  })()
+
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(book)
+    .where(where)
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(page, pageCount)
+
+  const rows = await db
+    .select(adminBookColumns)
+    .from(book)
+    .where(where)
+    // Stable secondary sort by id so pagination never repeats/skips rows.
+    .orderBy(dir(sortColumn), desc(book.id))
+    .limit(pageSize)
+    .offset((safePage - 1) * pageSize)
+
+  return { rows, total, page: safePage, pageSize, pageCount }
+}
+
+/** Distinct categories for the filter dropdown (cheap, cached per request). */
+export async function listBookCategories(): Promise<string[]> {
+  await requireAdmin()
+  const rows = await db
+    .selectDistinct({ category: book.category })
+    .from(book)
+    .orderBy(asc(book.category))
+  return rows.map((r) => r.category).filter(Boolean)
 }
 
 export type CommercialBookInput = {
@@ -460,6 +605,7 @@ export type CommercialBookInput = {
   accentColor?: string
   featured?: boolean
   published?: boolean
+  availability?: string
   priceInCents?: number
 }
 
@@ -489,6 +635,13 @@ function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
     }
   }
 
+  const availability: Availability =
+    input.availability && isAvailability(input.availability)
+      ? input.availability
+      : fulfillment === "affiliate"
+        ? "affiliate_only"
+        : DEFAULT_AVAILABILITY
+
   return {
     title,
     author,
@@ -503,6 +656,9 @@ function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
     accentColor: input.accentColor?.trim() || "#f4b740",
     featured: Boolean(input.featured),
     published: input.published ?? true,
+    availability,
+    // Every write bumps updatedAt so "last updated" sorting is accurate.
+    updatedAt: new Date(),
   }
 }
 
@@ -579,7 +735,25 @@ export async function setBooksPublished(ids: number[], published: boolean) {
   if (clean.length === 0) return { updated: 0 }
   await db
     .update(book)
-    .set({ published })
+    .set({ published, updatedAt: new Date() })
+    .where(inArray(book.id, clean))
+  revalidatePath("/app/books")
+  revalidatePath("/admin/books")
+  return { updated: clean.length }
+}
+
+/** Sets the merchandising availability status for many titles at once. */
+export async function setBooksAvailability(
+  ids: number[],
+  availability: string,
+) {
+  await requireAdmin()
+  if (!isAvailability(availability)) return { updated: 0, error: "Bad status." }
+  const clean = ids.filter((n) => Number.isFinite(n))
+  if (clean.length === 0) return { updated: 0 }
+  await db
+    .update(book)
+    .set({ availability, updatedAt: new Date() })
     .where(inArray(book.id, clean))
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
@@ -645,13 +819,26 @@ export async function refreshBooksMetadata(ids: number[]) {
       skipped++
       continue
     }
-    await db.update(book).set(patch).where(eq(book.id, r.id))
+    await db
+      .update(book)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(book.id, r.id))
     updated++
   }
 
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
   return { updated, skipped }
+}
+
+/**
+ * Checks the affiliate buy links of the given titles (or, when no ids are
+ * passed, a sweep of the affiliate titles with the oldest/never checks) and
+ * records link health. Delegates to the shared, server-only implementation.
+ */
+export async function checkBookLinks(ids?: number[]) {
+  await requireAdmin()
+  return runLinkCheck(ids)
 }
 
 export type IsbnMetadata = {

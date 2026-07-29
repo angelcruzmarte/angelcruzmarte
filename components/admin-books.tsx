@@ -1,14 +1,17 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useRef, useState, useTransition } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Eye,
   EyeOff,
+  Link2,
   Loader2,
   Pencil,
   Plus,
@@ -18,17 +21,30 @@ import {
   Star,
   Trash2,
   X,
+  Zap,
 } from "lucide-react"
 import {
   bulkDeleteBooks,
+  checkBookLinks,
   createCommercialBook,
   lookupIsbnMetadata,
   refreshBooksMetadata,
+  setBooksAvailability,
   setBooksPublished,
   updateBook,
   type AdminBook,
+  type CatalogQueryResult,
+  type CatalogSort,
   type CommercialBookInput,
 } from "@/app/actions/admin"
+import {
+  AVAILABILITY_BADGE_CLASS,
+  AVAILABILITY_VALUES,
+  availabilityLabel,
+  LINK_STATUS_LABELS,
+  type Availability,
+  type LinkStatus,
+} from "@/lib/book-availability"
 import { bookshopBuyUrl } from "@/lib/book-stores"
 import { BookCover } from "@/components/book-cover"
 import { Badge } from "@/components/ui/badge"
@@ -61,7 +77,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
+
 const formatPrice = (cents: number) => `$${(cents / 100).toFixed(2)}`
+const formatDate = (d: Date) =>
+  new Date(d).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
 
 const empty: CommercialBookInput = {
   title: "",
@@ -77,6 +101,7 @@ const empty: CommercialBookInput = {
   accentColor: "#f4b740",
   featured: false,
   published: true,
+  availability: "affiliate_only",
   priceInCents: 499,
 }
 
@@ -95,6 +120,7 @@ function toInput(b: AdminBook): CommercialBookInput {
     accentColor: b.accentColor,
     featured: b.featured,
     published: b.published,
+    availability: b.availability,
     priceInCents: b.priceInCents,
   }
 }
@@ -102,37 +128,100 @@ function toInput(b: AdminBook): CommercialBookInput {
 const isAffiliate = (b: AdminBook) => b.fulfillment === "affiliate"
 const sourceLabel = (b: AdminBook) => (isAffiliate(b) ? "Bookshop.org" : "VOXYFI")
 
-type SortKey =
-  | "title"
-  | "author"
-  | "price"
-  | "source"
-  | "status"
-  | "category"
-  | "created"
+type ActiveQuery = {
+  q: string
+  source: string
+  status: string
+  availability: string
+  sort: CatalogSort
+  dir: "asc" | "desc"
+}
 
-export function AdminBooks({ books }: { books: AdminBook[] }) {
+export function AdminBooks({
+  result,
+  categories,
+  query,
+}: {
+  result: CatalogQueryResult
+  categories: string[]
+  query: ActiveQuery
+}) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [pending, startTransition] = useTransition()
 
-  // Form state
+  const rows = result.rows
+
+  // ---- URL-driven navigation helpers ----
+  function pushParams(
+    patch: Record<string, string | number | undefined>,
+    { resetPage = true }: { resetPage?: boolean } = {},
+  ) {
+    const params = new URLSearchParams(searchParams.toString())
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined || v === "" || v === "all") params.delete(k)
+      else params.set(k, String(v))
+    }
+    if (resetPage && !("page" in patch)) params.delete("page")
+    startTransition(() => router.push(`/admin/books?${params.toString()}`))
+  }
+
+  function toggleSort(key: CatalogSort) {
+    if (query.sort === key) {
+      pushParams({ sort: key, dir: query.dir === "asc" ? "desc" : "asc" })
+    } else {
+      pushParams({ sort: key, dir: key === "updated" ? "desc" : "asc" })
+    }
+  }
+
+  // ---- Debounced search ----
+  const [search, setSearch] = useState(query.q)
+  const firstRender = useRef(true)
+  useEffect(() => {
+    setSearch(query.q)
+  }, [query.q])
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    const id = setTimeout(() => {
+      if (search !== query.q) pushParams({ q: search })
+    }, 400)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search])
+
+  // ---- Selection (per page) ----
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const pageIds = rows.map((b) => b.id)
+  const allSelected =
+    pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allSelected) pageIds.forEach((id) => next.delete(id))
+      else pageIds.forEach((id) => next.add(id))
+      return next
+    })
+  }
+  function toggleOne(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // ---- Full create/edit form ----
   const [editing, setEditing] = useState<AdminBook | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<CommercialBookInput>(empty)
   const [error, setError] = useState<string | null>(null)
   const [lookingUp, setLookingUp] = useState(false)
   const [lookupNote, setLookupNote] = useState<string | null>(null)
-
-  // List state
-  const [query, setQuery] = useState("")
-  const [sourceFilter, setSourceFilter] = useState<"all" | "in_app" | "affiliate">("all")
-  const [statusFilter, setStatusFilter] = useState<"all" | "published" | "hidden">("all")
-  const [sortKey, setSortKey] = useState<SortKey>("created")
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [lightbox, setLightbox] = useState<AdminBook | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
 
   const editingFulfillment = editing?.fulfillment ?? "affiliate"
   const editingIsAffiliate = editingFulfillment === "affiliate"
@@ -144,75 +233,6 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  // -------- Derived list (filter → search → sort) --------
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    let list = books.filter((b) => {
-      if (sourceFilter !== "all" && b.fulfillment !== sourceFilter) return false
-      if (statusFilter === "published" && !b.published) return false
-      if (statusFilter === "hidden" && b.published) return false
-      if (!q) return true
-      return (
-        b.title.toLowerCase().includes(q) ||
-        b.author.toLowerCase().includes(q) ||
-        (b.isbn ?? "").toLowerCase().includes(q) ||
-        b.category.toLowerCase().includes(q)
-      )
-    })
-    const dir = sortDir === "asc" ? 1 : -1
-    list = [...list].sort((a, b) => {
-      switch (sortKey) {
-        case "title":
-          return a.title.localeCompare(b.title) * dir
-        case "author":
-          return a.author.localeCompare(b.author) * dir
-        case "price":
-          return (a.priceInCents - b.priceInCents) * dir
-        case "source":
-          return sourceLabel(a).localeCompare(sourceLabel(b)) * dir
-        case "status":
-          return (Number(a.published) - Number(b.published)) * dir
-        case "category":
-          return a.category.localeCompare(b.category) * dir
-        default:
-          return (a.createdAt.getTime() - b.createdAt.getTime()) * dir
-      }
-    })
-    return list
-  }, [books, query, sourceFilter, statusFilter, sortKey, sortDir])
-
-  const visibleIds = visible.map((b) => b.id)
-  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
-  const selectedList = books.filter((b) => selected.has(b.id))
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-    } else {
-      setSortKey(key)
-      setSortDir(key === "created" ? "desc" : "asc")
-    }
-  }
-
-  function toggleAll() {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (allSelected) visibleIds.forEach((id) => next.delete(id))
-      else visibleIds.forEach((id) => next.add(id))
-      return next
-    })
-  }
-
-  function toggleOne(id: number) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  // -------- Form actions --------
   async function fetchMetadata() {
     setError(null)
     setLookupNote(null)
@@ -266,7 +286,6 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     setError(null)
     setLookupNote(null)
   }
-
   function openEdit(b: AdminBook) {
     setForm(toInput(b))
     setEditing(b)
@@ -274,7 +293,6 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     setError(null)
     setLookupNote(null)
   }
-
   function closeForm() {
     setShowForm(false)
     setEditing(null)
@@ -310,50 +328,89 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     })
   }
 
-  // -------- Bulk actions --------
-  function runBulk(fn: () => Promise<unknown>, message: string) {
+  // ---- Quick edit ----
+  const [quick, setQuick] = useState<AdminBook | null>(null)
+  const [quickForm, setQuickForm] = useState<CommercialBookInput>(empty)
+  const [quickError, setQuickError] = useState<string | null>(null)
+
+  function openQuick(b: AdminBook) {
+    setQuick(b)
+    setQuickForm(toInput(b))
+    setQuickError(null)
+  }
+  function saveQuick() {
+    if (!quick) return
     startTransition(async () => {
-      await fn()
-      setNote(message)
-      setSelected(new Set())
+      const res = await updateBook(quick.id, quickForm)
+      if (res && "error" in res && res.error) {
+        setQuickError(res.error)
+        return
+      }
+      setQuick(null)
       router.refresh()
     })
   }
 
+  // ---- Bulk actions ----
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   const ids = () => Array.from(selected)
 
-  function bulkPublish(published: boolean) {
-    runBulk(
-      () => setBooksPublished(ids(), published),
-      `${selected.size} title${selected.size === 1 ? "" : "s"} ${published ? "published" : "hidden"}.`,
-    )
+  function afterBulk(message: string) {
+    setNote(message)
+    setSelected(new Set())
+    router.refresh()
   }
 
-  function bulkRefresh() {
-    const count = selected.size
+  function bulkPublish(published: boolean) {
+    const n = selected.size
     startTransition(async () => {
-      const res = await refreshBooksMetadata(ids())
-      setNote(
-        `Metadata refresh: ${res.updated} updated, ${res.skipped} skipped (of ${count}).`,
-      )
-      setSelected(new Set())
-      router.refresh()
+      await setBooksPublished(ids(), published)
+      afterBulk(`${n} title${n === 1 ? "" : "s"} ${published ? "published" : "hidden"}.`)
     })
   }
-
+  function bulkAvailability(availability: string) {
+    const n = selected.size
+    startTransition(async () => {
+      await setBooksAvailability(ids(), availability)
+      afterBulk(`Set ${n} title${n === 1 ? "" : "s"} to “${availabilityLabel(availability)}”.`)
+    })
+  }
+  function bulkRefresh() {
+    const n = selected.size
+    startTransition(async () => {
+      const res = await refreshBooksMetadata(ids())
+      afterBulk(`Metadata: ${res.updated} updated, ${res.skipped} skipped (of ${n}).`)
+    })
+  }
+  function bulkCheckLinks() {
+    const n = selected.size
+    startTransition(async () => {
+      const res = await checkBookLinks(ids())
+      afterBulk(`Link check: ${res.ok} OK, ${res.broken} broken (of ${res.checked} affiliate of ${n}).`)
+    })
+  }
   function bulkDelete() {
-    runBulk(
-      () => bulkDeleteBooks(ids()),
-      `${selected.size} title${selected.size === 1 ? "" : "s"} deleted.`,
-    )
+    const n = selected.size
+    startTransition(async () => {
+      await bulkDeleteBooks(ids())
+      afterBulk(`${n} title${n === 1 ? "" : "s"} deleted.`)
+    })
     setConfirmDelete(false)
   }
+
+  // ---- Lightbox ----
+  const [lightbox, setLightbox] = useState<AdminBook | null>(null)
+
+  const { page, pageCount, pageSize, total } = result
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const rangeEnd = Math.min(page * pageSize, total)
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {books.length} title{books.length === 1 ? "" : "s"} in catalog
+          {total.toLocaleString()} title{total === 1 ? "" : "s"} in catalog
         </p>
         {!showForm && (
           <Button onClick={openNew} className="gap-2">
@@ -414,6 +471,25 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
               {lookupNote && <p className="text-xs text-muted-foreground">{lookupNote}</p>}
             </div>
 
+            <div className="grid gap-1.5">
+              <Label htmlFor="availability">Availability</Label>
+              <Select
+                value={form.availability ?? "available"}
+                onValueChange={(v) => set("availability", v)}
+              >
+                <SelectTrigger id="availability">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AVAILABILITY_VALUES.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {availabilityLabel(v)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {!editingIsAffiliate && (
               <div className="grid gap-1.5">
                 <Label htmlFor="price">In-app price (USD)</Label>
@@ -423,9 +499,7 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                   min={0}
                   step="0.01"
                   value={(form.priceInCents ?? 0) / 100}
-                  onChange={(e) =>
-                    set("priceInCents", Math.round(Number(e.target.value) * 100))
-                  }
+                  onChange={(e) => set("priceInCents", Math.round(Number(e.target.value) * 100))}
                 />
               </div>
             )}
@@ -509,37 +583,45 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
         </Card>
       )}
 
-      {/* ---------------- Toolbar ---------------- */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* ---------------- Toolbar: search + filters ---------------- */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search title, author, ISBN, category…"
             className="pl-9"
           />
         </div>
-        <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as typeof sourceFilter)}>
-          <SelectTrigger className="w-full sm:w-40">
-            <SelectValue placeholder="Source" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            <SelectItem value="in_app">VOXYFI</SelectItem>
-            <SelectItem value="affiliate">Bookshop.org</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-          <SelectTrigger className="w-full sm:w-36">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All status</SelectItem>
-            <SelectItem value="published">Published</SelectItem>
-            <SelectItem value="hidden">Hidden</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap gap-2">
+          <Select value={query.source} onValueChange={(v) => pushParams({ source: v })}>
+            <SelectTrigger className="w-36"><SelectValue placeholder="Source" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="in_app">VOXYFI</SelectItem>
+              <SelectItem value="affiliate">Bookshop.org</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={query.status} onValueChange={(v) => pushParams({ status: v })}>
+            <SelectTrigger className="w-32"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="published">Published</SelectItem>
+              <SelectItem value="hidden">Hidden</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={query.availability} onValueChange={(v) => pushParams({ availability: v })}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Availability" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All availability</SelectItem>
+              {AVAILABILITY_VALUES.map((v) => (
+                <SelectItem key={v} value={v}>{availabilityLabel(v)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {pending && <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground" />}
+        </div>
       </div>
 
       {note && (
@@ -550,8 +632,16 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3">
           <span className="mr-1 text-sm font-medium">{selected.size} selected</span>
-          {selectedList.length === 1 && (
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit(selectedList[0])}>
+          {selected.size === 1 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => {
+                const only = rows.find((b) => selected.has(b.id))
+                if (only) openEdit(only)
+              }}
+            >
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
           )}
@@ -560,6 +650,19 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" disabled={pending} onClick={() => bulkPublish(false)}>
             <EyeOff className="h-3.5 w-3.5" /> Unpublish
+          </Button>
+          <Select onValueChange={bulkAvailability}>
+            <SelectTrigger className="h-8 w-40 text-xs" disabled={pending}>
+              <SelectValue placeholder="Set availability…" />
+            </SelectTrigger>
+            <SelectContent>
+              {AVAILABILITY_VALUES.map((v) => (
+                <SelectItem key={v} value={v}>{availabilityLabel(v)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={pending} onClick={bulkCheckLinks}>
+            <Link2 className="h-3.5 w-3.5" /> Check links
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" disabled={pending} onClick={bulkRefresh}>
             <RefreshCw className={`h-3.5 w-3.5 ${pending ? "animate-spin" : ""}`} /> Refresh metadata
@@ -581,7 +684,7 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
 
       {/* ---------------- Table ---------------- */}
       <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[880px] border-collapse text-sm">
+        <table className="w-full min-w-[1100px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-left">
               <th className="w-10 p-3">
@@ -589,24 +692,25 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleAll}
-                  aria-label="Select all"
+                  aria-label="Select all on page"
                   className="h-4 w-4 rounded border-border"
                 />
               </th>
-              <th className="w-16 p-3">Cover</th>
-              <SortHeader label="Title" k="title" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <SortHeader label="Author" k="author" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <th className="p-3 font-medium">ISBN</th>
-              <SortHeader label="Source" k="source" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <SortHeader label="Price" k="price" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <SortHeader label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <SortHeader label="Category" k="category" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-              <th className="p-3 font-medium">Availability</th>
+              <th className="w-16 p-3 font-medium">Cover</th>
+              <SortHeader label="Title" k="title" query={query} onSort={toggleSort} />
+              <SortHeader label="Author" k="author" query={query} onSort={toggleSort} />
+              <SortHeader label="ISBN" k="isbn" query={query} onSort={toggleSort} />
+              <SortHeader label="Source" k="source" query={query} onSort={toggleSort} />
+              <th className="p-3 font-medium">Price</th>
+              <SortHeader label="Status" k="status" query={query} onSort={toggleSort} />
+              <SortHeader label="Category" k="category" query={query} onSort={toggleSort} />
+              <SortHeader label="Availability" k="availability" query={query} onSort={toggleSort} />
+              <SortHeader label="Updated" k="updated" query={query} onSort={toggleSort} />
               <th className="p-3 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {visible.map((b) => (
+            {rows.map((b) => (
               <tr key={b.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                 <td className="p-3 align-middle">
                   <input
@@ -633,7 +737,7 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                     {b.featured && <Star className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="Featured" />}
                   </div>
                 </td>
-                <td className="max-w-[160px] p-3 align-middle">
+                <td className="max-w-[150px] p-3 align-middle">
                   <span className="block truncate text-muted-foreground">{b.author}</span>
                 </td>
                 <td className="p-3 align-middle font-mono text-xs text-muted-foreground">
@@ -643,33 +747,42 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                   <Badge variant={isAffiliate(b) ? "outline" : "secondary"}>{sourceLabel(b)}</Badge>
                 </td>
                 <td className="p-3 align-middle">
-                  {isAffiliate(b) ? (
-                    <span className="text-muted-foreground">External</span>
-                  ) : (
-                    formatPrice(b.priceInCents)
-                  )}
+                  {isAffiliate(b) ? <span className="text-muted-foreground">External</span> : formatPrice(b.priceInCents)}
                 </td>
                 <td className="p-3 align-middle">
                   <Badge
                     variant="outline"
-                    className={
-                      b.published
-                        ? "border-primary/40 text-primary"
-                        : "border-border text-muted-foreground"
-                    }
+                    className={b.published ? "border-primary/40 text-primary" : "border-border text-muted-foreground"}
                   >
                     {b.published ? "Published" : "Hidden"}
                   </Badge>
                 </td>
-                <td className="max-w-[130px] p-3 align-middle">
+                <td className="max-w-[120px] p-3 align-middle">
                   <span className="block truncate text-muted-foreground">{b.category}</span>
                 </td>
-                <td className="p-3 align-middle text-muted-foreground">
-                  {isAffiliate(b) ? "Sample only" : "Full in-app"}
+                <td className="p-3 align-middle">
+                  <div className="flex flex-col gap-1">
+                    <Badge variant="outline" className={AVAILABILITY_BADGE_CLASS[b.availability as Availability] ?? ""}>
+                      {availabilityLabel(b.availability)}
+                    </Badge>
+                    {isAffiliate(b) && b.linkStatus !== "unknown" && (
+                      <span
+                        className={`text-[11px] ${b.linkStatus === "ok" ? "text-muted-foreground" : "text-destructive"}`}
+                      >
+                        {LINK_STATUS_LABELS[b.linkStatus as LinkStatus] ?? b.linkStatus}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="p-3 align-middle text-xs text-muted-foreground">
+                  {formatDate(b.updatedAt)}
                 </td>
                 <td className="p-3 align-middle">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(b)} aria-label={`Edit ${b.title}`}>
+                  <div className="flex items-center justify-end gap-0.5">
+                    <Button variant="ghost" size="icon" onClick={() => openQuick(b)} aria-label={`Quick edit ${b.title}`} title="Quick edit">
+                      <Zap className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(b)} aria-label={`Edit ${b.title}`} title="Full edit">
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <a
@@ -678,6 +791,7 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                       rel="noopener noreferrer"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
                       aria-label={`Preview buy link for ${b.title}`}
+                      title="Preview buy link"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
@@ -685,18 +799,160 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
                 </td>
               </tr>
             ))}
-            {visible.length === 0 && (
+            {rows.length === 0 && (
               <tr>
-                <td colSpan={11} className="p-8 text-center text-sm text-muted-foreground">
-                  {books.length === 0
-                    ? "No titles yet. Add a commercial title to sell via Bookshop.org."
-                    : "No titles match your search / filters."}
+                <td colSpan={12} className="p-8 text-center text-sm text-muted-foreground">
+                  No titles match your search / filters.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* ---------------- Pagination ---------------- */}
+      <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of{" "}
+            {total.toLocaleString()}
+          </span>
+          <span className="mx-1">·</span>
+          <span>Rows</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => pushParams({ pageSize: Number(v), page: 1 })}
+          >
+            <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            disabled={page <= 1 || pending}
+            onClick={() => pushParams({ page: page - 1 }, { resetPage: false })}
+          >
+            <ChevronLeft className="h-4 w-4" /> Prev
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {pageCount}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            disabled={page >= pageCount || pending}
+            onClick={() => pushParams({ page: page + 1 }, { resetPage: false })}
+          >
+            Next <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* ---------------- Quick edit dialog ---------------- */}
+      <Dialog open={!!quick} onOpenChange={(o) => !o && setQuick(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-pretty">Quick edit</DialogTitle>
+          </DialogHeader>
+          {quick && (
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="q-title">Title</Label>
+                <Input
+                  id="q-title"
+                  value={quickForm.title}
+                  onChange={(e) => setQuickForm((f) => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="q-author">Author</Label>
+                <Input
+                  id="q-author"
+                  value={quickForm.author}
+                  onChange={(e) => setQuickForm((f) => ({ ...f, author: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="q-category">Category</Label>
+                  <Input
+                    id="q-category"
+                    value={quickForm.category}
+                    onChange={(e) => setQuickForm((f) => ({ ...f, category: e.target.value }))}
+                  />
+                </div>
+                {quick.fulfillment === "in_app" && (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="q-price">Price (USD)</Label>
+                    <Input
+                      id="q-price"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={(quickForm.priceInCents ?? 0) / 100}
+                      onChange={(e) =>
+                        setQuickForm((f) => ({ ...f, priceInCents: Math.round(Number(e.target.value) * 100) }))
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="q-availability">Availability</Label>
+                <Select
+                  value={quickForm.availability ?? "available"}
+                  onValueChange={(v) => setQuickForm((f) => ({ ...f, availability: v }))}
+                >
+                  <SelectTrigger id="q-availability"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {AVAILABILITY_VALUES.map((v) => (
+                      <SelectItem key={v} value={v}>{availabilityLabel(v)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-wrap gap-6">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickForm.published ?? true}
+                    onChange={(e) => setQuickForm((f) => ({ ...f, published: e.target.checked }))}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Published
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quickForm.featured}
+                    onChange={(e) => setQuickForm((f) => ({ ...f, featured: e.target.checked }))}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  Featured
+                </label>
+              </div>
+              {quickError && (
+                <p className="text-sm text-destructive" role="alert">{quickError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button onClick={saveQuick} disabled={pending} className="gap-2">
+                  {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save
+                </Button>
+                <Button variant="outline" onClick={() => setQuick(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ---------------- Cover lightbox ---------------- */}
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
@@ -742,17 +998,15 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
 function SortHeader({
   label,
   k,
-  sortKey,
-  sortDir,
+  query,
   onSort,
 }: {
   label: string
-  k: SortKey
-  sortKey: SortKey
-  sortDir: "asc" | "desc"
-  onSort: (k: SortKey) => void
+  k: CatalogSort
+  query: ActiveQuery
+  onSort: (k: CatalogSort) => void
 }) {
-  const active = sortKey === k
+  const active = query.sort === k
   return (
     <th className="p-3 font-medium">
       <button
@@ -762,7 +1016,7 @@ function SortHeader({
       >
         {label}
         {active ? (
-          sortDir === "asc" ? (
+          query.dir === "asc" ? (
             <ArrowUp className="h-3.5 w-3.5" />
           ) : (
             <ArrowDown className="h-3.5 w-3.5" />

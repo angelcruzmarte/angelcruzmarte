@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/sync-cloud",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/check-book-links",
+      "schedule": "0 10 * * *"
     }
   ]
 }
