@@ -11,7 +11,7 @@ import {
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
-import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 async function requireAdmin() {
@@ -395,7 +395,7 @@ export async function setUserRole(userId: string, role: "admin" | "user") {
   return { success: true }
 }
 
-// ----- Commercial (affiliate) book management -----
+// ----- Book catalog management (both in-app "VOXYFI" and affiliate titles) --
 
 export type AdminBook = {
   id: number
@@ -413,34 +413,37 @@ export type AdminBook = {
   coverColor: string
   accentColor: string
   featured: boolean
+  published: boolean
   createdAt: Date
 }
 
-/** All commercial (affiliate) titles, newest first, for the admin manager. */
-export async function listCommercialBooks(): Promise<AdminBook[]> {
+const adminBookColumns = {
+  id: book.id,
+  title: book.title,
+  author: book.author,
+  category: book.category,
+  description: book.description,
+  excerpt: book.excerpt,
+  fulfillment: book.fulfillment,
+  isbn: book.isbn,
+  buyUrl: book.buyUrl,
+  sampleText: book.sampleText,
+  priceInCents: book.priceInCents,
+  coverImageUrl: book.coverImageUrl,
+  coverColor: book.coverColor,
+  accentColor: book.accentColor,
+  featured: book.featured,
+  published: book.published,
+  createdAt: book.createdAt,
+}
+
+/**
+ * Every catalog title (in-app + affiliate), newest first, for the admin
+ * manager. The list UI handles search/sort/filter client-side.
+ */
+export async function listCatalogBooks(): Promise<AdminBook[]> {
   await requireAdmin()
-  return db
-    .select({
-      id: book.id,
-      title: book.title,
-      author: book.author,
-      category: book.category,
-      description: book.description,
-      excerpt: book.excerpt,
-      fulfillment: book.fulfillment,
-      isbn: book.isbn,
-      buyUrl: book.buyUrl,
-      sampleText: book.sampleText,
-      priceInCents: book.priceInCents,
-      coverImageUrl: book.coverImageUrl,
-      coverColor: book.coverColor,
-      accentColor: book.accentColor,
-      featured: book.featured,
-      createdAt: book.createdAt,
-    })
-    .from(book)
-    .where(eq(book.fulfillment, "affiliate"))
-    .orderBy(desc(book.createdAt))
+  return db.select(adminBookColumns).from(book).orderBy(desc(book.createdAt))
 }
 
 export type CommercialBookInput = {
@@ -456,9 +459,16 @@ export type CommercialBookInput = {
   coverColor?: string
   accentColor?: string
   featured?: boolean
+  published?: boolean
+  priceInCents?: number
 }
 
-function cleanBookInput(input: CommercialBookInput) {
+/**
+ * Normalizes + validates form input. Validation depends on fulfillment:
+ * affiliate titles must have a listenable sample and a way to build a buy link
+ * (ISBN or explicit URL); in-app titles don't.
+ */
+function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
   const title = input.title.trim()
   const author = input.author.trim()
   const description = input.description.trim()
@@ -466,26 +476,33 @@ function cleanBookInput(input: CommercialBookInput) {
   const sampleText = input.sampleText.trim()
   if (!title) throw new Error("Title is required.")
   if (!author) throw new Error("Author is required.")
-  if (!sampleText) throw new Error("A listenable sample is required.")
+
   const isbn = (input.isbn || "").replace(/[^0-9Xx]/g, "") || null
   const buyUrl = (input.buyUrl || "").trim() || null
-  if (!isbn && !buyUrl) {
-    throw new Error("Provide an ISBN or an explicit buy URL for the partner store.")
+
+  if (fulfillment === "affiliate") {
+    if (!sampleText) throw new Error("A listenable sample is required.")
+    if (!isbn && !buyUrl) {
+      throw new Error(
+        "Provide an ISBN or an explicit buy URL for the partner store.",
+      )
+    }
   }
+
   return {
     title,
     author,
     category: input.category?.trim() || "General",
     description: description || excerpt,
-    // `excerpt` doubles as the marketing blurb and sample fallback.
-    excerpt: excerpt || sampleText.slice(0, 400),
-    sampleText,
+    excerpt: excerpt || sampleText.slice(0, 400) || description.slice(0, 400),
+    sampleText: sampleText || null,
     isbn,
     buyUrl,
     coverImageUrl: (input.coverImageUrl || "").trim() || null,
     coverColor: input.coverColor?.trim() || "#1f3a5f",
     accentColor: input.accentColor?.trim() || "#f4b740",
     featured: Boolean(input.featured),
+    published: input.published ?? true,
   }
 }
 
@@ -493,7 +510,7 @@ function cleanBookInput(input: CommercialBookInput) {
 export async function createCommercialBook(input: CommercialBookInput) {
   await requireAdmin()
   try {
-    const v = cleanBookInput(input)
+    const v = cleanBookInput(input, "affiliate")
     const [row] = await db
       .insert(book)
       .values({
@@ -515,18 +532,32 @@ export async function createCommercialBook(input: CommercialBookInput) {
   }
 }
 
-/** Updates an existing commercial (affiliate) book. */
-export async function updateCommercialBook(
-  id: number,
-  input: CommercialBookInput,
-) {
+/**
+ * Updates an existing catalog title. Preserves its fulfillment mode and never
+ * wipes an in-app title's full text; only in-app titles accept a price update.
+ */
+export async function updateBook(id: number, input: CommercialBookInput) {
   await requireAdmin()
   try {
-    const v = cleanBookInput(input)
+    const [existing] = await db
+      .select({ fulfillment: book.fulfillment })
+      .from(book)
+      .where(eq(book.id, id))
+      .limit(1)
+    if (!existing) return { error: "Book not found." }
+
+    const v = cleanBookInput(input, existing.fulfillment)
     await db
       .update(book)
-      .set(v)
-      .where(and(eq(book.id, id), eq(book.fulfillment, "affiliate")))
+      .set({
+        ...v,
+        // Only in-app titles have an in-app price; affiliate price stays 0.
+        ...(existing.fulfillment === "in_app" &&
+        typeof input.priceInCents === "number"
+          ? { priceInCents: Math.max(0, Math.round(input.priceInCents)) }
+          : {}),
+      })
+      .where(eq(book.id, id))
     revalidatePath("/app/books")
     revalidatePath(`/app/books/${id}`)
     revalidatePath("/admin/books")
@@ -539,15 +570,88 @@ export async function updateCommercialBook(
   }
 }
 
-/** Deletes a commercial (affiliate) book. */
-export async function deleteCommercialBook(id: number) {
+// ----- Bulk catalog operations -----
+
+/** Publishes or unpublishes many titles at once (storefront visibility). */
+export async function setBooksPublished(ids: number[], published: boolean) {
   await requireAdmin()
+  const clean = ids.filter((n) => Number.isFinite(n))
+  if (clean.length === 0) return { updated: 0 }
   await db
-    .delete(book)
-    .where(and(eq(book.id, id), eq(book.fulfillment, "affiliate")))
+    .update(book)
+    .set({ published })
+    .where(inArray(book.id, clean))
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
-  return { success: true }
+  return { updated: clean.length }
+}
+
+/** Deletes many titles at once. Cascades to purchases/favorites by FK. */
+export async function bulkDeleteBooks(ids: number[]) {
+  await requireAdmin()
+  const clean = ids.filter((n) => Number.isFinite(n))
+  if (clean.length === 0) return { deleted: 0 }
+  await db.delete(book).where(inArray(book.id, clean))
+  revalidatePath("/app/books")
+  revalidatePath("/admin/books")
+  return { deleted: clean.length }
+}
+
+/**
+ * Re-pulls Open Library metadata for the selected titles (those with an ISBN)
+ * and fills any BLANK fields — description, category, author, and cover — never
+ * overwriting data an admin already curated. Returns how many rows changed.
+ */
+export async function refreshBooksMetadata(ids: number[]) {
+  await requireAdmin()
+  const clean = ids.filter((n) => Number.isFinite(n))
+  if (clean.length === 0) return { updated: 0, skipped: 0 }
+
+  const rows = await db
+    .select({
+      id: book.id,
+      isbn: book.isbn,
+      title: book.title,
+      author: book.author,
+      description: book.description,
+      category: book.category,
+      coverImageUrl: book.coverImageUrl,
+    })
+    .from(book)
+    .where(inArray(book.id, clean))
+
+  let updated = 0
+  let skipped = 0
+  for (const r of rows) {
+    if (!r.isbn) {
+      skipped++
+      continue
+    }
+    const meta = await fetchIsbnMetadata(r.isbn)
+    if (!meta) {
+      skipped++
+      continue
+    }
+    const patch: Record<string, string> = {}
+    if (!r.coverImageUrl && meta.coverImageUrl)
+      patch.coverImageUrl = meta.coverImageUrl
+    if ((!r.description || !r.description.trim()) && meta.description)
+      patch.description = meta.description
+    if ((!r.category || r.category === "General") && meta.category)
+      patch.category = meta.category
+    if ((!r.author || !r.author.trim()) && meta.author)
+      patch.author = meta.author
+    if (Object.keys(patch).length === 0) {
+      skipped++
+      continue
+    }
+    await db.update(book).set(patch).where(eq(book.id, r.id))
+    updated++
+  }
+
+  revalidatePath("/app/books")
+  revalidatePath("/admin/books")
+  return { updated, skipped }
 }
 
 export type IsbnMetadata = {
@@ -559,37 +663,28 @@ export type IsbnMetadata = {
 }
 
 /**
- * Looks up book metadata by ISBN via Open Library (free, no API key) to
- * auto-fill the admin form. Best-effort: returns whatever fields resolve and an
- * error string only when the ISBN is unusable or nothing is found. Never stores
- * anything — the admin reviews/edits before saving. This is metadata only
- * (title/author/synopsis/cover), never the copyrighted body text.
+ * Raw Open Library lookup by ISBN (free, no API key). Returns metadata only
+ * (title/author/synopsis/cover) — never copyrighted body text. No auth check;
+ * callers must gate access. Returns null when the ISBN is invalid/unresolved.
  */
-export async function lookupIsbnMetadata(
-  rawIsbn: string,
-): Promise<{ data?: IsbnMetadata; error?: string }> {
-  await requireAdmin()
+async function fetchIsbnMetadata(rawIsbn: string): Promise<IsbnMetadata | null> {
   const isbn = (rawIsbn || "").replace(/[^0-9Xx]/g, "")
-  if (isbn.length !== 10 && isbn.length !== 13) {
-    return { error: "Enter a valid 10- or 13-digit ISBN first." }
-  }
+  if (isbn.length !== 10 && isbn.length !== 13) return null
 
   try {
     const res = await fetch(`https://openlibrary.org/isbn/${isbn}.json`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     })
-    if (!res.ok) {
-      return { error: "No book found for that ISBN on Open Library." }
-    }
+    if (!res.ok) return null
     const edition = (await res.json()) as Record<string, any>
 
     const data: IsbnMetadata = {
-      title: typeof edition.title === "string" ? edition.title.trim() : undefined,
+      title:
+        typeof edition.title === "string" ? edition.title.trim() : undefined,
       coverImageUrl: `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`,
     }
 
-    // Author name lives behind a key reference — resolve the first one.
     const authorKey: string | undefined =
       edition.authors?.[0]?.key ?? edition.works?.[0]?.author?.key
     if (authorKey) {
@@ -607,7 +702,6 @@ export async function lookupIsbnMetadata(
       }
     }
 
-    // Description + subjects usually live on the parent work.
     const workKey: string | undefined = edition.works?.[0]?.key
     if (workKey) {
       try {
@@ -633,8 +727,25 @@ export async function lookupIsbnMetadata(
       }
     }
 
-    return { data }
+    return data
   } catch {
-    return { error: "Could not reach Open Library. Try again." }
+    return null
   }
+}
+
+/**
+ * Admin-facing ISBN lookup used by the create/edit form's "Fetch" button.
+ * Wraps fetchIsbnMetadata with an auth check and friendly error strings.
+ */
+export async function lookupIsbnMetadata(
+  rawIsbn: string,
+): Promise<{ data?: IsbnMetadata; error?: string }> {
+  await requireAdmin()
+  const isbn = (rawIsbn || "").replace(/[^0-9Xx]/g, "")
+  if (isbn.length !== 10 && isbn.length !== 13) {
+    return { error: "Enter a valid 10- or 13-digit ISBN first." }
+  }
+  const data = await fetchIsbnMetadata(isbn)
+  if (!data) return { error: "No book found for that ISBN on Open Library." }
+  return { data }
 }

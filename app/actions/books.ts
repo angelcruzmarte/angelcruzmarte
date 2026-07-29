@@ -30,6 +30,7 @@ const bookCardColumns = {
   coverColor: book.coverColor,
   accentColor: book.accentColor,
   featured: book.featured,
+  published: book.published,
   createdAt: book.createdAt,
 }
 
@@ -50,6 +51,9 @@ export async function getBooks(): Promise<BookCard[]> {
   return db
     .select(bookCardColumns)
     .from(book)
+    // Only surface published titles in the public store. Admins can toggle
+    // visibility without deleting the catalog row.
+    .where(eq(book.published, true))
     .orderBy(desc(book.featured), desc(book.createdAt))
 }
 

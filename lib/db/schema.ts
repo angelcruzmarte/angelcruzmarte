@@ -222,6 +222,10 @@ export const book = pgTable("book", {
   coverColor: text("coverColor").notNull().default("#3b3f8f"),
   accentColor: text("accentColor").notNull().default("#f4b740"),
   featured: boolean("featured").notNull().default(false),
+  // Storefront visibility. Unpublished titles stay in the catalog/admin but are
+  // hidden from the public store listing. Defaults true so existing books stay
+  // visible.
+  published: boolean("published").notNull().default(true),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 })
 
