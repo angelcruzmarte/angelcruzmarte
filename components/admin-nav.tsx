@@ -8,6 +8,7 @@ import {
   Filter,
   LayoutDashboard,
   Library,
+  ScrollText,
   Tag,
   Users,
 } from "lucide-react"
@@ -21,6 +22,7 @@ const LINKS = [
   { href: "/funnel", label: "Pricing funnel", icon: Filter },
   { href: "/promotions", label: "Promotions", icon: Tag },
   { href: "/books", label: "Books", icon: BookOpen },
+  { href: "/audit", label: "Audit log", icon: ScrollText },
   { href: "/users", label: "Users", icon: Users },
   { href: "/content", label: "Content", icon: Library },
 ]

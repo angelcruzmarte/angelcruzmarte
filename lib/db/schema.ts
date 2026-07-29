@@ -275,6 +275,27 @@ export const bookFavorite = pgTable(
   }),
 )
 
+// Append-only audit trail of admin actions on the book catalog. `bookId` is
+// intentionally NOT a FK (and `bookTitle` is snapshotted) so entries survive a
+// book deletion. Values are stored as short text snapshots, not typed columns.
+export const bookAuditLog = pgTable("book_audit_log", {
+  id: serial("id").primaryKey(),
+  bookId: integer("bookId"),
+  bookTitle: text("bookTitle").notNull().default(""),
+  // Semantic category: create | delete | publish | unpublish | availability |
+  // price | metadata | cover | isbn_import | link_check.
+  action: text("action").notNull(),
+  // Specific column for field-level edits (e.g. "title", "description").
+  field: text("field"),
+  oldValue: text("oldValue"),
+  newValue: text("newValue"),
+  // Who performed it (snapshotted so it survives user changes).
+  actorId: text("actorId"),
+  actorName: text("actorName").notNull().default(""),
+  actorEmail: text("actorEmail").notNull().default(""),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
+
 // Per-user daily aggregate of listening time (seconds) and words listened.
 export const listeningStat = pgTable(
   "listening_stat",
@@ -364,3 +385,4 @@ export type BookCard = Omit<
 >
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect
+export type BookAuditLog = typeof bookAuditLog.$inferSelect

@@ -1,5 +1,13 @@
 import { runLinkCheck } from "@/lib/book-link-check"
+import { logBookAudit } from "@/lib/book-audit"
 import { NextResponse } from "next/server"
+
+// System actor for scheduled (unattended) runs.
+const SYSTEM_ACTOR = {
+  id: "system",
+  name: "Scheduled job",
+  email: "cron@voxyfi.com",
+}
 
 export const dynamic = "force-dynamic"
 // Link checks make outbound requests; give the function room.
@@ -25,6 +33,18 @@ export async function GET(req: Request) {
   try {
     // Cap per run so a large catalog is covered gradually across days.
     const result = await runLinkCheck(undefined, 150)
+    if (result.checked > 0) {
+      await logBookAudit(SYSTEM_ACTOR, [
+        {
+          bookId: null,
+          bookTitle: `Scheduled link check (${result.checked} affiliate titles)`,
+          action: "link_check",
+          field: null,
+          oldValue: null,
+          newValue: `${result.ok} OK, ${result.broken} broken, ${result.unknown} need review`,
+        },
+      ])
+    }
     const summary = {
       success: true,
       ...result,

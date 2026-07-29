@@ -3,6 +3,7 @@
 import { db } from "@/lib/db"
 import {
   book,
+  bookAuditLog,
   bookPurchase,
   document as documentTable,
   readingItem,
@@ -12,6 +13,11 @@ import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
 import { runLinkCheck } from "@/lib/book-link-check"
+import {
+  diffBookChanges,
+  logBookAudit,
+  type AuditActor,
+} from "@/lib/book-audit"
 import {
   DEFAULT_AVAILABILITY,
   isAvailability,
@@ -37,6 +43,11 @@ async function requireAdmin() {
   const user = await getCurrentUser()
   if (!isAdmin(user)) throw new Error("Forbidden")
   return user!
+}
+
+/** Builds the audit actor snapshot from an admin user row. */
+function actorOf(u: { id: string; name: string; email: string }): AuditActor {
+  return { id: u.id, name: u.name, email: u.email }
 }
 
 export async function getSubscribers() {
@@ -754,7 +765,7 @@ function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
 
 /** Creates a commercial (affiliate) book. Never stores full copyrighted text. */
 export async function createCommercialBook(input: CommercialBookInput) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   try {
     const v = cleanBookInput(input, "affiliate")
     const [row] = await db
@@ -767,6 +778,16 @@ export async function createCommercialBook(input: CommercialBookInput) {
         content: "",
       })
       .returning({ id: book.id })
+    await logBookAudit(actorOf(admin), [
+      {
+        bookId: row?.id ?? null,
+        bookTitle: v.title,
+        action: "create",
+        field: null,
+        oldValue: null,
+        newValue: `${v.title} by ${v.author} (Bookshop.org)`,
+      },
+    ])
     revalidatePath("/app/books")
     revalidatePath("/admin/books")
     return { id: row?.id }
@@ -783,27 +804,27 @@ export async function createCommercialBook(input: CommercialBookInput) {
  * wipes an in-app title's full text; only in-app titles accept a price update.
  */
 export async function updateBook(id: number, input: CommercialBookInput) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   try {
-    const [existing] = await db
-      .select({ fulfillment: book.fulfillment })
-      .from(book)
-      .where(eq(book.id, id))
-      .limit(1)
+    const [existing] = await db.select().from(book).where(eq(book.id, id)).limit(1)
     if (!existing) return { error: "Book not found." }
 
     const v = cleanBookInput(input, existing.fulfillment)
-    await db
-      .update(book)
-      .set({
-        ...v,
-        // Only in-app titles have an in-app price; affiliate price stays 0.
-        ...(existing.fulfillment === "in_app" &&
-        typeof input.priceInCents === "number"
-          ? { priceInCents: Math.max(0, Math.round(input.priceInCents)) }
-          : {}),
-      })
-      .where(eq(book.id, id))
+    const pricePatch =
+      existing.fulfillment === "in_app" &&
+      typeof input.priceInCents === "number"
+        ? { priceInCents: Math.max(0, Math.round(input.priceInCents)) }
+        : {}
+    const patch = { ...v, ...pricePatch }
+
+    await db.update(book).set(patch).where(eq(book.id, id))
+
+    // Diff the tracked fields and record one audit entry per real change.
+    await logBookAudit(
+      actorOf(admin),
+      diffBookChanges(id, v.title, existing, patch),
+    )
+
     revalidatePath("/app/books")
     revalidatePath(`/app/books/${id}`)
     revalidatePath("/admin/books")
@@ -820,13 +841,35 @@ export async function updateBook(id: number, input: CommercialBookInput) {
 
 /** Publishes or unpublishes many titles at once (storefront visibility). */
 export async function setBooksPublished(ids: number[], published: boolean) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const clean = ids.filter((n) => Number.isFinite(n))
   if (clean.length === 0) return { updated: 0 }
+
+  // Snapshot titles + prior state so the log records only real changes.
+  const before = await db
+    .select({ id: book.id, title: book.title, published: book.published })
+    .from(book)
+    .where(inArray(book.id, clean))
+
   await db
     .update(book)
     .set({ published, updatedAt: new Date() })
     .where(inArray(book.id, clean))
+
+  await logBookAudit(
+    actorOf(admin),
+    before
+      .filter((b) => b.published !== published)
+      .map((b) => ({
+        bookId: b.id,
+        bookTitle: b.title,
+        action: published ? ("publish" as const) : ("unpublish" as const),
+        field: "published",
+        oldValue: b.published ? "Published" : "Hidden",
+        newValue: published ? "Published" : "Hidden",
+      })),
+  )
+
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
   return { updated: clean.length }
@@ -837,14 +880,35 @@ export async function setBooksAvailability(
   ids: number[],
   availability: string,
 ) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   if (!isAvailability(availability)) return { updated: 0, error: "Bad status." }
   const clean = ids.filter((n) => Number.isFinite(n))
   if (clean.length === 0) return { updated: 0 }
+
+  const before = await db
+    .select({ id: book.id, title: book.title, availability: book.availability })
+    .from(book)
+    .where(inArray(book.id, clean))
+
   await db
     .update(book)
     .set({ availability, updatedAt: new Date() })
     .where(inArray(book.id, clean))
+
+  await logBookAudit(
+    actorOf(admin),
+    before
+      .filter((b) => b.availability !== availability)
+      .map((b) => ({
+        bookId: b.id,
+        bookTitle: b.title,
+        action: "availability" as const,
+        field: "availability",
+        oldValue: b.availability,
+        newValue: availability,
+      })),
+  )
+
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
   return { updated: clean.length }
@@ -852,10 +916,31 @@ export async function setBooksAvailability(
 
 /** Deletes many titles at once. Cascades to purchases/favorites by FK. */
 export async function bulkDeleteBooks(ids: number[]) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const clean = ids.filter((n) => Number.isFinite(n))
   if (clean.length === 0) return { deleted: 0 }
+
+  // Snapshot titles before deletion so the audit entry survives the removal.
+  const before = await db
+    .select({ id: book.id, title: book.title, author: book.author })
+    .from(book)
+    .where(inArray(book.id, clean))
+
   await db.delete(book).where(inArray(book.id, clean))
+
+  await logBookAudit(
+    actorOf(admin),
+    before.map((b) => ({
+      // bookId intentionally null — the row no longer exists.
+      bookId: null,
+      bookTitle: b.title,
+      action: "delete" as const,
+      field: null,
+      oldValue: `${b.title} by ${b.author}`,
+      newValue: null,
+    })),
+  )
+
   revalidatePath("/app/books")
   revalidatePath("/admin/books")
   return { deleted: clean.length }
@@ -867,7 +952,7 @@ export async function bulkDeleteBooks(ids: number[]) {
  * overwriting data an admin already curated. Returns how many rows changed.
  */
 export async function refreshBooksMetadata(ids: number[]) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const clean = ids.filter((n) => Number.isFinite(n))
   if (clean.length === 0) return { updated: 0, skipped: 0 }
 
@@ -913,6 +998,19 @@ export async function refreshBooksMetadata(ids: number[]) {
       .update(book)
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(book.id, r.id))
+
+    // One audit entry per field filled from Open Library.
+    await logBookAudit(
+      actorOf(admin),
+      Object.entries(patch).map(([field, newValue]) => ({
+        bookId: r.id,
+        bookTitle: r.title,
+        action: "isbn_import" as const,
+        field,
+        oldValue: null,
+        newValue: String(newValue),
+      })),
+    )
     updated++
   }
 
@@ -927,8 +1025,198 @@ export async function refreshBooksMetadata(ids: number[]) {
  * records link health. Delegates to the shared, server-only implementation.
  */
 export async function checkBookLinks(ids?: number[]) {
+  const admin = await requireAdmin()
+  const result = await runLinkCheck(ids)
+  // A single summary entry per run keeps the log lightweight (vs one per book).
+  await logBookAudit(actorOf(admin), [
+    {
+      bookId: null,
+      bookTitle: `Link check (${result.checked} affiliate titles)`,
+      action: "link_check",
+      field: null,
+      oldValue: null,
+      newValue: `${result.ok} OK, ${result.broken} broken, ${result.unknown} need review`,
+    },
+  ])
+  return result
+}
+
+// ----- Book audit log (read-only viewer) -----
+
+export type AuditLogRow = {
+  id: number
+  bookId: number | null
+  bookTitle: string
+  action: string
+  field: string | null
+  oldValue: string | null
+  newValue: string | null
+  actorName: string
+  actorEmail: string
+  createdAt: Date
+}
+
+export type AuditQueryParams = {
+  page?: number
+  pageSize?: number
+  q?: string
+  action?: string
+  actor?: string
+}
+
+export type AuditQueryResult = {
+  rows: AuditLogRow[]
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+}
+
+const AUDIT_PAGE_SIZES = [25, 50, 100, 200]
+
+function buildAuditWhere(params: AuditQueryParams): SQL | undefined {
+  const conditions: SQL[] = []
+  if (params.action && params.action !== "all") {
+    conditions.push(eq(bookAuditLog.action, params.action))
+  }
+  if (params.actor && params.actor !== "all") {
+    conditions.push(eq(bookAuditLog.actorEmail, params.actor))
+  }
+  const q = (params.q ?? "").trim()
+  if (q) {
+    const like = `%${q}%`
+    const search = or(
+      ilike(bookAuditLog.bookTitle, like),
+      ilike(bookAuditLog.actorName, like),
+      ilike(bookAuditLog.actorEmail, like),
+      ilike(bookAuditLog.field, like),
+      ilike(bookAuditLog.oldValue, like),
+      ilike(bookAuditLog.newValue, like),
+    )
+    if (search) conditions.push(search)
+  }
+  return conditions.length ? and(...conditions) : undefined
+}
+
+/** Paginated, filterable, searchable audit log. Newest first. */
+export async function queryAuditLog(
+  params: AuditQueryParams = {},
+): Promise<AuditQueryResult> {
   await requireAdmin()
-  return runLinkCheck(ids)
+
+  const pageSize = AUDIT_PAGE_SIZES.includes(params.pageSize as number)
+    ? (params.pageSize as number)
+    : 50
+  const page = Math.max(1, Math.floor(params.page ?? 1))
+  const where = buildAuditWhere(params)
+
+  const [{ value: total }] = await db
+    .select({ value: count() })
+    .from(bookAuditLog)
+    .where(where)
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(page, pageCount)
+
+  const rows = await db
+    .select({
+      id: bookAuditLog.id,
+      bookId: bookAuditLog.bookId,
+      bookTitle: bookAuditLog.bookTitle,
+      action: bookAuditLog.action,
+      field: bookAuditLog.field,
+      oldValue: bookAuditLog.oldValue,
+      newValue: bookAuditLog.newValue,
+      actorName: bookAuditLog.actorName,
+      actorEmail: bookAuditLog.actorEmail,
+      createdAt: bookAuditLog.createdAt,
+    })
+    .from(bookAuditLog)
+    .where(where)
+    .orderBy(desc(bookAuditLog.createdAt), desc(bookAuditLog.id))
+    .limit(pageSize)
+    .offset((safePage - 1) * pageSize)
+
+  return { rows, total, page: safePage, pageSize, pageCount }
+}
+
+/** Distinct actors (by email) for the audit filter dropdown. */
+export async function listAuditActors(): Promise<
+  { email: string; name: string }[]
+> {
+  await requireAdmin()
+  const rows = await db
+    .selectDistinct({
+      email: bookAuditLog.actorEmail,
+      name: bookAuditLog.actorName,
+    })
+    .from(bookAuditLog)
+    .orderBy(asc(bookAuditLog.actorName))
+  return rows.filter((r) => r.email)
+}
+
+/**
+ * Returns matching audit rows serialized as a CSV string (respecting the same
+ * filters/search as the viewer), capped so an export can never run away.
+ */
+export async function exportAuditLogCsv(
+  params: AuditQueryParams = {},
+): Promise<string> {
+  await requireAdmin()
+  const where = buildAuditWhere(params)
+
+  const rows = await db
+    .select({
+      createdAt: bookAuditLog.createdAt,
+      action: bookAuditLog.action,
+      bookId: bookAuditLog.bookId,
+      bookTitle: bookAuditLog.bookTitle,
+      field: bookAuditLog.field,
+      oldValue: bookAuditLog.oldValue,
+      newValue: bookAuditLog.newValue,
+      actorName: bookAuditLog.actorName,
+      actorEmail: bookAuditLog.actorEmail,
+    })
+    .from(bookAuditLog)
+    .where(where)
+    .orderBy(desc(bookAuditLog.createdAt), desc(bookAuditLog.id))
+    .limit(10000)
+
+  const header = [
+    "Timestamp",
+    "Action",
+    "Book ID",
+    "Book",
+    "Field",
+    "Previous value",
+    "New value",
+    "User",
+    "Email",
+  ]
+  const esc = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : String(v)
+    // Always quote; escape embedded quotes by doubling them.
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  const lines = [header.map(esc).join(",")]
+  for (const r of rows) {
+    lines.push(
+      [
+        r.createdAt.toISOString(),
+        r.action,
+        r.bookId ?? "",
+        r.bookTitle,
+        r.field ?? "",
+        r.oldValue ?? "",
+        r.newValue ?? "",
+        r.actorName,
+        r.actorEmail,
+      ]
+        .map(esc)
+        .join(","),
+    )
+  }
+  return lines.join("\r\n")
 }
 
 export type IsbnMetadata = {
