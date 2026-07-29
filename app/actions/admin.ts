@@ -26,6 +26,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   or,
   sql,
   type SQL,
@@ -481,6 +482,9 @@ export type CatalogQueryParams = {
   source?: "all" | "in_app" | "affiliate"
   status?: "all" | "published" | "hidden"
   availability?: "all" | Availability
+  // Link-health filter: "broken" = confirmed broken; "review" = broken OR
+  // inconclusive (bot-blocked/timeout) links that a human should verify.
+  link?: "all" | "broken" | "review"
   sort?: CatalogSort
   dir?: "asc" | "desc"
 }
@@ -521,6 +525,11 @@ export async function queryCatalogBooks(
   if (params.status === "hidden") conditions.push(eq(book.published, false))
   if (params.availability && params.availability !== "all") {
     conditions.push(eq(book.availability, params.availability))
+  }
+  if (params.link === "broken") {
+    conditions.push(eq(book.linkStatus, "broken"))
+  } else if (params.link === "review") {
+    conditions.push(inArray(book.linkStatus, ["broken", "needs_review"]))
   }
 
   const q = (params.q ?? "").trim()
@@ -589,6 +598,87 @@ export async function listBookCategories(): Promise<string[]> {
     .from(book)
     .orderBy(asc(book.category))
   return rows.map((r) => r.category).filter(Boolean)
+}
+
+export type CatalogStats = {
+  total: number
+  /** Count per availability value (missing keys = 0). */
+  byAvailability: Record<string, number>
+  /** Affiliate titles whose link check returned a definitive 404/410. */
+  brokenLinks: number
+  /** Affiliate titles that are broken OR inconclusive (need a human look). */
+  linksNeedingReview: number
+  /** Titles with no cover image. */
+  missingCover: number
+  /** Affiliate titles with no ISBN (weakens the buy-link deep link). */
+  missingIsbn: number
+  /** Titles with an empty description or still in the default "General" bucket. */
+  incompleteMetadata: number
+  /** Most recent link-health check across the catalog, if ever run. */
+  lastLinkCheck: Date | null
+}
+
+/**
+ * Aggregate catalog health for the admin dashboard. All counts run in Postgres;
+ * cheap enough to compute per request even at thousands of titles.
+ */
+export async function getCatalogStats(): Promise<CatalogStats> {
+  await requireAdmin()
+
+  const affiliate = eq(book.fulfillment, "affiliate")
+  const noCover = or(isNull(book.coverImageUrl), eq(book.coverImageUrl, ""))
+  const noIsbn = or(isNull(book.isbn), eq(book.isbn, ""))
+
+  const [
+    availRows,
+    brokenLinks,
+    linksNeedingReview,
+    missingCover,
+    missingIsbn,
+    incompleteMetadata,
+    lastCheckRow,
+  ] = await Promise.all([
+    db
+      .select({ availability: book.availability, value: count() })
+      .from(book)
+      .groupBy(book.availability),
+    db
+      .select({ v: count() })
+      .from(book)
+      .where(and(affiliate, eq(book.linkStatus, "broken"))),
+    db
+      .select({ v: count() })
+      .from(book)
+      .where(and(affiliate, inArray(book.linkStatus, ["broken", "needs_review"]))),
+    db.select({ v: count() }).from(book).where(noCover),
+    db.select({ v: count() }).from(book).where(and(affiliate, noIsbn)),
+    db
+      .select({ v: count() })
+      .from(book)
+      .where(or(eq(book.description, ""), eq(book.category, "General"))),
+    db
+      .select({ v: sql<string | null>`max(${book.linkCheckedAt})` })
+      .from(book),
+  ])
+
+  const byAvailability: Record<string, number> = {}
+  let total = 0
+  for (const r of availRows) {
+    byAvailability[r.availability] = r.value
+    total += r.value
+  }
+
+  const rawLast = lastCheckRow[0]?.v ?? null
+  return {
+    total,
+    byAvailability,
+    brokenLinks: brokenLinks[0]?.v ?? 0,
+    linksNeedingReview: linksNeedingReview[0]?.v ?? 0,
+    missingCover: missingCover[0]?.v ?? 0,
+    missingIsbn: missingIsbn[0]?.v ?? 0,
+    incompleteMetadata: incompleteMetadata[0]?.v ?? 0,
+    lastLinkCheck: rawLast ? new Date(rawLast) : null,
+  }
 }
 
 export type CommercialBookInput = {

@@ -1,9 +1,11 @@
 import {
+  getCatalogStats,
   listBookCategories,
   queryCatalogBooks,
   type CatalogSort,
 } from "@/app/actions/admin"
 import { AdminBooks } from "@/components/admin-books"
+import { AdminBooksDashboard } from "@/components/admin-books-dashboard"
 import { isAvailability } from "@/lib/book-availability"
 
 export const dynamic = "force-dynamic"
@@ -41,24 +43,28 @@ export default async function AdminBooksPage({
   const availRaw = first(sp.availability)
   const availability =
     availRaw && isAvailability(availRaw) ? availRaw : "all"
+  const linkRaw = first(sp.link)
+  const link = linkRaw === "broken" || linkRaw === "review" ? linkRaw : "all"
   const sortRaw = first(sp.sort) as CatalogSort | undefined
   const sort = sortRaw && SORT_KEYS.includes(sortRaw) ? sortRaw : "updated"
   const dir = first(sp.dir) === "asc" ? "asc" : "desc"
   const page = Math.max(1, Number(first(sp.page)) || 1)
   const pageSize = Number(first(sp.pageSize)) || 50
 
-  const [result, categories] = await Promise.all([
+  const [result, categories, stats] = await Promise.all([
     queryCatalogBooks({
       q,
       source,
       status,
       availability,
+      link,
       sort,
       dir,
       page,
       pageSize,
     }),
     listBookCategories(),
+    getCatalogStats(),
   ])
 
   return (
@@ -70,6 +76,12 @@ export default async function AdminBooksPage({
         our affiliate link. Broken affiliate links are detected automatically
         and flagged for review.
       </p>
+      <div className="mt-8">
+        <AdminBooksDashboard
+          stats={stats}
+          active={{ availability, link }}
+        />
+      </div>
       <div className="mt-8">
         <AdminBooks
           result={result}
