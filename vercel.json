@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/prune-audit-log",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/import-books",
+      "schedule": "0 5 * * 0"
     }
   ]
 }

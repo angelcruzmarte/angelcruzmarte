@@ -13,6 +13,7 @@ import {
   Pencil,
   ImageIcon,
   BookDown,
+  DownloadCloud,
   Link2,
   Search,
   X,
@@ -89,6 +90,11 @@ const ACTIONS: Record<
     label: "Link check",
     icon: Link2,
     tone: "border-transparent bg-muted text-muted-foreground",
+  },
+  import: {
+    label: "Auto-import",
+    icon: DownloadCloud,
+    tone: "border-transparent bg-teal-500/15 text-teal-700 dark:text-teal-400",
   },
 }
 

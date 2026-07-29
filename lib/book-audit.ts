@@ -19,6 +19,7 @@ export type AuditAction =
   | "isbn_import"
   | "link_check"
   | "retention_prune"
+  | "import"
 
 export type AuditEntry = {
   bookId: number | null
