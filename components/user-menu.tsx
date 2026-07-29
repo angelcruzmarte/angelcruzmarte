@@ -54,8 +54,6 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
         className={cn(
           buttonVariants({ variant: "secondary", size: "icon" }),
           "relative rounded-full",
-          isSubscribed &&
-            "ring-2 ring-primary ring-offset-2 ring-offset-background",
         )}
         aria-label={
           isSubscribed ? "Account menu (Premium)" : "Account menu (Free plan)"
@@ -70,11 +68,6 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
           />
         ) : (
           <span className="text-sm font-semibold">{initials || "U"}</span>
-        )}
-        {isSubscribed && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background">
-            <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
-          </span>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

@@ -264,7 +264,7 @@ export function ProfileView({
             label="Send Debug Report"
           />
           <RowExternal
-            href="https://www.voxyfi.com"
+            href="https://www.trustpilot.com/evaluate/voxyfi.com"
             icon={<Star className="h-5 w-5" />}
             label="Review VOXYFI"
           />
