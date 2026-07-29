@@ -549,3 +549,92 @@ export async function deleteCommercialBook(id: number) {
   revalidatePath("/admin/books")
   return { success: true }
 }
+
+export type IsbnMetadata = {
+  title?: string
+  author?: string
+  description?: string
+  category?: string
+  coverImageUrl?: string
+}
+
+/**
+ * Looks up book metadata by ISBN via Open Library (free, no API key) to
+ * auto-fill the admin form. Best-effort: returns whatever fields resolve and an
+ * error string only when the ISBN is unusable or nothing is found. Never stores
+ * anything — the admin reviews/edits before saving. This is metadata only
+ * (title/author/synopsis/cover), never the copyrighted body text.
+ */
+export async function lookupIsbnMetadata(
+  rawIsbn: string,
+): Promise<{ data?: IsbnMetadata; error?: string }> {
+  await requireAdmin()
+  const isbn = (rawIsbn || "").replace(/[^0-9Xx]/g, "")
+  if (isbn.length !== 10 && isbn.length !== 13) {
+    return { error: "Enter a valid 10- or 13-digit ISBN first." }
+  }
+
+  try {
+    const res = await fetch(`https://openlibrary.org/isbn/${isbn}.json`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+    if (!res.ok) {
+      return { error: "No book found for that ISBN on Open Library." }
+    }
+    const edition = (await res.json()) as Record<string, any>
+
+    const data: IsbnMetadata = {
+      title: typeof edition.title === "string" ? edition.title.trim() : undefined,
+      coverImageUrl: `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`,
+    }
+
+    // Author name lives behind a key reference — resolve the first one.
+    const authorKey: string | undefined =
+      edition.authors?.[0]?.key ?? edition.works?.[0]?.author?.key
+    if (authorKey) {
+      try {
+        const aRes = await fetch(`https://openlibrary.org${authorKey}.json`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+        if (aRes.ok) {
+          const a = (await aRes.json()) as Record<string, any>
+          if (typeof a.name === "string") data.author = a.name.trim()
+        }
+      } catch {
+        // Non-fatal.
+      }
+    }
+
+    // Description + subjects usually live on the parent work.
+    const workKey: string | undefined = edition.works?.[0]?.key
+    if (workKey) {
+      try {
+        const wRes = await fetch(`https://openlibrary.org${workKey}.json`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+        if (wRes.ok) {
+          const w = (await wRes.json()) as Record<string, any>
+          const desc =
+            typeof w.description === "string"
+              ? w.description
+              : w.description?.value
+          if (typeof desc === "string" && desc.trim()) {
+            data.description = desc.trim()
+          }
+          if (Array.isArray(w.subjects) && w.subjects.length > 0) {
+            data.category = String(w.subjects[0]).trim()
+          }
+        }
+      } catch {
+        // Non-fatal.
+      }
+    }
+
+    return { data }
+  } catch {
+    return { error: "Could not reach Open Library. Try again." }
+  }
+}

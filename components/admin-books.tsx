@@ -2,10 +2,20 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { ExternalLink, Loader2, Pencil, Plus, Star, Trash2, X } from "lucide-react"
+import {
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Plus,
+  Sparkles,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react"
 import {
   createCommercialBook,
   deleteCommercialBook,
+  lookupIsbnMetadata,
   updateCommercialBook,
   type AdminBook,
   type CommercialBookInput,
@@ -57,6 +67,8 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
   const [showForm, setShowForm] = useState(books.length === 0)
   const [form, setForm] = useState<CommercialBookInput>(empty)
   const [error, setError] = useState<string | null>(null)
+  const [lookingUp, setLookingUp] = useState(false)
+  const [lookupNote, setLookupNote] = useState<string | null>(null)
 
   function set<K extends keyof CommercialBookInput>(
     key: K,
@@ -65,11 +77,60 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  // Auto-fill metadata from Open Library by ISBN. Only fills fields that are
+  // still blank so it never clobbers what the admin already typed.
+  async function fetchMetadata() {
+    setError(null)
+    setLookupNote(null)
+    setLookingUp(true)
+    try {
+      const res = await lookupIsbnMetadata(form.isbn ?? "")
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      const d = res.data ?? {}
+      const filled: string[] = []
+      setForm((f) => {
+        const next = { ...f }
+        if (!f.title.trim() && d.title) {
+          next.title = d.title
+          filled.push("title")
+        }
+        if (!f.author.trim() && d.author) {
+          next.author = d.author
+          filled.push("author")
+        }
+        if (!f.description.trim() && d.description) {
+          next.description = d.description
+          filled.push("description")
+        }
+        if ((!f.category?.trim() || f.category === "General") && d.category) {
+          next.category = d.category
+          filled.push("category")
+        }
+        if (!f.coverImageUrl?.trim() && d.coverImageUrl) {
+          next.coverImageUrl = d.coverImageUrl
+          filled.push("cover")
+        }
+        return next
+      })
+      setLookupNote(
+        filled.length
+          ? `Filled: ${filled.join(", ")}. Review before saving.`
+          : "No new fields to fill — everything was already set.",
+      )
+    } finally {
+      setLookingUp(false)
+    }
+  }
+
   function openNew() {
     setForm(empty)
     setEditingId(null)
     setShowForm(true)
     setError(null)
+    setLookupNote(null)
   }
 
   function openEdit(b: AdminBook) {
@@ -77,6 +138,7 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
     setEditingId(b.id)
     setShowForm(true)
     setError(null)
+    setLookupNote(null)
   }
 
   function submit() {
@@ -175,12 +237,32 @@ export function AdminBooks({ books }: { books: AdminBook[] }) {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="isbn">ISBN (13-digit)</Label>
-              <Input
-                id="isbn"
-                value={form.isbn ?? ""}
-                placeholder="9780000000000"
-                onChange={(e) => set("isbn", e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="isbn"
+                  value={form.isbn ?? ""}
+                  placeholder="9780000000000"
+                  onChange={(e) => set("isbn", e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={fetchMetadata}
+                  disabled={lookingUp || !form.isbn?.trim()}
+                  className="shrink-0 gap-1.5"
+                  title="Auto-fill title, author, description & cover from Open Library"
+                >
+                  {lookingUp ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Fetch
+                </Button>
+              </div>
+              {lookupNote && (
+                <p className="text-xs text-muted-foreground">{lookupNote}</p>
+              )}
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
               <Label htmlFor="buyUrl">
