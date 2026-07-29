@@ -19,6 +19,7 @@ const bookCardColumns = {
   title: book.title,
   author: book.author,
   category: book.category,
+  language: book.language,
   description: book.description,
   excerpt: book.excerpt,
   priceInCents: book.priceInCents,

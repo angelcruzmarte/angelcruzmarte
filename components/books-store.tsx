@@ -19,6 +19,7 @@ import {
   FileText,
   FlaskConical,
   Ghost,
+  Globe,
   Headphones,
   Heart,
   Landmark,
@@ -50,6 +51,7 @@ import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
 import { formatPrice } from "@/lib/plans"
+import { languageLabel } from "@/lib/languages"
 import { cn } from "@/lib/utils"
 
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
@@ -133,11 +135,39 @@ export function BooksStore({
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const { count, totalCents, setOpen } = useCart()
 
+  // Languages present in the catalog, English first then by title count, so the
+  // language filter only ever offers languages that actually have books.
+  const [languageFilter, setLanguageFilter] = useState<string>("all")
+  const languages = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const b of books) {
+      const code = b.language || "en"
+      counts.set(code, (counts.get(code) ?? 0) + 1)
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => {
+        if (a[0] === "en") return -1
+        if (b[0] === "en") return 1
+        return b[1] - a[1]
+      })
+      .map(([code, count]) => ({ code, count }))
+  }, [books])
+
+  // Books matching the active language filter ("all" shows everything).
+  const visibleBooks = useMemo(
+    () =>
+      languageFilter === "all"
+        ? books
+        : books.filter((b) => (b.language || "en") === languageFilter),
+    [books, languageFilter],
+  )
+  const filteringLanguage = languageFilter !== "all"
+
   // Group the catalog into Speechify-style shelves by category. (Featured books
   // are surfaced separately via the storefront's "Editor's Picks" row.)
   const shelves = useMemo(() => {
     const byCategory = new Map<string, Book[]>()
-    for (const b of books) {
+    for (const b of visibleBooks) {
       const list = byCategory.get(b.category) ?? []
       list.push(b)
       byCategory.set(b.category, list)
@@ -156,7 +186,7 @@ export function BooksStore({
       result.push({ title: category, books: byCategory.get(category)! })
     }
     return result
-  }, [books])
+  }, [visibleBooks])
 
   const favoriteBooks = useMemo(
     () => books.filter((b) => favorites.has(b.id)),
@@ -352,6 +382,57 @@ export function BooksStore({
             Favorites
           </button>
         </div>
+
+        {/* Language filter — only shown once the catalog spans more than one
+            language. Lets readers browse titles in their own language. */}
+        {languages.length > 1 && (
+          <div
+            role="group"
+            aria-label="Filter books by language"
+            className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setLanguageFilter("all")}
+              aria-pressed={languageFilter === "all"}
+              className={cn(
+                "flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+                languageFilter === "all"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card hover:bg-secondary",
+              )}
+            >
+              <Globe className="h-4 w-4" />
+              All languages
+            </button>
+            {languages.map(({ code, count }) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => setLanguageFilter(code)}
+                aria-pressed={languageFilter === code}
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+                  languageFilter === code
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card hover:bg-secondary",
+                )}
+              >
+                {languageLabel(code)}
+                <span
+                  className={cn(
+                    "text-xs font-medium",
+                    languageFilter === code
+                      ? "text-primary-foreground/80"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       {searching ? (
@@ -369,8 +450,9 @@ export function BooksStore({
         />
       ) : (
         <>
-          {/* Hero spotlight */}
-          {storefront?.hero && (
+          {/* Hero + curated rows are cross-language spotlights, so they only
+              show when no specific language is selected. */}
+          {!filteringLanguage && storefront?.hero && (
             <BookHero
               book={storefront.hero}
               owned={owned.has(storefront.hero.id)}
@@ -378,27 +460,45 @@ export function BooksStore({
             />
           )}
 
-          {/* Curated storefront rows (Editor's Picks, New Releases, etc.) */}
-          {storefront?.rows.map((row) => (
-            <BookShelf
-              key={row.key}
-              title={row.title}
-              books={row.books}
-              owned={owned}
-              favorites={favorites}
-            />
-          ))}
+          {!filteringLanguage &&
+            storefront?.rows.map((row) => (
+              <BookShelf
+                key={row.key}
+                title={row.title}
+                books={row.books}
+                owned={owned}
+                favorites={favorites}
+              />
+            ))}
+
+          {/* When a language is selected, lead with a clear heading. */}
+          {filteringLanguage && (
+            <div className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-primary" />
+              <h2 className="text-xl font-bold tracking-tight">
+                {`Books in ${languageLabel(languageFilter)}`}
+                <span className="ml-2 text-sm font-medium text-muted-foreground">
+                  {visibleBooks.length}
+                </span>
+              </h2>
+            </div>
+          )}
 
           {/* Upload your own books (free to listen) */}
-          <section>
-            <UploadBook />
-          </section>
+          {!filteringLanguage && (
+            <section>
+              <UploadBook />
+            </section>
+          )}
 
           {/* Your uploaded books */}
-          {uploads.length > 0 && <UploadsShelf uploads={uploads} />}
+          {!filteringLanguage && uploads.length > 0 && (
+            <UploadsShelf uploads={uploads} />
+          )}
 
-          {/* Browse by category */}
-          {shelves.length > 0 && (
+          {/* Browse by category (heading hidden when a language filter already
+              provides the section heading above). */}
+          {!filteringLanguage && shelves.length > 0 && (
             <h2 className="pt-2 text-xl font-bold tracking-tight">
               Browse by category
             </h2>
@@ -786,8 +886,13 @@ function StoreBookCard({
       <div className="min-w-0">
         <Link href={`/app/books/${book.id}`}>
           <p className="truncate text-sm font-semibold">{book.title}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {book.author}
+          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+            {book.language && book.language !== "en" && (
+              <span className="inline-flex shrink-0 items-center rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase text-secondary-foreground">
+                {languageLabel(book.language)}
+              </span>
+            )}
+            <span className="truncate">{book.author}</span>
           </p>
         </Link>
       </div>

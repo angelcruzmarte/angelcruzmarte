@@ -54,6 +54,8 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
         className={cn(
           buttonVariants({ variant: "secondary", size: "icon" }),
           "relative rounded-full",
+          isSubscribed &&
+            "ring-2 ring-primary ring-offset-2 ring-offset-background",
         )}
         aria-label={
           isSubscribed ? "Account menu (Premium)" : "Account menu (Free plan)"

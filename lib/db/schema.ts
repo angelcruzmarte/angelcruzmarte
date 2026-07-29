@@ -190,6 +190,10 @@ export const book = pgTable("book", {
   title: text("title").notNull(),
   author: text("author").notNull(),
   category: text("category").notNull().default("General"),
+  // Primary language of the title, as a two-letter code (e.g. "en", "es",
+  // "fr"). OpenAI TTS detects the language automatically, so any language can
+  // be narrated in-app. Defaults to English for existing/legacy rows.
+  language: text("language").notNull().default("en"),
   description: text("description").notNull(),
   excerpt: text("excerpt").notNull(),
   // Full book text used for text-to-speech once purchased. Only populated for
