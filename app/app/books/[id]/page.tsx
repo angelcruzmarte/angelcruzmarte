@@ -10,9 +10,11 @@ import {
 import { formatPrice } from "@/lib/plans"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getTodayListenSeconds } from "@/app/actions/stats"
+import { affiliateDisclosure } from "@/lib/affiliate"
+import { affiliateUrlForBook } from "@/lib/affiliate-settings"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
-import { BuyElsewhereButton } from "@/components/buy-elsewhere-button"
+import { BuyOnAmazonButton } from "@/components/buy-on-amazon-button"
 import { FavoriteButton } from "@/components/favorite-button"
 import { ListenPlayer } from "@/components/listen-player"
 import { buttonVariants } from "@/components/ui/button"
@@ -33,10 +35,19 @@ export default async function BookDetailPage({
   const book = await getBook(bookId)
   if (!book) notFound()
 
-  // Commercial titles are fulfilled by our partner bookstore (Bookshop.org):
-  // users listen to a free in-app sample and buy the full book on the partner
-  // store. We never sell them via Stripe or serve their full copyrighted text.
+  // Commercial titles are fulfilled by our affiliate partner (Amazon): users
+  // listen to a free in-app sample and buy the full book on Amazon with our
+  // Associate tag applied. We never sell them via Stripe or serve their full
+  // copyrighted text.
   const isAffiliate = book.fulfillment === "affiliate"
+  const amazonUrl = isAffiliate
+    ? await affiliateUrlForBook({
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        buyUrl: book.buyUrl,
+      })
+    : ""
 
   // Fallback grant in case the webhook hasn't landed yet after redirect.
   if (purchased && session_id && !isAffiliate) {
@@ -85,7 +96,7 @@ export default async function BookDetailPage({
           <p className="mt-1 text-muted-foreground">{book.author}</p>
           {isAffiliate ? (
             <p className="mt-3 text-sm font-medium text-muted-foreground">
-              Free sample to listen · Full book on Bookshop.org
+              Free sample to listen · Full book on Amazon
             </p>
           ) : owned ? (
             <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
@@ -99,13 +110,12 @@ export default async function BookDetailPage({
           )}
 
           {isAffiliate ? (
-            // Commercial title: primary action is the affiliate buy link.
-            <BuyElsewhereButton
+            // Commercial title: primary action is the Amazon affiliate link.
+            <BuyOnAmazonButton
+              href={amazonUrl}
+              bookId={book.id}
               title={book.title}
               author={book.author}
-              isbn={book.isbn}
-              buyUrl={book.buyUrl}
-              primary
               className="mt-3 w-full sm:w-auto"
             />
           ) : (
@@ -130,10 +140,14 @@ export default async function BookDetailPage({
       </h2>
 
       {isAffiliate ? (
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
-          <Sparkles className="h-4 w-4 shrink-0" />
-          Enjoy this free sample, then get the full book from our partner
-          Bookshop.org — supporting independent bookstores.
+        <div className="mb-4 space-y-2">
+          <div className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
+            <Sparkles className="h-4 w-4 shrink-0" />
+            Enjoy this free sample, then get the full book on Amazon.
+          </div>
+          <p className="px-1 text-xs text-muted-foreground">
+            {affiliateDisclosure()}
+          </p>
         </div>
       ) : (
         !owned && (

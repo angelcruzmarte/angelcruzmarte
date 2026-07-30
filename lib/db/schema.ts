@@ -359,6 +359,29 @@ export const promotion = pgTable("promotion", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 })
 
+// Bookstore commerce analytics. An append-only event stream that powers the
+// admin affiliate/revenue dashboard. `bookId` is intentionally NOT a FK (and
+// `bookTitle`/`author` are snapshotted) so events survive a book deletion.
+//   - type "affiliate_click" → user clicked out to a retail affiliate
+//     (provider = "amazon"); `amountCents` is 0 (Amazon reports revenue on its
+//     own dashboard, not back to us).
+//   - type "native_purchase" → completed VOXYFI Stripe purchase
+//     (provider = "voxyfi"); `amountCents` is the price paid.
+export const bookEvent = pgTable("book_event", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  bookId: integer("bookId"),
+  bookTitle: text("bookTitle").notNull().default(""),
+  author: text("author").notNull().default(""),
+  // Fulfillment provider: "amazon" (affiliate) | "voxyfi" (native).
+  provider: text("provider").notNull().default(""),
+  // Revenue in cents (native purchases only; 0 for affiliate clicks).
+  amountCents: integer("amountCents").notNull().default(0),
+  // Who triggered it, when known. Snapshotted; nullable for anonymous clicks.
+  userId: text("userId"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
+
 // Anonymous pricing-page views, used to measure the signup funnel.
 export const pricingView = pgTable("pricing_view", {
   id: serial("id").primaryKey(),
@@ -375,6 +398,7 @@ export const pricingView = pgTable("pricing_view", {
 
 export type Promotion = typeof promotion.$inferSelect
 export type PricingView = typeof pricingView.$inferSelect
+export type BookEvent = typeof bookEvent.$inferSelect
 
 export type ListeningStat = typeof listeningStat.$inferSelect
 export type AiQuota = typeof aiQuota.$inferSelect

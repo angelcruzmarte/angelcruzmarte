@@ -12,7 +12,6 @@ import {
   Upload,
 } from "lucide-react"
 import { addGutenbergBook } from "@/app/actions/books"
-import { bookstoreUrl } from "@/lib/book-stores"
 import { Button } from "@/components/ui/button"
 
 type StoreResult = {
@@ -213,8 +212,7 @@ function LiveBookCard({ result }: { result: StoreResult }) {
         </Button>
       ) : (
         <BuyControls
-          title={result.title}
-          author={result.author}
+          buyUrl={result.buyUrl}
           importing={importing}
           onImport={() => fileRef.current?.click()}
         />
@@ -237,30 +235,24 @@ function LiveBookCard({ result }: { result: StoreResult }) {
 }
 
 function BuyControls({
-  title,
-  author,
+  buyUrl,
   importing,
   onImport,
 }: {
-  title: string
-  author: string
+  buyUrl: string
   importing: boolean
   onImport: () => void
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      {/* One-tap buy from the connected bookstore (no store selection). */}
+      {/* One-tap buy on Amazon (Associate-tagged) — no store selection. */}
       <Button
         size="sm"
         variant="secondary"
         className="w-full gap-1.5"
         disabled={importing}
         render={
-          <a
-            href={bookstoreUrl(title, author)}
-            target="_blank"
-            rel="noopener noreferrer"
-          />
+          <a href={buyUrl} target="_blank" rel="noopener noreferrer" />
         }
       >
         {importing ? (
@@ -268,7 +260,7 @@ function BuyControls({
         ) : (
           <ShoppingCart className="h-4 w-4" />
         )}
-        {importing ? "Importing…" : "Buy"}
+        {importing ? "Importing…" : "Buy on Amazon"}
       </Button>
       <button
         type="button"

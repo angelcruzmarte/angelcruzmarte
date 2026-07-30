@@ -4,7 +4,8 @@ import { db } from "@/lib/db"
 import { book } from "@/lib/db/schema"
 import { and, asc, eq, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { bookshopBuyUrl } from "@/lib/book-stores"
+import { affiliateBuyUrl } from "@/lib/affiliate"
+import { resolveAffiliateSettings } from "@/lib/affiliate-settings"
 
 /**
  * Checks affiliate buy links and records link health. Shared by the admin
@@ -45,6 +46,7 @@ export async function runLinkCheck(ids?: number[], max = 100) {
   let broken = 0
   let unknown = 0
   const now = new Date()
+  const { tag, region } = await resolveAffiliateSettings()
 
   // Small concurrency to be gentle on the partner store.
   const BATCH = 5
@@ -52,11 +54,13 @@ export async function runLinkCheck(ids?: number[], max = 100) {
     const batch = rows.slice(i, i + BATCH)
     await Promise.all(
       batch.map(async (r) => {
-        const url = bookshopBuyUrl({
+        const url = affiliateBuyUrl({
           title: r.title,
           author: r.author,
           isbn: r.isbn,
           buyUrl: r.buyUrl,
+          tag,
+          region,
         })
         const verdict = await checkUrl(url)
 
@@ -102,7 +106,7 @@ export async function runLinkCheck(ids?: number[], max = 100) {
 type LinkVerdict = "ok" | "broken" | "unknown"
 
 /**
- * Classifies a buy link. Bookshop.org (like many retailers) blocks datacenter
+ * Classifies a buy link. Amazon (like many retailers) blocks datacenter
  * traffic with 403/429, so a plain "status < 400" check produces false
  * positives from serverless. We therefore treat only a definitive 404/410 as
  * genuinely broken; 2xx/3xx as ok; and everything else (403/429/5xx/timeout/

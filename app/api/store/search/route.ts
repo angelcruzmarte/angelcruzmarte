@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 
+import { affiliateBuyUrl } from "@/lib/affiliate"
+import { resolveAffiliateSettings } from "@/lib/affiliate-settings"
+
 // One page of live catalog results from Open Library.
 const PAGE_SIZE = 24
 
@@ -27,7 +30,10 @@ type OpenLibraryDoc = {
   ebook_access?: string
 }
 
-function mapDoc(doc: OpenLibraryDoc): StoreResult | null {
+function mapDoc(
+  doc: OpenLibraryDoc,
+  affiliate: { tag: string; region: string },
+): StoreResult | null {
   if (!doc.title) return null
   const author = doc.author_name?.[0] ?? "Unknown"
   const gutenbergId = doc.id_project_gutenberg?.length
@@ -44,9 +50,13 @@ function mapDoc(doc: OpenLibraryDoc): StoreResult | null {
       ? `https://www.gutenberg.org/cache/epub/${gutenbergId}/pg${gutenbergId}.cover.medium.jpg`
       : null
 
-  const buyUrl = `https://bookshop.org/search?keywords=${encodeURIComponent(
-    `${doc.title} ${author}`,
-  )}`
+  // Commercial titles link out to Amazon with our Associate tag applied.
+  const buyUrl = affiliateBuyUrl({
+    title: doc.title,
+    author,
+    tag: affiliate.tag,
+    region: affiliate.region,
+  })
 
   return {
     key: doc.key ?? `${doc.title}-${author}`,
@@ -96,8 +106,9 @@ export async function GET(request: Request) {
       numFound?: number
       num_found?: number
     }
+    const { tag, region } = await resolveAffiliateSettings()
     const results = (data.docs ?? [])
-      .map(mapDoc)
+      .map((doc) => mapDoc(doc, { tag, region }))
       .filter((r): r is StoreResult => r !== null)
     const numFound = data.numFound ?? data.num_found ?? 0
     return NextResponse.json({
