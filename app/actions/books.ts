@@ -3,7 +3,14 @@
 import { db } from "@/lib/db"
 import { book, bookFavorite, bookPurchase } from "@/lib/db/schema"
 import { recordBookEvent } from "@/lib/book-analytics"
-import { fetchAndParseGutenberg, gutenbergCoverUrl } from "@/lib/gutenberg"
+import { fetchAndParseGutenberg } from "@/lib/gutenberg"
+import {
+  deriveDescription,
+  normalizeAuthor,
+  normalizeTitle,
+  verifyLanguage,
+} from "@/lib/book-quality"
+import { resolveRealCover } from "@/lib/book-covers"
 import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
@@ -287,17 +294,30 @@ export async function importGutenbergBook(
   const [color, accent] =
     IMPORT_PALETTE[gutenbergId % IMPORT_PALETTE.length]
 
+  // Normalize metadata, rebuild a clean (boilerplate-free) description, detect
+  // the true language from the text, and resolve real cover artwork instead of
+  // a generic Gutenberg placeholder (null → the UI renders our branded card).
+  const title = normalizeTitle(meta.title?.trim() || parsed.title)
+  const author = normalizeAuthor(meta.author?.trim() || parsed.author)
+  const derived = deriveDescription(parsed.body)
+  const description = derived.description || parsed.description
+  const excerpt = derived.excerpt || parsed.excerpt
+  const sample = `${title} ${parsed.body.slice(0, 1200)}`
+  const { language } = verifyLanguage("en", sample)
+  const coverImageUrl = await resolveRealCover({ title, author })
+
   const [inserted] = await db
     .insert(book)
     .values({
-      title: meta.title?.trim() || parsed.title,
-      author: meta.author?.trim() || parsed.author,
+      title,
+      author,
       category: meta.category?.trim() || "Classics",
-      description: parsed.description,
-      excerpt: parsed.excerpt,
+      language,
+      description,
+      excerpt,
       content: parsed.body,
       priceInCents: IMPORTED_BOOK_PRICE,
-      coverImageUrl: meta.coverUrl || gutenbergCoverUrl(gutenbergId),
+      coverImageUrl,
       gutenbergId,
       coverColor: color,
       accentColor: accent,

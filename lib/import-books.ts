@@ -2,6 +2,14 @@ import "server-only"
 
 import { db } from "@/lib/db"
 import { book } from "@/lib/db/schema"
+import {
+  assessQuality,
+  deriveDescription,
+  normalizeAuthor,
+  normalizeTitle,
+  verifyLanguage,
+} from "@/lib/book-quality"
+import { resolveRealCover } from "@/lib/book-covers"
 import { isNotNull } from "drizzle-orm"
 import zlib from "node:zlib"
 
@@ -228,17 +236,6 @@ function parseText(
   return { author, body, excerpt, description }
 }
 
-async function coverUrlFor(id: number): Promise<string | null> {
-  const gut = `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`
-  try {
-    const res = await fetchWithTimeout(gut, { method: "HEAD" }, 12_000)
-    if (res.ok) return gut
-  } catch {
-    // ignore
-  }
-  return null
-}
-
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -348,32 +345,58 @@ export async function importNewBooks(opts?: {
 
   // Download and parse full text (concurrent, bounded).
   const rows = (
-    await mapWithConcurrency(selected, 10, async (entry, i) => {
+    await mapWithConcurrency(selected, 8, async (entry, i) => {
       const raw = await fetchText(entry.gutenbergId)
       if (!raw) return null
-      const { author, body, excerpt, description } = parseText(
-        raw,
-        entry.title,
-        entry.author,
-      )
+      const parsed = parseText(raw, entry.title, entry.author)
+      const body = parsed.body
       if (!body || body.length < 2000) return null
-      const cover = await coverUrlFor(entry.gutenbergId)
+
+      // Normalize metadata and rebuild a clean description from the prose,
+      // stripping Gutenberg boilerplate / transcriber notes.
+      const title = normalizeTitle(entry.title)
+      const author = normalizeAuthor(parsed.author || entry.author)
+      const derived = deriveDescription(body)
+      const description = derived.description || parsed.description
+      const excerpt = derived.excerpt || parsed.excerpt
+
+      // Verify the language against the actual script of the text (catches a
+      // translation whose script contradicts the catalog tag).
+      const sample = `${title} ${body.slice(0, 1200)}`
+      const { language } = verifyLanguage(entry.language, sample)
+
+      // Prefer real cover artwork; never store a generic Gutenberg placeholder.
+      // When nothing legitimate exists, leave it null so the UI shows our
+      // branded card.
+      const coverImageUrl = await resolveRealCover({ title, author })
       const [coverColor, accentColor] = PALETTE[i % PALETTE.length]
+
+      // Hold books with unusable metadata as unpublished / needs_review.
+      const verdict = assessQuality({
+        title,
+        author,
+        description,
+        language,
+        sample,
+      })
+      const published = autoPublish && verdict.publishable
+
       return {
-        title: entry.title,
+        title,
         author,
         category: entry.category,
-        language: entry.language,
+        language,
         description,
         excerpt,
         content: body,
         priceInCents: entry.price,
-        coverImageUrl: cover,
+        coverImageUrl,
         gutenbergId: entry.gutenbergId,
         coverColor,
         accentColor,
         fulfillment: "in_app" as const,
-        published: autoPublish,
+        published,
+        availability: verdict.publishable ? "available" : "needs_review",
       }
     })
   ).filter((r): r is NonNullable<typeof r> => r !== null)

@@ -173,6 +173,23 @@ export function BooksStore({
   const showRichStorefront = languageFilter === "en" || languageFilter === "all"
   const filteringLanguage = !showRichStorefront
 
+  // Enforce the language filter on the curated storefront as well: the hero and
+  // every curated row must contain only books of the active language, so the
+  // English store never surfaces a Chinese/Japanese/etc. spotlight. "All
+  // languages" keeps the original cross-language storefront.
+  const localizedStorefront = useMemo<Storefront | undefined>(() => {
+    if (!storefront || languageFilter === "all") return storefront
+    const inLang = (b: Book) => (b.language || "en") === languageFilter
+    const rows = storefront.rows
+      .map((row) => ({ ...row, books: row.books.filter(inLang) }))
+      .filter((row) => row.books.length > 0)
+    const hero =
+      storefront.hero && inLang(storefront.hero)
+        ? storefront.hero
+        : (visibleBooks.find((b) => b.featured) ?? visibleBooks[0] ?? null)
+    return { hero, rows }
+  }, [storefront, languageFilter, visibleBooks])
+
   // Group the catalog into Speechify-style shelves by category. (Featured books
   // are surfaced separately via the storefront's "Editor's Picks" row.)
   const shelves = useMemo(() => {
@@ -421,16 +438,16 @@ export function BooksStore({
         <>
           {/* Hero + curated rows are cross-language spotlights, so they only
               show when no specific language is selected. */}
-          {!filteringLanguage && storefront?.hero && (
+          {!filteringLanguage && localizedStorefront?.hero && (
             <BookHero
-              book={storefront.hero}
-              owned={owned.has(storefront.hero.id)}
-              favorited={favorites.has(storefront.hero.id)}
+              book={localizedStorefront.hero}
+              owned={owned.has(localizedStorefront.hero.id)}
+              favorited={favorites.has(localizedStorefront.hero.id)}
             />
           )}
 
           {!filteringLanguage &&
-            storefront?.rows.map((row) => (
+            localizedStorefront?.rows.map((row) => (
               <BookShelf
                 key={row.key}
                 title={row.title}
