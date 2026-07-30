@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Plus,
   FilePlus2,
+  ScanLine,
   LinkIcon,
   Type,
   Mic,
@@ -44,6 +45,7 @@ type AppItem = {
 }
 
 const addItems: Item[] = [
+  { label: "Scan Document", icon: ScanLine, href: "/app/new?mode=scan" },
   { label: "Import File", icon: FilePlus2, href: "/app/new?mode=file" },
   { label: "Paste Link", icon: LinkIcon, href: "/app/new?mode=link" },
   { label: "Type or Paste Text", icon: Type, href: "/app/new?mode=text" },

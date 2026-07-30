@@ -7,10 +7,12 @@ import {
   LinkIcon,
   Loader2,
   Mic,
+  ScanLine,
   Square,
   Type,
 } from "lucide-react"
 import { createDocument, importFromUrl } from "@/app/actions/documents"
+import { DocumentScanner } from "@/components/document-scanner"
 import { generateUploadThumbnail } from "@/lib/document-artwork"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,10 +20,11 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-type Mode = "text" | "link" | "file" | "dictate"
+type Mode = "text" | "link" | "file" | "dictate" | "scan"
 
 const modes: { id: Mode; label: string; icon: React.ElementType }[] = [
   { id: "text", label: "Type or Paste", icon: Type },
+  { id: "scan", label: "Scan", icon: ScanLine },
   { id: "link", label: "Link", icon: LinkIcon },
   { id: "file", label: "File", icon: FolderOpen },
   { id: "dictate", label: "Dictate", icon: Mic },
@@ -192,6 +195,13 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
 
       {mode === "file" && (
         <FileImport onError={setError} onDone={(id) => router.push(`/app/listen/${id}`)} />
+      )}
+
+      {mode === "scan" && (
+        <DocumentScanner
+          onError={setError}
+          onDone={(id) => router.push(`/app/listen/${id}`)}
+        />
       )}
     </div>
   )
