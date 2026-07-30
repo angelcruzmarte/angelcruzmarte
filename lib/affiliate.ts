@@ -143,8 +143,8 @@ function amazonDomain(region?: string | null): string {
 export function sanitizeAmazonTag(raw?: string | null): string {
   let v = (raw || "").trim().replace(/^["']|["']$/g, "")
   if (!v) return ""
-  // Pull the tag out of a pasted URL / query fragment.
-  const m = v.match(/[?&]tag=([^&#\s]+)/i)
+  // Pull the tag out of a pasted URL / query fragment (also a bare "tag=…").
+  const m = v.match(/(?:^|[?&])tag=([^&#\s]+)/i)
   if (m) v = decodeURIComponent(m[1])
   // A bare tag must not contain URL punctuation or spaces.
   if (/[:/?#\s]/.test(v)) return ""

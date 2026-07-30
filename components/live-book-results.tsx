@@ -127,6 +127,12 @@ export function LiveBookResults({ query }: { query: string }) {
           That&apos;s everything for &ldquo;{query}&rdquo;.
         </p>
       )}
+
+      {/* Amazon Associates disclosure — kept clear and conspicuous near the
+          "Buy on Amazon" links, as required by the program + FTC. */}
+      <p className="border-t border-border/60 pt-4 text-center text-xs text-muted-foreground">
+        {affiliateDisclosure()}
+      </p>
     </div>
   )
 }
