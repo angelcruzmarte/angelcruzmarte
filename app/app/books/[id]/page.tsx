@@ -109,24 +109,12 @@ export default async function BookDetailPage({
               className="mt-3 w-full sm:w-auto"
             />
           ) : (
-            <>
-              <BuyBookButton
-                bookId={book.id}
-                priceInCents={book.priceInCents}
-                owned={owned}
-                className="mt-3 gap-2"
-              />
-              {!owned && (
-                <BuyElsewhereButton
-                  title={book.title}
-                  author={book.author}
-                  isbn={book.isbn}
-                  buyUrl={book.buyUrl}
-                  label="Buy a print copy"
-                  className="mt-2 w-full sm:w-auto"
-                />
-              )}
-            </>
+            <BuyBookButton
+              bookId={book.id}
+              priceInCents={book.priceInCents}
+              owned={owned}
+              className="mt-3 gap-2"
+            />
           )}
         </div>
       </div>
