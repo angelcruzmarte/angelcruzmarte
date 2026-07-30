@@ -207,7 +207,7 @@ export const book = pgTable("book", {
   //  - "in_app"   → sold via our Stripe checkout; full text streamed in-app
   //                 (public-domain / licensed / owned inventory).
   //  - "affiliate"→ commercial title; users listen to a FREE sample in-app and
-  //                 buy the full book on the partner store (Bookshop.org). We
+  //                 buy the full book on the affiliate store (Amazon). We
   //                 never serve the full copyrighted text.
   fulfillment: text("fulfillment").notNull().default("in_app"),
   // 13-digit ISBN, used to build a deep affiliate link to the exact edition.

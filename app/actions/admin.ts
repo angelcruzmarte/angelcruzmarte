@@ -13,6 +13,13 @@ import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
 import { runLinkCheck } from "@/lib/book-link-check"
+import { getAffiliateAnalytics } from "@/lib/book-analytics"
+import { AMAZON_MARKETPLACES } from "@/lib/affiliate"
+import {
+  resolveAffiliateSettings,
+  saveAmazonRegion,
+  saveAmazonTag,
+} from "@/lib/affiliate-settings"
 import {
   countPrunable,
   fetchPrunable,
@@ -231,6 +238,9 @@ export async function getFinanceData() {
 
   const arpu = activePaying > 0 ? Math.round(mrr / activePaying) : 0
 
+  // Affiliate (Amazon) click-through + native-store analytics.
+  const affiliate = await getAffiliateAnalytics()
+
   return {
     mrr,
     arr: mrr * 12,
@@ -252,6 +262,7 @@ export async function getFinanceData() {
       amount: s.price,
       createdAt: s.createdAt,
     })),
+    affiliate,
   }
 }
 
@@ -794,7 +805,7 @@ export async function createCommercialBook(input: CommercialBookInput) {
         action: "create",
         field: null,
         oldValue: null,
-        newValue: `${v.title} by ${v.author} (Bookshop.org)`,
+        newValue: `${v.title} by ${v.author} (Amazon)`,
       },
     ])
     revalidatePath("/app/books")
@@ -1048,6 +1059,48 @@ export async function checkBookLinks(ids?: number[]) {
     },
   ])
   return result
+}
+
+// ----- Affiliate (Amazon) configuration -----
+
+export type AffiliateConfig = {
+  tag: string
+  region: string
+  tagSource: "setting" | "env" | "none"
+  regions: { code: string; label: string }[]
+}
+
+/** Reads the effective Amazon Associate configuration for the settings page. */
+export async function getAffiliateConfig(): Promise<AffiliateConfig> {
+  await requireAdmin()
+  const { tag, region, tagSource } = await resolveAffiliateSettings()
+  return {
+    tag,
+    region,
+    tagSource,
+    regions: AMAZON_MARKETPLACES.map((m) => ({ code: m.code, label: m.label })),
+  }
+}
+
+/** Saves the Amazon Associate tag + marketplace region (admin only). */
+export async function saveAffiliateConfig(input: {
+  tag: string
+  region: string
+}) {
+  const admin = await requireAdmin()
+  await saveAmazonTag(input.tag)
+  await saveAmazonRegion(input.region)
+  await logBookAudit(actorOf(admin), [
+    {
+      bookId: null,
+      bookTitle: "Amazon affiliate settings",
+      action: "settings",
+      field: "amazon_associate",
+      oldValue: null,
+      newValue: `tag=${input.tag.trim() || "(cleared)"} region=${input.region}`,
+    },
+  ])
+  return await getAffiliateConfig()
 }
 
 // ----- Book audit log (read-only viewer) -----

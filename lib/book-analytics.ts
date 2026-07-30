@@ -9,6 +9,34 @@ import { ACTIVE_AFFILIATE_PROVIDER } from "@/lib/affiliate"
 export type BookEventType = "affiliate_click" | "native_purchase"
 
 /**
+ * Generic append-only event recorder. Best-effort; never throws into the
+ * request path. Prefer this single entry point from callers.
+ */
+export async function recordBookEvent(input: {
+  type: BookEventType
+  bookId?: number | null
+  bookTitle: string
+  author?: string | null
+  provider: string
+  amountCents?: number
+  userId?: string | null
+}): Promise<void> {
+  try {
+    await db.insert(bookEvent).values({
+      type: input.type,
+      bookId: input.bookId ?? null,
+      bookTitle: input.bookTitle.slice(0, 500),
+      author: (input.author ?? "").slice(0, 500),
+      provider: input.provider,
+      amountCents: Math.max(0, Math.round(input.amountCents ?? 0)),
+      userId: input.userId ?? null,
+    })
+  } catch {
+    // Swallow — analytics is best-effort.
+  }
+}
+
+/**
  * Records a click-out to a retail affiliate (Amazon). Fire-and-forget: never
  * throws into the request path, since tracking must not break the buy flow.
  */
@@ -135,4 +163,9 @@ export async function getBookAnalytics(windowDays = 30): Promise<BookAnalytics> 
       clicks: r.clicks,
     })),
   }
+}
+
+/** Alias used by the admin finance dashboard (last 30 days). */
+export function getAffiliateAnalytics(): Promise<BookAnalytics> {
+  return getBookAnalytics(30)
 }

@@ -194,6 +194,12 @@ export function activeProvider(): AffiliateProvider {
   return AFFILIATE_PROVIDERS[ACTIVE_AFFILIATE_PROVIDER]
 }
 
+/** Display label of the active affiliate provider, e.g. "Amazon". */
+export const ACTIVE_AFFILIATE_LABEL = amazonProvider.label
+
+/** Button copy of the active affiliate provider, e.g. "Buy on Amazon". */
+export const ACTIVE_AFFILIATE_BUY_LABEL = amazonProvider.buyLabel
+
 /**
  * Builds an affiliate buy URL using the active provider. Pure/sync — callers
  * pass the resolved `tag`/`region` (see `resolveAffiliateSettings` server-side).

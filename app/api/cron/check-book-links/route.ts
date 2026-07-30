@@ -15,7 +15,7 @@ export const maxDuration = 300
 
 /**
  * Scheduled affiliate buy-link health check. Sweeps the affiliate titles whose
- * links were checked longest ago (or never), verifies each Bookshop.org link,
+ * links were checked longest ago (or never), verifies each Amazon link,
  * and records link health — flipping broken ones to "needs review" so they
  * surface in the admin catalog filter. Secret-gated and idempotent.
  */

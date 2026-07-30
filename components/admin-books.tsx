@@ -45,7 +45,7 @@ import {
   type Availability,
   type LinkStatus,
 } from "@/lib/book-availability"
-import { bookshopBuyUrl } from "@/lib/book-stores"
+import { affiliateBuyUrl, isValidIsbn, ACTIVE_AFFILIATE_LABEL } from "@/lib/affiliate"
 import { BookCover } from "@/components/book-cover"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -126,7 +126,8 @@ function toInput(b: AdminBook): CommercialBookInput {
 }
 
 const isAffiliate = (b: AdminBook) => b.fulfillment === "affiliate"
-const sourceLabel = (b: AdminBook) => (isAffiliate(b) ? "Bookshop.org" : "VOXYFI")
+const sourceLabel = (b: AdminBook) =>
+  isAffiliate(b) ? ACTIVE_AFFILIATE_LABEL : "VOXYFI"
 
 type ActiveQuery = {
   q: string
@@ -308,10 +309,14 @@ export function AdminBooks({
         setError("Add a listenable sample — this is what users hear in-app.")
         return
       }
-      if (!form.isbn?.trim() && !form.buyUrl?.trim()) {
-        setError("Add an ISBN or a buy URL so the Bookshop.org link can be built.")
-        return
-      }
+    if (!form.isbn?.trim() && !form.buyUrl?.trim()) {
+      setError("Add an ISBN or a buy URL so the Amazon link can be built.")
+      return
+    }
+    if (form.isbn?.trim() && !isValidIsbn(form.isbn)) {
+      setError("That ISBN looks invalid. Enter a valid ISBN-10 or ISBN-13.")
+      return
+    }
     }
     setError(null)
     startTransition(async () => {
@@ -512,9 +517,34 @@ export function AdminBooks({
               <Input
                 id="buyUrl"
                 value={form.buyUrl ?? ""}
-                placeholder="https://bookshop.org/…"
+                placeholder="https://www.amazon.com/dp/…"
                 onChange={(e) => set("buyUrl", e.target.value)}
               />
+              {/* Live preview of the affiliate link customers will actually
+                  get (tag is applied server-side at click time). */}
+              {editingIsAffiliate && (
+                <p className="truncate text-xs text-muted-foreground">
+                  Amazon link:{" "}
+                  <a
+                    href={affiliateBuyUrl({
+                      title: form.title,
+                      author: form.author,
+                      isbn: form.isbn,
+                      buyUrl: form.buyUrl,
+                    })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    {affiliateBuyUrl({
+                      title: form.title,
+                      author: form.author,
+                      isbn: form.isbn,
+                      buyUrl: form.buyUrl,
+                    })}
+                  </a>
+                </p>
+              )}
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
               <Label htmlFor="coverImageUrl">Cover image URL (optional)</Label>
@@ -601,9 +631,9 @@ export function AdminBooks({
           <Select value={query.source} onValueChange={(v) => v && pushParams({ source: v })}>
             <SelectTrigger className="w-36"><SelectValue placeholder="Source" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              <SelectItem value="in_app">VOXYFI</SelectItem>
-              <SelectItem value="affiliate">Bookshop.org</SelectItem>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="in_app">VOXYFI</SelectItem>
+                <SelectItem value="affiliate">{ACTIVE_AFFILIATE_LABEL}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={query.status} onValueChange={(v) => v && pushParams({ status: v })}>
@@ -789,7 +819,7 @@ export function AdminBooks({
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <a
-                      href={bookshopBuyUrl({ title: b.title, author: b.author, isbn: b.isbn, buyUrl: b.buyUrl })}
+                          href={affiliateBuyUrl({ title: b.title, author: b.author, isbn: b.isbn, buyUrl: b.buyUrl })}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"

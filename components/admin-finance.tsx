@@ -1,11 +1,14 @@
 "use client"
 
+import type React from "react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import {
   BookOpen,
   CircleDollarSign,
   Gift,
+  MousePointerClick,
   Repeat,
+  ShoppingBag,
   TrendingUp,
   Users,
 } from "lucide-react"
@@ -99,6 +102,9 @@ export function AdminFinance({ data }: { data: FinanceData }) {
           </Card>
         ))}
       </div>
+
+      {/* Amazon affiliate + native store performance */}
+      <AffiliatePanel affiliate={data.affiliate} />
 
       {/* Revenue trend */}
       <Card className="p-6">
@@ -270,6 +276,109 @@ export function AdminFinance({ data }: { data: FinanceData }) {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+function AffiliatePanel({
+  affiliate,
+}: {
+  affiliate: FinanceData["affiliate"]
+}) {
+  const conversionPct = Math.round(affiliate.conversionRate * 100)
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="font-semibold">Amazon affiliate &amp; native store</h2>
+          <p className="text-sm text-muted-foreground">
+            Last {affiliate.windowDays} days. Amazon reports commission on its
+            own dashboard, so we track click-throughs here; native (VOXYFI)
+            revenue is exact.
+          </p>
+        </div>
+        <Badge variant="secondary">Amazon Associates</Badge>
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MiniStat
+          icon={MousePointerClick}
+          label="Amazon clicks"
+          value={affiliate.affiliateClicks.toLocaleString()}
+        />
+        <MiniStat
+          icon={ShoppingBag}
+          label="Native purchases"
+          value={affiliate.nativePurchases.toLocaleString()}
+        />
+        <MiniStat
+          icon={CircleDollarSign}
+          label="Native revenue"
+          value={dollarsPrecise(affiliate.nativeRevenueCents)}
+        />
+        <MiniStat
+          icon={TrendingUp}
+          label="Purchase intent"
+          value={`${conversionPct}%`}
+          hint="Native buys ÷ (buys + Amazon clicks)"
+        />
+      </div>
+
+      <div className="mt-6">
+        <h3 className="text-sm font-medium">Most-clicked on Amazon</h3>
+        {affiliate.topAffiliateBooks.length === 0 ? (
+          <p className="mt-3 rounded-lg bg-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
+            No affiliate clicks in this window yet.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border/60">
+            {affiliate.topAffiliateBooks.map((b, i) => (
+              <li
+                key={`${b.bookId ?? "x"}-${i}`}
+                className="flex items-center justify-between gap-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{b.title}</p>
+                  {b.author && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {b.author}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                  {b.clicks.toLocaleString()}{" "}
+                  {b.clicks === 1 ? "click" : "clicks"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function MiniStat({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: React.ElementType
+  label: string
+  value: string
+  hint?: string
+}) {
+  return (
+    <div className="rounded-xl border border-border p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">
+        {value}
+      </p>
+      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   )
 }

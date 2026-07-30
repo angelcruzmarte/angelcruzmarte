@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db"
 import { book, bookFavorite, bookPurchase } from "@/lib/db/schema"
+import { recordBookEvent } from "@/lib/book-analytics"
 import { fetchAndParseGutenberg, gutenbergCoverUrl } from "@/lib/gutenberg"
 import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
@@ -217,12 +218,40 @@ export async function grantBookPurchase(
   bookId: number,
   stripeSessionId?: string,
 ) {
-  await db
+  const inserted = await db
     .insert(bookPurchase)
     .values({ userId, bookId, stripeSessionId })
     .onConflictDoNothing({
       target: [bookPurchase.userId, bookPurchase.bookId],
     })
+    .returning({ id: bookPurchase.id })
+
+  // Only log revenue on the FIRST grant (onConflictDoNothing returns no rows on
+  // a duplicate) and only for genuinely paid titles — free public-domain adds
+  // go through this same path at price 0 and must not count as revenue.
+  if (inserted.length > 0) {
+    const [b] = await db
+      .select({
+        title: book.title,
+        author: book.author,
+        priceInCents: book.priceInCents,
+      })
+      .from(book)
+      .where(eq(book.id, bookId))
+      .limit(1)
+
+    if (b && b.priceInCents > 0) {
+      await recordBookEvent({
+        type: "native_purchase",
+        bookId,
+        bookTitle: b.title,
+        author: b.author,
+        provider: "voxyfi",
+        amountCents: b.priceInCents,
+        userId,
+      })
+    }
+  }
 }
 
 type GutenbergMeta = {
