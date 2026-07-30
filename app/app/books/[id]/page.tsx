@@ -122,6 +122,7 @@ export default async function BookDetailPage({
                   author={book.author}
                   isbn={book.isbn}
                   buyUrl={book.buyUrl}
+                  label="Buy a print copy"
                   className="mt-2 w-full sm:w-auto"
                 />
               )}
