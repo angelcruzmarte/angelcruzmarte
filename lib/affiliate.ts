@@ -131,9 +131,32 @@ function amazonDomain(region?: string | null): string {
   )
 }
 
+/**
+ * Sanitizes an Amazon Associate tag into its bare store-id form (e.g.
+ * "voxyfi-20"), tolerating common mistakes:
+ *   - a full SiteStripe URL pasted in ("https://amazon.com/dp/X?tag=voxyfi-20")
+ *   - a "tag=voxyfi-20" fragment
+ *   - surrounding whitespace/quotes
+ * Returns "" when the value can't be resolved to a valid-looking tag, so we
+ * emit a CLEAN (untagged) link rather than a broken one.
+ */
+export function sanitizeAmazonTag(raw?: string | null): string {
+  let v = (raw || "").trim().replace(/^["']|["']$/g, "")
+  if (!v) return ""
+  // Pull the tag out of a pasted URL / query fragment.
+  const m = v.match(/[?&]tag=([^&#\s]+)/i)
+  if (m) v = decodeURIComponent(m[1])
+  // A bare tag must not contain URL punctuation or spaces.
+  if (/[:/?#\s]/.test(v)) return ""
+  // Amazon store ids are alphanumeric segments ending in a numeric locale
+  // suffix, e.g. "voxyfi-20", "my-store-21".
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*-\d{1,3}$/i.test(v)) return ""
+  return v
+}
+
 /** Appends the affiliate tag as a query param, respecting existing params. */
 function withTag(url: string, tag?: string | null): string {
-  const t = (tag || "").trim()
+  const t = sanitizeAmazonTag(tag)
   if (!t) return url
   const sep = url.includes("?") ? "&" : "?"
   return `${url}${sep}tag=${encodeURIComponent(t)}`
@@ -162,11 +185,11 @@ export function buildAmazonUrl(input: AffiliateLinkInput): string {
   const asin = isbnToAmazonAsin(input.isbn)
   if (asin) return withTag(`${base}/dp/${asin}`, input.tag)
 
-  // 3. Fallback: keyword search in the books department.
-  const query = encodeURIComponent(
-    [input.title, input.author].filter(Boolean).join(" ").trim(),
-  )
-  return withTag(`${base}/s?k=${query}&i=stripbooks`, input.tag)
+  // 3. Fallback: keyword search in the books department. If we have nothing to
+  // search on, land on the Books storefront rather than an empty search page.
+  const q = [input.title, input.author].filter(Boolean).join(" ").trim()
+  if (!q) return withTag(`${base}/b?node=283155`, input.tag) // Amazon Books
+  return withTag(`${base}/s?k=${encodeURIComponent(q)}&i=stripbooks`, input.tag)
 }
 
 export const amazonProvider: AffiliateProvider = {

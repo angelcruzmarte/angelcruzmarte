@@ -10,6 +10,7 @@ import {
   AMAZON_TAG_SETTING_KEY,
   DEFAULT_AMAZON_REGION,
   affiliateBuyUrl,
+  sanitizeAmazonTag,
   type AffiliateLinkInput,
 } from "@/lib/affiliate"
 
@@ -54,9 +55,13 @@ export async function resolveAffiliateSettings(): Promise<AffiliateSettings> {
     readSetting(AMAZON_REGION_SETTING_KEY),
   ])
 
-  const envTag = (process.env.AMAZON_ASSOCIATE_TAG || "").trim()
-  const tag = tagSetting || envTag || ""
-  const tagSource: AffiliateSettings["tagSource"] = tagSetting
+  // Sanitize both sources so a pasted SiteStripe URL or "tag=..." fragment
+  // still resolves to a bare, valid tag (and a junk value becomes "" → clean,
+  // untagged links instead of broken ones).
+  const settingTag = sanitizeAmazonTag(tagSetting)
+  const envTag = sanitizeAmazonTag(process.env.AMAZON_ASSOCIATE_TAG)
+  const tag = settingTag || envTag || ""
+  const tagSource: AffiliateSettings["tagSource"] = settingTag
     ? "setting"
     : envTag
       ? "env"
@@ -71,7 +76,8 @@ export async function resolveAffiliateSettings(): Promise<AffiliateSettings> {
 
 /** Persists the admin-editable tag (empty string clears the override). */
 export async function saveAmazonTag(tag: string): Promise<void> {
-  const value = (tag || "").trim()
+  // Store the sanitized bare tag so bad paste-ins never reach a live link.
+  const value = sanitizeAmazonTag(tag)
   await db
     .insert(appSetting)
     .values({ key: AMAZON_TAG_SETTING_KEY, value, updatedAt: new Date() })

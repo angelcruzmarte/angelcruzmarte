@@ -13,6 +13,8 @@ import {
 } from "lucide-react"
 import { addGutenbergBook } from "@/app/actions/books"
 import { Button } from "@/components/ui/button"
+import { trackAffiliateClick } from "@/lib/affiliate-track"
+import { affiliateDisclosure } from "@/lib/affiliate"
 
 type StoreResult = {
   key: string
@@ -213,6 +215,8 @@ function LiveBookCard({ result }: { result: StoreResult }) {
       ) : (
         <BuyControls
           buyUrl={result.buyUrl}
+          title={result.title}
+          author={result.author}
           importing={importing}
           onImport={() => fileRef.current?.click()}
         />
@@ -236,23 +240,33 @@ function LiveBookCard({ result }: { result: StoreResult }) {
 
 function BuyControls({
   buyUrl,
+  title,
+  author,
   importing,
   onImport,
 }: {
   buyUrl: string
+  title: string
+  author: string
   importing: boolean
   onImport: () => void
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      {/* One-tap buy on Amazon (Associate-tagged) — no store selection. */}
+      {/* One-tap buy on Amazon (Associate-tagged). Fires a click beacon before
+          the new tab opens, and marks the link rel=sponsored for compliance. */}
       <Button
         size="sm"
         variant="secondary"
         className="w-full gap-1.5"
         disabled={importing}
         render={
-          <a href={buyUrl} target="_blank" rel="noopener noreferrer" />
+          <a
+            href={buyUrl}
+            target="_blank"
+            rel="noopener noreferrer sponsored nofollow"
+            onClick={() => trackAffiliateClick({ title, author })}
+          />
         }
       >
         {importing ? (

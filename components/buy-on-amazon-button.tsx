@@ -2,6 +2,7 @@
 
 import { ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { trackAffiliateClick } from "@/lib/affiliate-track"
 
 /**
  * "Buy on Amazon" — the primary purchase action for affiliate (non-native)
@@ -27,27 +28,6 @@ export function BuyOnAmazonButton({
   label?: string
   className?: string
 }) {
-  function trackClick() {
-    try {
-      const payload = JSON.stringify({ bookId, title, author })
-      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-        navigator.sendBeacon(
-          "/api/store/affiliate-click",
-          new Blob([payload], { type: "application/json" }),
-        )
-      } else {
-        void fetch("/api/store/affiliate-click", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: payload,
-          keepalive: true,
-        })
-      }
-    } catch {
-      // Never block the buy on a tracking failure.
-    }
-  }
-
   return (
     <Button
       size="lg"
@@ -57,8 +37,8 @@ export function BuyOnAmazonButton({
         <a
           href={href}
           target="_blank"
-          rel="noopener noreferrer sponsored"
-          onClick={trackClick}
+          rel="noopener noreferrer sponsored nofollow"
+          onClick={() => trackAffiliateClick({ bookId, title, author })}
         />
       }
     >
