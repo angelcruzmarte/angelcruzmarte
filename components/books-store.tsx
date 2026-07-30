@@ -50,6 +50,12 @@ import type { Suggestion } from "@/app/api/store/suggest/route"
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Input } from "@/components/ui/input"
 import { formatPrice } from "@/lib/plans"
 import { languageLabel } from "@/lib/languages"
 import { cn } from "@/lib/utils"
@@ -135,9 +141,10 @@ export function BooksStore({
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const { count, totalCents, setOpen } = useCart()
 
-  // Languages present in the catalog, English first then by title count, so the
-  // language filter only ever offers languages that actually have books.
-  const [languageFilter, setLanguageFilter] = useState<string>("all")
+  // Language handling. The store defaults to English; other languages are only
+  // surfaced on demand via the language picker (search-on-demand), never as a
+  // long list of chips upfront.
+  const [languageFilter, setLanguageFilter] = useState<string>("en")
   const languages = useMemo(() => {
     const counts = new Map<string, number>()
     for (const b of books) {
@@ -153,7 +160,7 @@ export function BooksStore({
       .map(([code, count]) => ({ code, count }))
   }, [books])
 
-  // Books matching the active language filter ("all" shows everything).
+  // Books matching the active language filter ("all" shows every language).
   const visibleBooks = useMemo(
     () =>
       languageFilter === "all"
@@ -161,7 +168,10 @@ export function BooksStore({
         : books.filter((b) => (b.language || "en") === languageFilter),
     [books, languageFilter],
   )
-  const filteringLanguage = languageFilter !== "all"
+  // English and "All languages" get the full curated storefront; a specific
+  // non-English language shows a focused, category-only view.
+  const showRichStorefront = languageFilter === "en" || languageFilter === "all"
+  const filteringLanguage = !showRichStorefront
 
   // Group the catalog into Speechify-style shelves by category. (Featured books
   // are surfaced separately via the storefront's "Editor's Picks" row.)
@@ -351,8 +361,8 @@ export function BooksStore({
           )}
         </div>
 
-        {/* Filter chips: personalize + favorites */}
-        <div className="flex items-center gap-2">
+        {/* Filter chips: personalize + favorites + language */}
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/app/discover"
             aria-label="Personalize your book recommendations"
@@ -381,58 +391,17 @@ export function BooksStore({
             <Heart className={cn("h-4 w-4", showFavorites && "fill-current")} />
             Favorites
           </button>
-        </div>
 
-        {/* Language filter — only shown once the catalog spans more than one
-            language. Lets readers browse titles in their own language. */}
-        {languages.length > 1 && (
-          <div
-            role="group"
-            aria-label="Filter books by language"
-            className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <button
-              type="button"
-              onClick={() => setLanguageFilter("all")}
-              aria-pressed={languageFilter === "all"}
-              className={cn(
-                "flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
-                languageFilter === "all"
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card hover:bg-secondary",
-              )}
-            >
-              <Globe className="h-4 w-4" />
-              All languages
-            </button>
-            {languages.map(({ code, count }) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setLanguageFilter(code)}
-                aria-pressed={languageFilter === code}
-                className={cn(
-                  "flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
-                  languageFilter === code
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card hover:bg-secondary",
-                )}
-              >
-                {languageLabel(code)}
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    languageFilter === code
-                      ? "text-primary-foreground/80"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {count}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+          {/* Language picker — English by default. Other languages are only
+              revealed on demand, via search, inside this popover. */}
+          {languages.length > 1 && (
+            <LanguageFilterMenu
+              languages={languages}
+              value={languageFilter}
+              onChange={setLanguageFilter}
+            />
+          )}
+        </div>
       </header>
 
       {searching ? (
@@ -606,6 +575,121 @@ function GenreNav({
         })}
       </ul>
     </section>
+  )
+}
+
+// Compact, search-on-demand language picker. Shows the current language (English
+// by default) as a single control; other languages are only revealed when the
+// user opens the popover and searches — never as a long list of chips upfront.
+function LanguageFilterMenu({
+  languages,
+  value,
+  onChange,
+}: {
+  languages: Array<{ code: string; count: number }>
+  value: string
+  onChange: (code: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+
+  const options = useMemo(() => {
+    const all: Array<{ code: string; label: string; count: number | null }> = [
+      { code: "all", label: "All languages", count: null },
+      ...languages.map((l) => ({
+        code: l.code,
+        label: languageLabel(l.code),
+        count: l.count,
+      })),
+    ]
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) || o.code.toLowerCase().includes(q),
+    )
+  }, [languages, query])
+
+  const activeLabel = value === "all" ? "All languages" : languageLabel(value)
+  const isDefault = value === "en"
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setQuery("")
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Language: ${activeLabel}. Change language`}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              isDefault
+                ? "border-border bg-card hover:bg-secondary"
+                : "border-primary bg-primary text-primary-foreground",
+            )}
+          />
+        }
+      >
+        <Globe className="h-4 w-4" />
+        <span className="max-w-[7rem] truncate">{activeLabel}</span>
+        <ChevronRight className="h-3.5 w-3.5 rotate-90 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-0 p-0">
+        <div className="border-b border-border p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search languages…"
+              className="h-9 pl-8"
+            />
+          </div>
+        </div>
+        <ul className="max-h-64 overflow-y-auto p-1">
+          {options.length === 0 ? (
+            <li className="px-3 py-6 text-center text-sm text-muted-foreground">
+              No languages found
+            </li>
+          ) : (
+            options.map((o) => {
+              const active = o.code === value
+              return (
+                <li key={o.code}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(o.code)
+                      setOpen(false)
+                      setQuery("")
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                      active
+                        ? "bg-secondary font-semibold"
+                        : "hover:bg-secondary/60",
+                    )}
+                  >
+                    <span className="flex-1 truncate">{o.label}</span>
+                    {o.count != null && (
+                      <span className="text-xs text-muted-foreground">
+                        {o.count}
+                      </span>
+                    )}
+                    {active && <Check className="h-4 w-4 text-primary" />}
+                  </button>
+                </li>
+              )
+            })
+          )}
+        </ul>
+      </PopoverContent>
+    </Popover>
   )
 }
 
