@@ -14,7 +14,11 @@ import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
 import { runLinkCheck } from "@/lib/book-link-check"
 import { getAffiliateAnalytics } from "@/lib/book-analytics"
-import { AMAZON_MARKETPLACES } from "@/lib/affiliate"
+import {
+  AMAZON_MARKETPLACES,
+  validateAmazonConfig,
+  type AmazonConfigValidation,
+} from "@/lib/affiliate"
 import {
   resolveAffiliateSettings,
   saveAmazonRegion,
@@ -1076,6 +1080,10 @@ export type AffiliateConfig = {
   regions: { code: string; label: string }[]
 }
 
+export type SaveAffiliateResult =
+  | { ok: true; config: AffiliateConfig; validation: AmazonConfigValidation }
+  | { ok: false; error: string; validation: AmazonConfigValidation }
+
 /** Reads the effective Amazon Associate configuration for the settings page. */
 export async function getAffiliateConfig(): Promise<AffiliateConfig> {
   await requireAdmin()
@@ -1088,12 +1096,24 @@ export async function getAffiliateConfig(): Promise<AffiliateConfig> {
   }
 }
 
-/** Saves the Amazon Associate tag + marketplace region (admin only). */
+/**
+ * Saves the Amazon Associate tag + marketplace region (admin only). The
+ * tag/marketplace configuration is validated first; an ERROR-level result
+ * (invalid format or a tag whose suffix belongs to a different marketplace) is
+ * rejected so an invalid configuration can never be persisted, even if the
+ * client-side check is bypassed. Warnings are allowed through.
+ */
 export async function saveAffiliateConfig(input: {
   tag: string
   region: string
-}) {
+}): Promise<SaveAffiliateResult> {
   const admin = await requireAdmin()
+
+  const validation = validateAmazonConfig(input.tag, input.region)
+  if (validation.level === "error") {
+    return { ok: false, error: validation.message, validation }
+  }
+
   await saveAmazonTag(input.tag)
   await saveAmazonRegion(input.region)
   await logBookAudit(actorOf(admin), [
@@ -1103,10 +1123,13 @@ export async function saveAffiliateConfig(input: {
       action: "settings",
       field: "amazon_associate",
       oldValue: null,
-      newValue: `tag=${input.tag.trim() || "(cleared)"} region=${input.region}`,
+      newValue:
+        `tag=${validation.normalizedTag || "(cleared)"} ` +
+        `region=${input.region} [${validation.code}]`,
     },
   ])
-  return await getAffiliateConfig()
+  const config = await getAffiliateConfig()
+  return { ok: true, config, validation }
 }
 
 // ----- Book audit log (read-only viewer) -----

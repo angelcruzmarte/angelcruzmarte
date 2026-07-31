@@ -1,12 +1,25 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { CheckCircle2, Loader2 } from "lucide-react"
+import { useMemo, useState, useTransition } from "react"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Loader2,
+  XCircle,
+} from "lucide-react"
 
 import {
   saveAffiliateConfig,
   type AffiliateConfig,
 } from "@/app/actions/admin"
+import {
+  testAffiliateLink,
+  validateAmazonConfig,
+  type AffiliateLinkTest,
+  type ConfigValidationLevel,
+} from "@/lib/affiliate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -19,6 +32,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
+
+const LEVEL_STYLES: Record<
+  ConfigValidationLevel,
+  { icon: typeof CheckCircle2; wrap: string; text: string; label: string }
+> = {
+  pass: {
+    icon: CheckCircle2,
+    wrap: "border-primary/30 bg-primary/5",
+    text: "text-primary",
+    label: "Pass",
+  },
+  warning: {
+    icon: AlertTriangle,
+    wrap: "border-amber-500/30 bg-amber-500/5",
+    text: "text-amber-600 dark:text-amber-500",
+    label: "Warning",
+  },
+  error: {
+    icon: XCircle,
+    wrap: "border-destructive/30 bg-destructive/5",
+    text: "text-destructive",
+    label: "Error",
+  },
+}
 
 export function AdminAffiliateSettings({
   config,
@@ -31,16 +69,30 @@ export function AdminAffiliateSettings({
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [test, setTest] = useState<AffiliateLinkTest | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // Validation runs automatically on every tag/marketplace change.
+  const validation = useMemo(
+    () => validateAmazonConfig(tag, region),
+    [tag, region],
+  )
+  const blocked = validation.level === "error"
 
   function save() {
+    if (blocked) return
     setError(null)
     setSaved(false)
     startTransition(async () => {
       try {
-        const next = await saveAffiliateConfig({ tag, region })
-        setTag(next.tag)
-        setRegion(next.region)
-        setSource(next.tagSource)
+        const result = await saveAffiliateConfig({ tag, region })
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        setTag(result.config.tag)
+        setRegion(result.config.region)
+        setSource(result.config.tagSource)
         setSaved(true)
         setTimeout(() => setSaved(false), 2500)
       } catch {
@@ -48,6 +100,25 @@ export function AdminAffiliateSettings({
       }
     })
   }
+
+  function runTest() {
+    setCopied(false)
+    setTest(testAffiliateLink(tag, region))
+  }
+
+  async function copyUrl() {
+    if (!test) return
+    try {
+      await navigator.clipboard.writeText(test.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard may be unavailable; the URL is still visible to copy manually.
+    }
+  }
+
+  const style = LEVEL_STYLES[validation.level]
+  const StatusIcon = style.icon
 
   return (
     <Card className="max-w-2xl p-6">
@@ -77,7 +148,11 @@ export function AdminAffiliateSettings({
             placeholder="yourtag-20"
             autoComplete="off"
             spellCheck={false}
-            onChange={(e) => setTag(e.target.value)}
+            aria-invalid={blocked}
+            onChange={(e) => {
+              setTag(e.target.value)
+              setTest(null)
+            }}
           />
           <p className="text-xs text-muted-foreground">
             e.g. <code>voxyfi-20</code>. Leave blank to clear the override and
@@ -87,7 +162,15 @@ export function AdminAffiliateSettings({
 
         <div className="grid gap-1.5">
           <Label htmlFor="amazon-region">Marketplace</Label>
-          <Select value={region} onValueChange={(v) => v && setRegion(v)}>
+          <Select
+            value={region}
+            onValueChange={(v) => {
+              if (v) {
+                setRegion(v)
+                setTest(null)
+              }
+            }}
+          >
             <SelectTrigger id="amazon-region">
               <SelectValue />
             </SelectTrigger>
@@ -106,13 +189,39 @@ export function AdminAffiliateSettings({
         </div>
       </div>
 
+      {/* Live Pass / Warning / Error validation status. */}
+      <div
+        className={cn(
+          "mt-4 flex items-start gap-2.5 rounded-lg border p-3",
+          style.wrap,
+        )}
+        role={validation.level === "error" ? "alert" : "status"}
+        aria-live="polite"
+      >
+        <StatusIcon className={cn("mt-0.5 h-4 w-4 shrink-0", style.text)} />
+        <div className="min-w-0 text-sm">
+          <p className={cn("font-medium", style.text)}>
+            {style.label}: {validation.title}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">{validation.message}</p>
+        </div>
+      </div>
+
       {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
 
-      <div className="mt-6 flex items-center gap-3">
-        <Button onClick={save} disabled={pending}>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Button onClick={save} disabled={pending || blocked}>
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
           Save
         </Button>
+        <Button type="button" variant="outline" onClick={runTest}>
+          Test affiliate link
+        </Button>
+        {blocked && (
+          <span className="text-xs text-muted-foreground">
+            Fix the error above to save.
+          </span>
+        )}
         {saved && (
           <span className="flex items-center gap-1.5 text-sm text-primary">
             <CheckCircle2 className="h-4 w-4" />
@@ -120,6 +229,61 @@ export function AdminAffiliateSettings({
           </span>
         )}
       </div>
+
+      {/* Test affiliate link result. */}
+      {test && (
+        <div className="mt-4 rounded-lg border bg-muted/40 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {test.ok ? (
+              <>
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                <span className="text-primary">
+                  {test.appliedTag
+                    ? `Tag “${test.appliedTag}” applied correctly`
+                    : "Link generated (no tag — uncredited)"}
+                </span>
+              </>
+            ) : (
+              <>
+                <XCircle className="h-4 w-4 text-destructive" />
+                <span className="text-destructive">
+                  Applied tag doesn’t match the configured tag
+                </span>
+              </>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Sample link for a well-known title on{" "}
+            <span className="font-mono">{test.domain}</span>:
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded border bg-background px-2 py-1.5 text-xs">
+              {test.url}
+            </code>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={copyUrl}
+              aria-label="Copy sample link"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {copied ? "Copied" : "Copy"}
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <a
+                href={test.url}
+                target="_blank"
+                rel="noopener noreferrer sponsored nofollow"
+                aria-label="Open sample link on Amazon"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open
+              </a>
+            </Button>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

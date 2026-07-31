@@ -136,6 +136,27 @@ export const AMAZON_MARKETPLACES: {
 
 export const DEFAULT_AMAZON_REGION = "US"
 
+/**
+ * Canonical Associate-tag country suffix Amazon assigns per marketplace. A tag
+ * only earns commission on the marketplace whose suffix it carries, so this is
+ * the source of truth for tag ↔ marketplace validation.
+ *   -20 → US, Canada, Mexico, Brazil
+ *   -21 → UK, Germany, France, Italy, Spain, India, and other EU/MENA stores
+ *   -22 → Japan, Australia
+ */
+export const MARKETPLACE_TAG_SUFFIX: Record<string, string> = {
+  US: "20",
+  CA: "20",
+  GB: "21",
+  DE: "21",
+  FR: "21",
+  ES: "21",
+  IT: "21",
+  IN: "21",
+  JP: "22",
+  AU: "22",
+}
+
 function amazonDomain(region?: string | null): string {
   const code = (region || DEFAULT_AMAZON_REGION).toUpperCase()
   return (
@@ -264,6 +285,162 @@ export function affiliateDisclosureExtended(): string {
 /** Display label of the active provider, e.g. "Amazon". */
 export function affiliateProviderLabel(): string {
   return activeProvider().label
+}
+
+// ---------------------------------------------------------------------------
+// Configuration validation (tag ↔ marketplace) + link self-test
+// ---------------------------------------------------------------------------
+
+export type ConfigValidationLevel = "pass" | "warning" | "error"
+
+export type AmazonConfigValidation = {
+  /** pass = safe, warning = allowed but flagged, error = blocks saving. */
+  level: ConfigValidationLevel
+  /** Machine-readable code (match, mismatch, invalid_format, empty, …). */
+  code: string
+  /** Short status headline. */
+  title: string
+  /** Full explanation, including how to fix a problem. */
+  message: string
+  /** The sanitized bare tag that would actually be stored. */
+  normalizedTag: string
+}
+
+/**
+ * Validates an Amazon Associate tag against the selected marketplace. Pure and
+ * dependency-free so it runs identically in the admin UI (live, on every
+ * change) and on the server (enforced before persisting). Errors block saving;
+ * warnings are allowed but surfaced.
+ */
+export function validateAmazonConfig(
+  rawTag: string | null | undefined,
+  region: string,
+): AmazonConfigValidation {
+  const regionCode = (region || "").toUpperCase()
+  const marketplace = AMAZON_MARKETPLACES.find((m) => m.code === regionCode)
+  const regionLabel = marketplace?.label ?? region || "the selected marketplace"
+
+  const raw = (rawTag || "").trim()
+  const normalizedTag = sanitizeAmazonTag(raw)
+
+  // Empty is allowed (clears the override) but earns nothing.
+  if (!raw) {
+    return {
+      level: "warning",
+      code: "empty",
+      title: "No Associate tag set",
+      message:
+        "Links will point to Amazon without a tag, so qualifying purchases " +
+        "won't earn commission. Add your Associate tag to start earning.",
+      normalizedTag: "",
+    }
+  }
+
+  // Typed a value that can't be resolved to a valid store id.
+  if (!normalizedTag) {
+    return {
+      level: "error",
+      code: "invalid_format",
+      title: "Invalid Associate tag",
+      message:
+        `“${raw}” is not a valid Amazon store ID. Tags look like ` +
+        "“voxyfi-20” — letters/numbers ending in a country suffix. Enter the " +
+        "tag itself, not a full SiteStripe URL.",
+      normalizedTag: "",
+    }
+  }
+
+  const suffix = normalizedTag.slice(normalizedTag.lastIndexOf("-") + 1)
+  const expected = MARKETPLACE_TAG_SUFFIX[regionCode]
+
+  if (!expected) {
+    return {
+      level: "warning",
+      code: "unknown_region",
+      title: "Can't verify marketplace",
+      message:
+        `Couldn't determine the expected tag suffix for ${regionLabel}. ` +
+        "Confirm the tag was issued for this marketplace.",
+      normalizedTag,
+    }
+  }
+
+  if (suffix === expected) {
+    return {
+      level: "pass",
+      code: "match",
+      title: "Tag matches marketplace",
+      message:
+        `“${normalizedTag}” is a valid ${regionLabel} Associate tag ` +
+        `(suffix -${expected}). Links will be credited correctly.`,
+      normalizedTag,
+    }
+  }
+
+  // The suffix belongs to a KNOWN but different marketplace → hard mismatch.
+  const owners = AMAZON_MARKETPLACES.filter(
+    (m) => MARKETPLACE_TAG_SUFFIX[m.code] === suffix,
+  )
+  if (owners.length > 0) {
+    const ownerLabels = owners.map((m) => m.label).join(", ")
+    return {
+      level: "error",
+      code: "mismatch",
+      title: "Tag doesn’t match marketplace",
+      message:
+        `“${normalizedTag}” ends in -${suffix}, which belongs to ` +
+        `${ownerLabels} — not ${regionLabel} (which uses -${expected}). ` +
+        "Links would work but earn no commission. Either switch the " +
+        `marketplace to match, or enter your ${regionLabel} tag.`,
+      normalizedTag,
+    }
+  }
+
+  // Suffix isn't a recognized Amazon country suffix at all.
+  return {
+    level: "warning",
+    code: "unknown_suffix",
+    title: "Unrecognized tag suffix",
+    message:
+      `“${normalizedTag}” ends in -${suffix}, which isn’t a standard Amazon ` +
+      `country suffix (-20, -21, -22). ${regionLabel} normally uses ` +
+      `-${expected}. Double-check this tag is correct.`,
+    normalizedTag,
+  }
+}
+
+export type AffiliateLinkTest = {
+  /** The generated sample affiliate URL. */
+  url: string
+  /** The tag actually present on the URL (null when none was applied). */
+  appliedTag: string | null
+  /** The marketplace domain the link points to. */
+  domain: string
+  /** True when the applied tag equals the sanitized input tag. */
+  ok: boolean
+}
+
+/**
+ * Builds a real sample affiliate link (for a well-known public-domain title)
+ * and reports the tag + domain actually applied, so the admin can confirm the
+ * configuration produces correctly credited links.
+ */
+export function testAffiliateLink(
+  tag: string | null | undefined,
+  region: string,
+): AffiliateLinkTest {
+  const normalizedTag = sanitizeAmazonTag(tag)
+  const url = buildAmazonUrl({
+    title: "The Great Gatsby",
+    author: "F. Scott Fitzgerald",
+    isbn: "9780743273565",
+    tag: normalizedTag,
+    region,
+  })
+  const m = url.match(/[?&]tag=([^&#]+)/)
+  const appliedTag = m ? decodeURIComponent(m[1]) : null
+  const ok = normalizedTag ? appliedTag === normalizedTag : appliedTag === null
+  return { url, appliedTag, domain: amazonDomain(region), ok }
 }
 
 // Setting keys (stored in the `app_setting` table, admin-editable).
