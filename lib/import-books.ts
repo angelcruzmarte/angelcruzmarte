@@ -345,11 +345,11 @@ export async function importNewBooks(opts?: {
   }
 
   // Load existing (title, author) dedupe keys so imports can flag duplicates.
-  const existing = await db
+  const existingBooks = await db
     .select({ id: book.id, title: book.title, author: book.author })
     .from(book)
   const existingKeys = new Map<string, number>()
-  for (const b of existing) {
+  for (const b of existingBooks) {
     existingKeys.set(dedupeKey(b.title, b.author), b.id)
   }
 

@@ -40,7 +40,6 @@ import {
   type Availability,
 } from "@/lib/book-availability"
 import {
-  QUALITY_PUBLISH_THRESHOLD,
   dedupeKey,
   scoreBook,
   type QualityReport,
@@ -1541,8 +1540,6 @@ export type ReviewBook = {
   duplicateOf: { id: number; title: string; author: string } | null
   createdAt: Date
 }
-
-export const QUALITY_THRESHOLD = QUALITY_PUBLISH_THRESHOLD
 
 /** Number of books currently quarantined in the review queue (nav badge). */
 export async function getReviewCount(): Promise<number> {

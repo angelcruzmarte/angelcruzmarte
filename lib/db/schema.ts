@@ -429,6 +429,10 @@ export type BookCard = Omit<
   | "linkStatus"
   | "linkCheckedAt"
   | "updatedAt"
+  | "publicationYear"
+  | "qualityScore"
+  | "qualityReport"
+  | "qualityCheckedAt"
 >
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect

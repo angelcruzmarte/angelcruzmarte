@@ -1,4 +1,5 @@
-import { getReviewQueue, QUALITY_THRESHOLD } from "@/app/actions/admin"
+import { getReviewQueue } from "@/app/actions/admin"
+import { QUALITY_PUBLISH_THRESHOLD as QUALITY_THRESHOLD } from "@/lib/book-quality"
 import { AdminReviewQueue } from "@/components/admin-review-queue"
 
 export const dynamic = "force-dynamic"
