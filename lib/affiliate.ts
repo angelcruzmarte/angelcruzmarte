@@ -318,7 +318,8 @@ export function validateAmazonConfig(
 ): AmazonConfigValidation {
   const regionCode = (region || "").toUpperCase()
   const marketplace = AMAZON_MARKETPLACES.find((m) => m.code === regionCode)
-  const regionLabel = marketplace?.label ?? region || "the selected marketplace"
+  const regionLabel =
+    marketplace?.label ?? (region || "the selected marketplace")
 
   const raw = (rawTag || "").trim()
   const normalizedTag = sanitizeAmazonTag(raw)

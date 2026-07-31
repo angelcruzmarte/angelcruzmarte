@@ -21,7 +21,7 @@ import {
   type ConfigValidationLevel,
 } from "@/lib/affiliate"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -270,17 +270,16 @@ export function AdminAffiliateSettings({
               <Copy className="h-3.5 w-3.5" />
               {copied ? "Copied" : "Copy"}
             </Button>
-            <Button asChild size="sm" variant="ghost">
-              <a
-                href={test.url}
-                target="_blank"
-                rel="noopener noreferrer sponsored nofollow"
-                aria-label="Open sample link on Amazon"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open
-              </a>
-            </Button>
+            <a
+              href={test.url}
+              target="_blank"
+              rel="noopener noreferrer sponsored nofollow"
+              aria-label="Open sample link on Amazon"
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open
+            </a>
           </div>
         </div>
       )}
