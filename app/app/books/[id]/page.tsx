@@ -10,8 +10,11 @@ import {
 import { formatPrice } from "@/lib/plans"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getTodayListenSeconds } from "@/app/actions/stats"
-import { affiliateDisclosure } from "@/lib/affiliate"
 import { affiliateUrlForBook } from "@/lib/affiliate-settings"
+import {
+  AffiliateBuyNote,
+  AffiliateDisclosure,
+} from "@/components/affiliate-disclosure"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
 import { BuyOnAmazonButton } from "@/components/buy-on-amazon-button"
@@ -111,13 +114,18 @@ export default async function BookDetailPage({
 
           {isAffiliate ? (
             // Commercial title: primary action is the Amazon affiliate link.
-            <BuyOnAmazonButton
-              href={amazonUrl}
-              bookId={book.id}
-              title={book.title}
-              author={book.author}
-              className="mt-3 w-full sm:w-auto"
-            />
+            // The paid-link note sits directly under the button so the FTC
+            // disclosure is visible *before* the click.
+            <div className="mt-3 flex flex-col gap-1.5">
+              <BuyOnAmazonButton
+                href={amazonUrl}
+                bookId={book.id}
+                title={book.title}
+                author={book.author}
+                className="w-full sm:w-auto"
+              />
+              <AffiliateBuyNote />
+            </div>
           ) : (
             <BuyBookButton
               bookId={book.id}
@@ -145,9 +153,7 @@ export default async function BookDetailPage({
             <Sparkles className="h-4 w-4 shrink-0" />
             Enjoy this free sample, then get the full book on Amazon.
           </div>
-          <p className="px-1 text-xs text-muted-foreground">
-            {affiliateDisclosure()}
-          </p>
+          <AffiliateDisclosure className="px-1" />
         </div>
       ) : (
         !owned && (

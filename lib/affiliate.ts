@@ -31,8 +31,20 @@ export type AffiliateProvider = {
   label: string
   /** Button copy, e.g. "Buy on Amazon". */
   buyLabel: string
-  /** Required affiliate disclosure text (program compliance). */
+  /**
+   * Required affiliate disclosure text (program compliance). MUST be the
+   * program's exact mandated statement — for Amazon this is verbatim
+   * "As an Amazon Associate I earn from qualifying purchases." Paraphrasing
+   * (e.g. swapping "I" for a brand name) is a common Operating-Agreement
+   * violation, so keep this string exact.
+   */
   disclosure: string
+  /**
+   * Longer, plain-language explanation shown on the dedicated disclosure page
+   * and in expandable "learn more" contexts. May be branded/paraphrased since
+   * it accompanies (does not replace) the exact `disclosure` statement.
+   */
+  disclosureExtended: string
   /** Builds the best buy URL for a title with the tag applied. */
   buildUrl: (input: AffiliateLinkInput) => string
   /** Regions this provider supports (marketplace code → label). */
@@ -196,8 +208,16 @@ export const amazonProvider: AffiliateProvider = {
   id: "amazon",
   label: "Amazon",
   buyLabel: "Buy on Amazon",
-  disclosure:
-    "As an Amazon Associate, VOXYFI earns from qualifying purchases.",
+  // Amazon's Operating Agreement (Participation Requirements) mandates this
+  // EXACT sentence. Do not rebrand "I" → "VOXYFI"; the brand explanation lives
+  // in `disclosureExtended`.
+  disclosure: "As an Amazon Associate I earn from qualifying purchases.",
+  disclosureExtended:
+    "VOXYFI is a participant in the Amazon Services LLC Associates Program, an " +
+    "affiliate advertising program. When you use a “Buy on Amazon” link you " +
+    "purchase directly from Amazon — the price, availability, and checkout all " +
+    "happen on Amazon and may change at any time — and VOXYFI may earn a " +
+    "commission on qualifying purchases at no extra cost to you.",
   buildUrl: buildAmazonUrl,
   regions: AMAZON_MARKETPLACES,
 }
@@ -231,9 +251,19 @@ export function affiliateBuyUrl(input: AffiliateLinkInput): string {
   return activeProvider().buildUrl(input)
 }
 
-/** The active provider's required disclosure copy. */
+/** The active provider's EXACT mandated disclosure statement. */
 export function affiliateDisclosure(): string {
   return activeProvider().disclosure
+}
+
+/** The active provider's longer, plain-language disclosure explanation. */
+export function affiliateDisclosureExtended(): string {
+  return activeProvider().disclosureExtended
+}
+
+/** Display label of the active provider, e.g. "Amazon". */
+export function affiliateProviderLabel(): string {
+  return activeProvider().label
 }
 
 // Setting keys (stored in the `app_setting` table, admin-editable).

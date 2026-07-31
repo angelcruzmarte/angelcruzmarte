@@ -14,7 +14,10 @@ import {
 import { addGutenbergBook } from "@/app/actions/books"
 import { Button } from "@/components/ui/button"
 import { trackAffiliateClick } from "@/lib/affiliate-track"
-import { affiliateDisclosure } from "@/lib/affiliate"
+import {
+  AffiliateBuyNote,
+  AffiliateDisclosure,
+} from "@/components/affiliate-disclosure"
 
 type StoreResult = {
   key: string
@@ -130,9 +133,7 @@ export function LiveBookResults({ query }: { query: string }) {
 
       {/* Amazon Associates disclosure — kept clear and conspicuous near the
           "Buy on Amazon" links, as required by the program + FTC. */}
-      <p className="border-t border-border/60 pt-4 text-center text-xs text-muted-foreground">
-        {affiliateDisclosure()}
-      </p>
+      <AffiliateDisclosure className="border-t border-border/60 pt-4 text-center" />
     </div>
   )
 }
@@ -282,6 +283,7 @@ function BuyControls({
         )}
         {importing ? "Importing…" : "Buy on Amazon"}
       </Button>
+      <AffiliateBuyNote />
       <button
         type="button"
         onClick={onImport}
