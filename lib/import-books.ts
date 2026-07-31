@@ -3,10 +3,11 @@ import "server-only"
 import { db } from "@/lib/db"
 import { book } from "@/lib/db/schema"
 import {
-  assessQuality,
+  dedupeKey,
   deriveDescription,
   normalizeAuthor,
   normalizeTitle,
+  scoreBook,
   verifyLanguage,
 } from "@/lib/book-quality"
 import { resolveRealCover } from "@/lib/book-covers"
@@ -343,8 +344,17 @@ export async function importNewBooks(opts?: {
     return { added: 0, candidates: 0, byLanguage: {}, titles: [] }
   }
 
+  // Load existing (title, author) dedupe keys so imports can flag duplicates.
+  const existing = await db
+    .select({ id: book.id, title: book.title, author: book.author })
+    .from(book)
+  const existingKeys = new Map<string, number>()
+  for (const b of existing) {
+    existingKeys.set(dedupeKey(b.title, b.author), b.id)
+  }
+
   // Download and parse full text (concurrent, bounded).
-  const rows = (
+  const built = (
     await mapWithConcurrency(selected, 8, async (entry, i) => {
       const raw = await fetchText(entry.gutenbergId)
       if (!raw) return null
@@ -371,35 +381,67 @@ export async function importNewBooks(opts?: {
       const coverImageUrl = await resolveRealCover({ title, author })
       const [coverColor, accentColor] = PALETTE[i % PALETTE.length]
 
-      // Hold books with unusable metadata as unpublished / needs_review.
-      const verdict = assessQuality({
-        title,
-        author,
-        description,
-        language,
-        sample,
-      })
-      const published = autoPublish && verdict.publishable
-
       return {
+        entry,
         title,
         author,
-        category: entry.category,
         language,
         description,
         excerpt,
-        content: body,
-        priceInCents: entry.price,
+        body,
+        sample,
         coverImageUrl,
-        gutenbergId: entry.gutenbergId,
         coverColor,
         accentColor,
-        fulfillment: "in_app" as const,
-        published,
-        availability: verdict.publishable ? "available" : "needs_review",
+        key: dedupeKey(title, author),
       }
     })
   ).filter((r): r is NonNullable<typeof r> => r !== null)
+
+  // Score each book and quarantine failures / duplicates. Duplicate detection
+  // runs sequentially so we also catch duplicates *within* this batch.
+  const seenInBatch = new Set<string>()
+  const rows = built.map((b) => {
+    const duplicateOf = existingKeys.get(b.key) ?? null
+    const isBatchDup = !duplicateOf && seenInBatch.has(b.key)
+    seenInBatch.add(b.key)
+
+    const report = scoreBook({
+      title: b.title,
+      author: b.author,
+      language: b.language,
+      coverImageUrl: b.coverImageUrl,
+      description: b.description,
+      publicationYear: null,
+      isbn: null,
+      category: b.entry.category,
+      sample: b.sample,
+      fulfillment: "in_app",
+      duplicateOf: duplicateOf ?? (isBatchDup ? -1 : null),
+    })
+
+    const publishable = report.verdict === "publish"
+    return {
+      title: b.title,
+      author: b.author,
+      category: b.entry.category,
+      language: b.language,
+      description: b.description,
+      excerpt: b.excerpt,
+      content: b.body,
+      priceInCents: b.entry.price,
+      coverImageUrl: b.coverImageUrl,
+      gutenbergId: b.entry.gutenbergId,
+      coverColor: b.coverColor,
+      accentColor: b.accentColor,
+      fulfillment: "in_app" as const,
+      published: autoPublish && publishable,
+      availability: publishable ? "available" : "needs_review",
+      qualityScore: report.score,
+      qualityReport: report,
+      qualityCheckedAt: new Date(),
+    }
+  })
 
   if (rows.length === 0) {
     return {

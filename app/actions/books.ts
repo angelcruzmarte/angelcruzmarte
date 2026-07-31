@@ -5,9 +5,11 @@ import { book, bookFavorite, bookPurchase } from "@/lib/db/schema"
 import { recordBookEvent } from "@/lib/book-analytics"
 import { fetchAndParseGutenberg } from "@/lib/gutenberg"
 import {
+  dedupeKey,
   deriveDescription,
   normalizeAuthor,
   normalizeTitle,
+  scoreBook,
   verifyLanguage,
 } from "@/lib/book-quality"
 import { resolveRealCover } from "@/lib/book-covers"
@@ -15,7 +17,7 @@ import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
-import { and, count, desc, eq, gte, inArray } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray, ne, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
 import type { BookCard } from "@/lib/db/schema"
@@ -305,13 +307,41 @@ export async function importGutenbergBook(
   const sample = `${title} ${parsed.body.slice(0, 1200)}`
   const { language } = verifyLanguage("en", sample)
   const coverImageUrl = await resolveRealCover({ title, author })
+  const category = meta.category?.trim() || "Classics"
+
+  // Duplicate detection: a different catalog entry with the same normalized
+  // title + author (a distinct Gutenberg edition of the same work).
+  const key = dedupeKey(title, author)
+  const titleMatches = await db
+    .select({ id: book.id, title: book.title, author: book.author })
+    .from(book)
+    .where(and(sql`lower(${book.title}) = lower(${title})`, ne(book.gutenbergId, gutenbergId)))
+    .limit(20)
+  const duplicateOf =
+    titleMatches.find((m) => dedupeKey(m.title, m.author) === key)?.id ?? null
+
+  // Score the metadata; quarantine (unpublished + needs_review) on failure.
+  const report = scoreBook({
+    title,
+    author,
+    language,
+    coverImageUrl,
+    description,
+    publicationYear: null,
+    isbn: null,
+    category,
+    sample,
+    fulfillment: "in_app",
+    duplicateOf,
+  })
+  const publishable = report.verdict === "publish"
 
   const [inserted] = await db
     .insert(book)
     .values({
       title,
       author,
-      category: meta.category?.trim() || "Classics",
+      category,
       language,
       description,
       excerpt,
@@ -321,6 +351,11 @@ export async function importGutenbergBook(
       gutenbergId,
       coverColor: color,
       accentColor: accent,
+      published: publishable,
+      availability: publishable ? "available" : "needs_review",
+      qualityScore: report.score,
+      qualityReport: report,
+      qualityCheckedAt: new Date(),
     })
     .returning({ id: book.id })
 

@@ -1,6 +1,7 @@
 import {
   boolean,
   integer,
+  jsonb,
   pgTable,
   serial,
   text,
@@ -239,6 +240,16 @@ export const book = pgTable("book", {
   linkStatus: text("linkStatus").notNull().default("unknown"),
   // When the buy link was last checked.
   linkCheckedAt: timestamp("linkCheckedAt"),
+  // Original publication year (negative for BCE). Used in the quality score and
+  // shown in admin; nullable when unknown.
+  publicationYear: integer("publicationYear"),
+  // Metadata quality score 0-100 from lib/book-quality.ts scoreBook().
+  qualityScore: integer("qualityScore"),
+  // Full quality report (JSON: score, verdict, flags, per-field checks) so the
+  // admin review queue can explain exactly why a book was accepted or held.
+  qualityReport: jsonb("qualityReport"),
+  // When the quality score was last computed.
+  qualityCheckedAt: timestamp("qualityCheckedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   // Last edit/refresh time, for "last updated" sorting in admin.
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),

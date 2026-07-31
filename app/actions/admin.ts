@@ -40,6 +40,12 @@ import {
   type Availability,
 } from "@/lib/book-availability"
 import {
+  QUALITY_PUBLISH_THRESHOLD,
+  dedupeKey,
+  scoreBook,
+  type QualityReport,
+} from "@/lib/book-quality"
+import {
   and,
   asc,
   count,
@@ -49,6 +55,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   or,
   sql,
   type SQL,
@@ -1510,4 +1517,305 @@ export async function lookupIsbnMetadata(
   const data = await fetchIsbnMetadata(isbn)
   if (!data) return { error: "No book found for that ISBN on Open Library." }
   return { data }
+}
+
+// ----- Quality review queue -----
+
+export type ReviewBook = {
+  id: number
+  title: string
+  author: string
+  language: string
+  category: string
+  description: string
+  isbn: string | null
+  publicationYear: number | null
+  fulfillment: string
+  coverImageUrl: string | null
+  coverColor: string
+  accentColor: string
+  availability: string
+  published: boolean
+  qualityScore: number | null
+  qualityReport: QualityReport | null
+  duplicateOf: { id: number; title: string; author: string } | null
+  createdAt: Date
+}
+
+export const QUALITY_THRESHOLD = QUALITY_PUBLISH_THRESHOLD
+
+/** Number of books currently quarantined in the review queue (nav badge). */
+export async function getReviewCount(): Promise<number> {
+  await requireAdmin()
+  const [row] = await db
+    .select({ v: count() })
+    .from(book)
+    .where(eq(book.availability, "needs_review"))
+  return row?.v ?? 0
+}
+
+/**
+ * Books held for quality review (availability = needs_review), worst score
+ * first. Resolves each report's duplicate flag to the actual existing title.
+ */
+export async function getReviewQueue(): Promise<ReviewBook[]> {
+  await requireAdmin()
+  const rows = await db
+    .select({
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      language: book.language,
+      category: book.category,
+      description: book.description,
+      isbn: book.isbn,
+      publicationYear: book.publicationYear,
+      fulfillment: book.fulfillment,
+      coverImageUrl: book.coverImageUrl,
+      coverColor: book.coverColor,
+      accentColor: book.accentColor,
+      availability: book.availability,
+      published: book.published,
+      qualityScore: book.qualityScore,
+      qualityReport: book.qualityReport,
+      createdAt: book.createdAt,
+    })
+    .from(book)
+    .where(eq(book.availability, "needs_review"))
+    .orderBy(asc(book.qualityScore), desc(book.createdAt))
+    .limit(200)
+
+  // Resolve duplicate references for any book whose report flagged a dupe.
+  const out: ReviewBook[] = []
+  for (const r of rows) {
+    const report = (r.qualityReport as QualityReport | null) ?? null
+    let duplicateOf: ReviewBook["duplicateOf"] = null
+    if (report?.flags?.includes("duplicate")) {
+      const key = dedupeKey(r.title, r.author)
+      const [match] = await db
+        .select({ id: book.id, title: book.title, author: book.author })
+        .from(book)
+        .where(
+          and(
+            ne(book.id, r.id),
+            sql`lower(${book.title}) = lower(${r.title})`,
+          ),
+        )
+        .limit(10)
+      if (match && dedupeKey(match.title, match.author) === key) {
+        duplicateOf = match
+      }
+    }
+    out.push({ ...r, qualityReport: report, duplicateOf })
+  }
+  return out
+}
+
+/** Recomputes a book's quality score from its CURRENT (possibly edited) data. */
+export async function recheckBookQuality(id: number) {
+  await requireAdmin()
+  const [b] = await db.select().from(book).where(eq(book.id, id)).limit(1)
+  if (!b) return { error: "Book not found." }
+
+  // Duplicate check against other catalog entries with the same title.
+  const key = dedupeKey(b.title, b.author)
+  const titleMatches = await db
+    .select({ id: book.id, title: book.title, author: book.author })
+    .from(book)
+    .where(and(ne(book.id, id), sql`lower(${book.title}) = lower(${b.title})`))
+    .limit(20)
+  const duplicateOf =
+    titleMatches.find((m) => dedupeKey(m.title, m.author) === key)?.id ?? null
+
+  const report = scoreBook({
+    title: b.title,
+    author: b.author,
+    language: b.language,
+    coverImageUrl: b.coverImageUrl,
+    description: b.description,
+    publicationYear: b.publicationYear,
+    isbn: b.isbn,
+    category: b.category,
+    sample: `${b.title} ${(b.content || "").slice(0, 1200)}`,
+    fulfillment: b.fulfillment === "affiliate" ? "affiliate" : "in_app",
+    duplicateOf,
+  })
+
+  await db
+    .update(book)
+    .set({
+      qualityScore: report.score,
+      qualityReport: report,
+      qualityCheckedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(book.id, id))
+
+  revalidatePath("/admin/review")
+  return { report }
+}
+
+/**
+ * Approves a quarantined book: makes it publicly visible (published +
+ * available). Records a manual-override note on the stored report.
+ */
+export async function approveBook(id: number) {
+  const admin = await requireAdmin()
+  const [b] = await db.select().from(book).where(eq(book.id, id)).limit(1)
+  if (!b) return { error: "Book not found." }
+
+  const report = (b.qualityReport as QualityReport | null) ?? null
+  const patchedReport: QualityReport | null = report
+    ? {
+        ...report,
+        verdict: "publish",
+        summary: `Manually approved by ${actorOf(admin).name}. ${report.summary}`,
+      }
+    : null
+
+  await db
+    .update(book)
+    .set({
+      published: true,
+      availability: "available",
+      qualityReport: patchedReport ?? b.qualityReport,
+      updatedAt: new Date(),
+    })
+    .where(eq(book.id, id))
+
+  await logBookAudit(actorOf(admin), [
+    {
+      bookId: id,
+      bookTitle: b.title,
+      action: "publish",
+      field: "availability",
+      oldValue: b.availability,
+      newValue: "available (approved)",
+    },
+  ])
+
+  revalidatePath("/admin/review")
+  revalidatePath("/admin/books")
+  revalidatePath("/app/books")
+  return { success: true }
+}
+
+export type ReviewCorrection = {
+  title?: string
+  author?: string
+  language?: string
+  category?: string
+  description?: string
+  coverImageUrl?: string | null
+  isbn?: string | null
+  publicationYear?: number | null
+}
+
+/**
+ * Applies admin corrections to a quarantined book's metadata and re-scores it.
+ * Does NOT change visibility — the admin still explicitly approves. Returns the
+ * refreshed quality report so the UI can show whether the fixes clear the bar.
+ */
+export async function correctReviewBook(id: number, patch: ReviewCorrection) {
+  const admin = await requireAdmin()
+  const [b] = await db.select().from(book).where(eq(book.id, id)).limit(1)
+  if (!b) return { error: "Book not found." }
+
+  const next = {
+    title: patch.title?.trim() || b.title,
+    author: patch.author?.trim() || b.author,
+    language: patch.language?.trim() || b.language,
+    category: patch.category?.trim() || b.category,
+    description:
+      patch.description !== undefined ? patch.description.trim() : b.description,
+    coverImageUrl:
+      patch.coverImageUrl !== undefined
+        ? (patch.coverImageUrl || "").trim() || null
+        : b.coverImageUrl,
+    isbn:
+      patch.isbn !== undefined
+        ? (patch.isbn || "").replace(/[^0-9Xx]/g, "") || null
+        : b.isbn,
+    publicationYear:
+      patch.publicationYear !== undefined
+        ? patch.publicationYear
+        : b.publicationYear,
+  }
+
+  if (!next.title.trim()) return { error: "Title cannot be empty." }
+
+  // Re-run duplicate detection against other same-title entries.
+  const key = dedupeKey(next.title, next.author)
+  const titleMatches = await db
+    .select({ id: book.id, title: book.title, author: book.author })
+    .from(book)
+    .where(and(ne(book.id, id), sql`lower(${book.title}) = lower(${next.title})`))
+    .limit(20)
+  const duplicateOf =
+    titleMatches.find((m) => dedupeKey(m.title, m.author) === key)?.id ?? null
+
+  const report = scoreBook({
+    title: next.title,
+    author: next.author,
+    language: next.language,
+    coverImageUrl: next.coverImageUrl,
+    description: next.description,
+    publicationYear: next.publicationYear,
+    isbn: next.isbn,
+    category: next.category,
+    sample: `${next.title} ${(b.content || "").slice(0, 1200)}`,
+    fulfillment: b.fulfillment === "affiliate" ? "affiliate" : "in_app",
+    duplicateOf,
+  })
+
+  await db
+    .update(book)
+    .set({
+      ...next,
+      qualityScore: report.score,
+      qualityReport: report,
+      qualityCheckedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(book.id, id))
+
+  // Record real field changes for the audit trail.
+  await logBookAudit(
+    actorOf(admin),
+    diffBookChanges(id, next.title, b, next),
+  )
+
+  revalidatePath("/admin/review")
+  revalidatePath("/admin/books")
+  return { report }
+}
+
+/** Keeps a book quarantined (explicit reject): unpublished + needs_review. */
+export async function rejectBook(id: number) {
+  const admin = await requireAdmin()
+  const [b] = await db.select().from(book).where(eq(book.id, id)).limit(1)
+  if (!b) return { error: "Book not found." }
+
+  await db
+    .update(book)
+    .set({
+      published: false,
+      availability: "needs_review",
+      updatedAt: new Date(),
+    })
+    .where(eq(book.id, id))
+
+  await logBookAudit(actorOf(admin), [
+    {
+      bookId: id,
+      bookTitle: b.title,
+      action: "unpublish",
+      field: "availability",
+      oldValue: b.availability,
+      newValue: "needs_review (rejected)",
+    },
+  ])
+
+  revalidatePath("/admin/review")
+  return { success: true }
 }

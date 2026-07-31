@@ -222,3 +222,308 @@ export function assessQuality(input: {
   if (!check.ok) issues.push("language_mismatch")
   return { publishable: issues.length === 0, issues }
 }
+
+// ---------------------------------------------------------------------------
+// Weighted metadata quality score
+// ---------------------------------------------------------------------------
+
+export type FieldStatus = "pass" | "warn" | "fail"
+
+export type FieldCheck = {
+  field: string
+  label: string
+  status: FieldStatus
+  /** Fraction of this field's weight earned, 0..1. */
+  ratio: number
+  weight: number
+  /** Points earned (weight * ratio), rounded for display. */
+  points: number
+  reason: string
+}
+
+export type QualityReport = {
+  /** Overall 0-100 metadata quality score. */
+  score: number
+  /** Final disposition. */
+  verdict: "publish" | "review"
+  /** Machine-readable hard-failure / quarantine reasons. */
+  flags: string[]
+  /** Human summary, e.g. "Accepted — strong metadata" or the top problems. */
+  summary: string
+  checks: FieldCheck[]
+  scoredAt: string
+}
+
+/** Minimum score required to auto-publish (also needs zero hard flags). */
+export const QUALITY_PUBLISH_THRESHOLD = 70
+
+// Per-field weights (sum = 100).
+const WEIGHTS = {
+  title: 18,
+  author: 12,
+  language: 14,
+  cover: 16,
+  description: 18,
+  publicationYear: 8,
+  isbn: 8,
+  category: 6,
+} as const
+
+const CURRENT_YEAR = new Date().getFullYear()
+
+function mk(
+  field: keyof typeof WEIGHTS,
+  label: string,
+  status: FieldStatus,
+  ratio: number,
+  reason: string,
+): FieldCheck {
+  const weight = WEIGHTS[field]
+  return {
+    field,
+    label,
+    status,
+    ratio,
+    weight,
+    points: Math.round(weight * ratio),
+    reason,
+  }
+}
+
+export type ScoreInput = {
+  title: string
+  author: string
+  language: string
+  /** Effective cover URL (real artwork) or null when a branded card renders. */
+  coverImageUrl: string | null | undefined
+  description: string
+  publicationYear?: number | null
+  isbn?: string | null
+  category?: string | null
+  /** Text sample (title + start of content) used for language verification. */
+  sample?: string
+  /** "affiliate" books should carry a real ISBN; "in_app" (Gutenberg) needn't. */
+  fulfillment?: "in_app" | "affiliate"
+  /** Set when a duplicate of an existing catalog entry was detected. */
+  duplicateOf?: number | null
+}
+
+/**
+ * Computes a weighted 0-100 metadata quality score with a per-field report and
+ * a publish/review verdict. Hard failures (missing title, boilerplate
+ * description, language mismatch, generic Gutenberg placeholder cover, or a
+ * detected duplicate) force "review" regardless of score.
+ */
+export function scoreBook(input: ScoreInput): QualityReport {
+  const checks: FieldCheck[] = []
+  const flags: string[] = []
+
+  const title = normalizeTitle(input.title)
+  const author = normalizeAuthor(input.author)
+  const sample = input.sample || title
+
+  // Title
+  const titleLetters = letterCount(title)
+  if (titleLetters < 1) {
+    checks.push(mk("title", "Title", "fail", 0, "Missing title"))
+    flags.push("missing_title")
+  } else if (title.length < 2 || /^(unknown|untitled|n\/?a)$/i.test(title)) {
+    checks.push(mk("title", "Title", "warn", 0.4, "Title looks like a placeholder"))
+  } else {
+    checks.push(mk("title", "Title", "pass", 1, "Present and well-formed"))
+  }
+
+  // Author
+  if (!author || /^unknown$/i.test(author)) {
+    checks.push(mk("author", "Author", "warn", 0.3, "Author unknown"))
+  } else if (/\d/.test(author)) {
+    checks.push(mk("author", "Author", "warn", 0.6, "Author contains stray digits"))
+  } else {
+    checks.push(mk("author", "Author", "pass", 1, "Present and normalized"))
+  }
+
+  // Language (verified against the actual script)
+  const langCheck = verifyLanguage(input.language, sample)
+  if (!langCheck.ok) {
+    checks.push(
+      mk(
+        "language",
+        "Language",
+        "fail",
+        0,
+        `Tagged "${input.language}" but text is ${langCheck.language}`,
+      ),
+    )
+    flags.push("language_mismatch")
+  } else if (!input.language) {
+    checks.push(mk("language", "Language", "warn", 0.5, "No language tag; defaulted"))
+  } else {
+    checks.push(mk("language", "Language", "pass", 1, "Consistent with text"))
+  }
+
+  // Cover — generic Gutenberg placeholder is a hard fail; missing (branded
+  // card) is acceptable but not ideal; real artwork is best.
+  if (isGutenbergCover(input.coverImageUrl)) {
+    checks.push(
+      mk("cover", "Cover image", "fail", 0, "Generic Project Gutenberg placeholder"),
+    )
+    flags.push("placeholder_cover")
+  } else if (!input.coverImageUrl) {
+    checks.push(
+      mk("cover", "Cover image", "warn", 0.5, "No artwork — branded card shown"),
+    )
+  } else {
+    checks.push(mk("cover", "Cover image", "pass", 1, "Real cover artwork"))
+  }
+
+  // Description
+  if (isBoilerplateDescription(input.description)) {
+    checks.push(
+      mk("description", "Description", "fail", 0, "Empty or Gutenberg boilerplate"),
+    )
+    flags.push("poor_description")
+  } else if (letterCount(input.description) < 120) {
+    checks.push(mk("description", "Description", "warn", 0.6, "Very short description"))
+  } else {
+    checks.push(mk("description", "Description", "pass", 1, "Clean and substantial"))
+  }
+
+  // Publication year
+  const year = input.publicationYear
+  if (year == null) {
+    checks.push(mk("publicationYear", "Publication year", "warn", 0.3, "Unknown"))
+  } else if (year < -800 || year > CURRENT_YEAR + 1) {
+    checks.push(
+      mk("publicationYear", "Publication year", "fail", 0, `Implausible year ${year}`),
+    )
+  } else {
+    checks.push(mk("publicationYear", "Publication year", "pass", 1, `${year}`))
+  }
+
+  // ISBN / identifier — required for affiliate (retail) books, optional for
+  // public-domain in-app titles.
+  const isAffiliate = input.fulfillment === "affiliate"
+  if (input.isbn && isValidIsbn(input.isbn)) {
+    checks.push(mk("isbn", "ISBN / identifier", "pass", 1, "Valid ISBN"))
+  } else if (input.isbn) {
+    checks.push(mk("isbn", "ISBN / identifier", "fail", 0, "Invalid ISBN"))
+    if (isAffiliate) flags.push("invalid_isbn")
+  } else if (isAffiliate) {
+    checks.push(mk("isbn", "ISBN / identifier", "fail", 0, "Retail book missing ISBN"))
+    flags.push("missing_isbn")
+  } else {
+    checks.push(
+      mk("isbn", "ISBN / identifier", "warn", 0.5, "None (not required for this title)"),
+    )
+  }
+
+  // Category
+  const cat = (input.category || "").trim()
+  if (!cat) {
+    checks.push(mk("category", "Category", "warn", 0.2, "Uncategorized"))
+  } else if (/^(uncategor|misc|other|general)/i.test(cat)) {
+    checks.push(mk("category", "Category", "warn", 0.5, "Generic category"))
+  } else {
+    checks.push(mk("category", "Category", "pass", 1, cat))
+  }
+
+  // Duplicate detection is done upstream (needs the DB); reflect it here.
+  if (input.duplicateOf) {
+    flags.push("duplicate")
+  }
+
+  const score = Math.round(
+    checks.reduce((sum, c) => sum + c.weight * c.ratio, 0),
+  )
+
+  const hardFail = flags.length > 0
+  const verdict: QualityReport["verdict"] =
+    !hardFail && score >= QUALITY_PUBLISH_THRESHOLD ? "publish" : "review"
+
+  const summary = buildSummary(verdict, score, flags, checks, input.duplicateOf)
+
+  return {
+    score,
+    verdict,
+    flags,
+    summary,
+    checks,
+    scoredAt: new Date().toISOString(),
+  }
+}
+
+const FLAG_LABELS: Record<string, string> = {
+  missing_title: "missing title",
+  language_mismatch: "language mismatch",
+  placeholder_cover: "placeholder cover",
+  poor_description: "boilerplate/empty description",
+  invalid_isbn: "invalid ISBN",
+  missing_isbn: "missing ISBN",
+  duplicate: "duplicate of an existing book",
+}
+
+/** Turns flag codes into a readable phrase. */
+export function describeFlags(flags: string[]): string {
+  return flags.map((f) => FLAG_LABELS[f] ?? f).join(", ")
+}
+
+function buildSummary(
+  verdict: QualityReport["verdict"],
+  score: number,
+  flags: string[],
+  checks: FieldCheck[],
+  duplicateOf?: number | null,
+): string {
+  if (verdict === "publish") {
+    return score >= 90
+      ? `Accepted — excellent metadata (${score}/100).`
+      : `Accepted — metadata meets the quality bar (${score}/100).`
+  }
+  if (duplicateOf) {
+    return `Quarantined — appears to duplicate book #${duplicateOf}.`
+  }
+  if (flags.length > 0) {
+    return `Quarantined (${score}/100) — ${describeFlags(flags)}.`
+  }
+  const weak = checks
+    .filter((c) => c.status !== "pass")
+    .map((c) => c.label.toLowerCase())
+  return `Quarantined — below the quality threshold (${score}/100): weak ${weak
+    .slice(0, 3)
+    .join(", ")}.`
+}
+
+/**
+ * Builds a normalized dedupe key from title + author for duplicate detection.
+ * Lowercased, punctuation-stripped, whitespace-collapsed.
+ */
+export function dedupeKey(title: string, author: string): string {
+  const norm = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+  return `${norm(normalizeTitle(title))}::${norm(normalizeAuthor(author))}`
+}
+
+// ISBN validation lives in lib/affiliate; re-declared here as a light local
+// check to keep this module dependency-free (pure, no imports).
+function isValidIsbn(raw: string): boolean {
+  const s = (raw || "").replace(/[\s-]/g, "").toUpperCase()
+  if (/^\d{9}[\dX]$/.test(s)) {
+    let sum = 0
+    for (let i = 0; i < 10; i++) {
+      const c = s[i] === "X" ? 10 : Number(s[i])
+      sum += c * (10 - i)
+    }
+    return sum % 11 === 0
+  }
+  if (/^\d{13}$/.test(s)) {
+    let sum = 0
+    for (let i = 0; i < 13; i++) sum += Number(s[i]) * (i % 2 === 0 ? 1 : 3)
+    return sum % 10 === 0
+  }
+  return false
+}

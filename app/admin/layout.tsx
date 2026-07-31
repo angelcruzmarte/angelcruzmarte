@@ -7,6 +7,7 @@ import { getCurrentUser, isAdmin } from "@/lib/session"
 import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import { AdminNav } from "@/components/admin-nav"
 import { BrandLogo } from "@/components/brand-logo"
+import { getReviewCount } from "@/app/actions/admin"
 
 export default async function AdminLayout({
   children,
@@ -23,6 +24,8 @@ export default async function AdminLayout({
   const user = await getCurrentUser()
   if (!user) redirect(signInUrl)
   if (!isAdmin(user)) redirect(appUrl)
+
+  const reviewCount = await getReviewCount()
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
@@ -41,7 +44,7 @@ export default async function AdminLayout({
         </div>
 
         <div className="px-3 pb-4 lg:pb-0">
-          <AdminNav />
+          <AdminNav reviewCount={reviewCount} />
         </div>
 
         <div className="hidden px-3 lg:block">
