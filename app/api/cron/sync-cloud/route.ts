@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { document } from "@/lib/db/schema"
+import { authorizeCron } from "@/lib/cron-auth"
 import { and, isNull, isNotNull, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -29,13 +30,8 @@ const STALE_HOURS = 24
 export async function GET(req: Request) {
   const startedAt = Date.now()
 
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const authHeader = req.headers.get("authorization")
-    if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-  }
+  const unauthorized = authorizeCron(req)
+  if (unauthorized) return unauthorized
 
   try {
     const staleBefore = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000)

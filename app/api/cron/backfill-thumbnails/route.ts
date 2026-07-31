@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
 import { document } from "@/lib/db/schema"
 import { generateAndStoreDocumentThumbnail } from "@/lib/document-thumbnail"
+import { authorizeCron } from "@/lib/cron-auth"
 import { and, desc, isNotNull, isNull } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -58,16 +59,8 @@ async function fetchWithRetry(url: string): Promise<Buffer | null> {
 export async function GET(req: Request) {
   const startedAt = Date.now()
 
-  // Auth: Vercel Cron automatically sends `Authorization: Bearer <CRON_SECRET>`
-  // when CRON_SECRET is set. Reject anything that doesn't match so the endpoint
-  // can't be triggered by the public.
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const authHeader = req.headers.get("authorization")
-    if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-  }
+  const unauthorized = authorizeCron(req)
+  if (unauthorized) return unauthorized
 
   let scanned = 0
   let generated = 0

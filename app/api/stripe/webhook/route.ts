@@ -37,13 +37,28 @@ export async function POST(req: Request) {
     process.env.STRIPE_LIVE_WEBHOOK_SECRET?.trim() ||
     process.env.STRIPE_WEBHOOK_SECRET
 
+  const isProd = process.env.NODE_ENV === "production"
+
+  // In production a verified signature is MANDATORY — never grant purchases or
+  // subscriptions from an unverified payload, which could be forged.
+  if (isProd && (!secret || !signature)) {
+    console.error(
+      "[v0] Stripe webhook rejected in production: missing secret or signature.",
+    )
+    return NextResponse.json(
+      { error: "Webhook signature verification required" },
+      { status: 400 },
+    )
+  }
+
   let event: Stripe.Event
   try {
     if (secret && signature) {
       event = stripe.webhooks.constructEvent(body, signature, secret)
     } else {
-      // No webhook secret configured (common in the sandbox). Fall back to
-      // trusting the parsed payload so local/preview testing still works.
+      // Dev/preview only: no webhook secret configured (common in the sandbox).
+      // Fall back to trusting the parsed payload so local testing still works.
+      // The production guard above ensures this branch never runs in prod.
       event = JSON.parse(body) as Stripe.Event
     }
   } catch (err) {

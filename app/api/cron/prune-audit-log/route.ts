@@ -1,5 +1,6 @@
 import { getRetentionPolicy, prunePolicy } from "@/lib/audit-retention"
 import { logBookAudit } from "@/lib/book-audit"
+import { authorizeCron } from "@/lib/cron-auth"
 import { NextResponse } from "next/server"
 
 // System actor for scheduled (unattended) runs.
@@ -24,13 +25,8 @@ export const dynamic = "force-dynamic"
 export async function GET(req: Request) {
   const startedAt = Date.now()
 
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const authHeader = req.headers.get("authorization")
-    if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-  }
+  const unauthorized = authorizeCron(req)
+  if (unauthorized) return unauthorized
 
   try {
     const policy = await getRetentionPolicy()
