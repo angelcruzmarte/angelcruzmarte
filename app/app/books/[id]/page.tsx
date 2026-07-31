@@ -10,14 +10,14 @@ import {
 import { formatPrice } from "@/lib/plans"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getTodayListenSeconds } from "@/app/actions/stats"
-import { affiliateUrlForBook } from "@/lib/affiliate-settings"
+import { affiliateFormatsForBook } from "@/lib/affiliate-settings"
 import {
   AffiliateBuyNote,
   AffiliateDisclosure,
 } from "@/components/affiliate-disclosure"
 import { BookCover } from "@/components/book-cover"
 import { BuyBookButton } from "@/components/buy-book-button"
-import { BuyOnAmazonButton } from "@/components/buy-on-amazon-button"
+import { AmazonBuyFormats } from "@/components/amazon-buy-formats"
 import { FavoriteButton } from "@/components/favorite-button"
 import { ListenPlayer } from "@/components/listen-player"
 import { buttonVariants } from "@/components/ui/button"
@@ -43,14 +43,19 @@ export default async function BookDetailPage({
   // Associate tag applied. We never sell them via Stripe or serve their full
   // copyrighted text.
   const isAffiliate = book.fulfillment === "affiliate"
-  const amazonUrl = isAffiliate
-    ? await affiliateUrlForBook({
+  // Digital-first: Kindle → Audible → Print. The primary buy action is the
+  // first entry (Kindle); the rest surface behind "View other formats".
+  const amazonFormats = isAffiliate
+    ? await affiliateFormatsForBook({
         title: book.title,
         author: book.author,
         isbn: book.isbn,
         buyUrl: book.buyUrl,
+        kindleAsin: book.kindleAsin,
+        audibleAsin: book.audibleAsin,
+        printAsin: book.printAsin,
       })
-    : ""
+    : []
 
   // Fallback grant in case the webhook hasn't landed yet after redirect.
   if (purchased && session_id && !isAffiliate) {
@@ -116,13 +121,12 @@ export default async function BookDetailPage({
             // Commercial title: primary action is the Amazon affiliate link.
             // The paid-link note sits directly under the button so the FTC
             // disclosure is visible *before* the click.
-            <div className="mt-3 flex flex-col gap-1.5">
-              <BuyOnAmazonButton
-                href={amazonUrl}
+            <div className="mt-3 flex flex-col gap-2">
+              <AmazonBuyFormats
+                formats={amazonFormats}
                 bookId={book.id}
                 title={book.title}
                 author={book.author}
-                className="w-full sm:w-auto"
               />
               <AffiliateBuyNote />
             </div>

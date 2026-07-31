@@ -467,6 +467,9 @@ export type AdminBook = {
   fulfillment: string
   isbn: string | null
   buyUrl: string | null
+  kindleAsin: string | null
+  audibleAsin: string | null
+  printAsin: string | null
   sampleText: string | null
   priceInCents: number
   coverImageUrl: string | null
@@ -491,6 +494,9 @@ const adminBookColumns = {
   fulfillment: book.fulfillment,
   isbn: book.isbn,
   buyUrl: book.buyUrl,
+  kindleAsin: book.kindleAsin,
+  audibleAsin: book.audibleAsin,
+  printAsin: book.printAsin,
   sampleText: book.sampleText,
   priceInCents: book.priceInCents,
   coverImageUrl: book.coverImageUrl,
@@ -731,6 +737,9 @@ export type CommercialBookInput = {
   sampleText: string
   isbn?: string | null
   buyUrl?: string | null
+  kindleAsin?: string | null
+  audibleAsin?: string | null
+  printAsin?: string | null
   coverImageUrl?: string | null
   coverColor?: string
   accentColor?: string
@@ -756,6 +765,17 @@ function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
 
   const isbn = (input.isbn || "").replace(/[^0-9Xx]/g, "") || null
   const buyUrl = (input.buyUrl || "").trim() || null
+  // Amazon ASINs are 10-char alphanumeric ids (e.g. "B0092XZL7Q"). Normalize
+  // to bare alphanumerics; keep null when empty. These deep-link the exact
+  // Kindle/Audible/print product when set (the digital editions can't be
+  // derived from an ISBN).
+  const cleanAsin = (v?: string | null) => {
+    const s = (v || "").replace(/[^0-9A-Za-z]/g, "").toUpperCase()
+    return s || null
+  }
+  const kindleAsin = cleanAsin(input.kindleAsin)
+  const audibleAsin = cleanAsin(input.audibleAsin)
+  const printAsin = cleanAsin(input.printAsin)
 
   if (fulfillment === "affiliate") {
     if (!sampleText) throw new Error("A listenable sample is required.")
@@ -782,6 +802,9 @@ function cleanBookInput(input: CommercialBookInput, fulfillment: string) {
     sampleText: sampleText || null,
     isbn,
     buyUrl,
+    kindleAsin,
+    audibleAsin,
+    printAsin,
     coverImageUrl: (input.coverImageUrl || "").trim() || null,
     coverColor: input.coverColor?.trim() || "#1f3a5f",
     accentColor: input.accentColor?.trim() || "#f4b740",

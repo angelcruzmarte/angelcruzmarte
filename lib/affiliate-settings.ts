@@ -10,8 +10,11 @@ import {
   AMAZON_TAG_SETTING_KEY,
   DEFAULT_AMAZON_REGION,
   affiliateBuyUrl,
+  amazonFormatLinks,
   sanitizeAmazonTag,
   type AffiliateLinkInput,
+  type AmazonFormatInput,
+  type AmazonFormatLink,
 } from "@/lib/affiliate"
 
 /**
@@ -109,4 +112,16 @@ export async function affiliateUrlForBook(
 ): Promise<string> {
   const { tag, region } = await resolveAffiliateSettings()
   return affiliateBuyUrl({ ...input, tag, region })
+}
+
+/**
+ * Resolves the effective tag/region and returns every Amazon format link for a
+ * book, ordered Kindle → Audible → Print (digital reading prioritized). The
+ * first entry is the recommended primary buy action. Server-side only.
+ */
+export async function affiliateFormatsForBook(
+  input: Omit<AmazonFormatInput, "tag" | "region">,
+): Promise<AmazonFormatLink[]> {
+  const { tag, region } = await resolveAffiliateSettings()
+  return amazonFormatLinks({ ...input, tag, region })
 }

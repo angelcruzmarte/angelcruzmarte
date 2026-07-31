@@ -219,6 +219,14 @@ export const book = pgTable("book", {
   // Optional explicit buy URL. When null, an affiliate link is derived from
   // isbn/title at render time.
   buyUrl: text("buyUrl"),
+  // Optional exact Amazon ASINs per format. A Kindle/Audible edition has its
+  // own ASIN that CANNOT be derived from an ISBN, so admins may paste them to
+  // deep-link the precise digital product. When null, the buy engine falls back
+  // to a Kindle-Store-scoped search (digital reading is prioritized). `isbn`
+  // still resolves the print (paperback/hardcover) product page.
+  kindleAsin: text("kindleAsin"),
+  audibleAsin: text("audibleAsin"),
+  printAsin: text("printAsin"),
   // Real cover image URL (e.g. Project Gutenberg). Falls back to the color
   // design when null.
   coverImageUrl: text("coverImageUrl"),

@@ -225,6 +225,155 @@ export function buildAmazonUrl(input: AffiliateLinkInput): string {
   return withTag(`${base}/s?k=${encodeURIComponent(q)}&i=stripbooks`, input.tag)
 }
 
+// ---------------------------------------------------------------------------
+// Format-aware Amazon links (digital-reading first)
+// ---------------------------------------------------------------------------
+//
+// VOXYFI is a listening/reading app, so when a customer buys on Amazon we
+// prioritize the DIGITAL Kindle edition, then Audible, then print. Amazon's
+// Kindle/Audible products have their own ASINs that cannot be derived from an
+// ISBN, and without the Product Advertising API (which unlocks after 3
+// qualifying sales) we cannot auto-detect which formats exist. So we use a
+// HYBRID strategy per format:
+//   - exact ASIN provided by an admin  → deep-link the precise product
+//   - otherwise                        → a department-scoped Amazon search that
+//                                         surfaces that format if it exists
+// Both are fully Associates-compliant (tagged product and search links are
+// allowed), and search links never overstate that a specific product exists.
+
+/** Amazon "search index" (department) per format. */
+const AMAZON_DEPARTMENT: Record<string, string> = {
+  kindle: "digital-text", // Kindle Store
+  audible: "audible", // Audible audiobooks
+  print: "stripbooks", // Books (paperback/hardcover)
+}
+
+export type AmazonFormatId = "kindle" | "audible" | "print"
+
+export type AmazonFormatLink = {
+  id: AmazonFormatId
+  /** Human label of what the user is buying, e.g. "Kindle eBook". */
+  label: string
+  /** The tagged Amazon URL for this format. */
+  url: string
+  /** True = deep link to a specific product; false = department search. */
+  exact: boolean
+  /** True for Kindle/Audible (digital delivery). */
+  digital: boolean
+}
+
+export type AmazonFormatInput = AffiliateLinkInput & {
+  kindleAsin?: string | null
+  audibleAsin?: string | null
+  printAsin?: string | null
+}
+
+/** A tagged department-scoped Amazon search for a title+author. */
+function amazonSearchUrl(
+  base: string,
+  index: string,
+  q: string,
+  tag?: string | null,
+): string {
+  const url = q
+    ? `${base}/s?k=${encodeURIComponent(q)}&i=${index}`
+    : `${base}/b?node=283155`
+  return withTag(url, tag)
+}
+
+/** A tagged exact-product link from a bare ASIN/ISBN. */
+function amazonProductUrl(
+  base: string,
+  asinOrIsbn: string,
+  tag?: string | null,
+): string {
+  const asin = asinOrIsbn.replace(/[^0-9A-Za-z]/g, "").toUpperCase()
+  return withTag(`${base}/dp/${asin}`, tag)
+}
+
+/**
+ * Builds every available Amazon format link for a title, ordered by VOXYFI's
+ * digital-first preference: Kindle → Audible → Print. The first entry is the
+ * recommended PRIMARY action. An explicit `buyUrl` override, when present,
+ * replaces the Kindle primary (admins use it to point at an exact product).
+ */
+export function amazonFormatLinks(input: AmazonFormatInput): AmazonFormatLink[] {
+  const domain = amazonDomain(input.region)
+  const base = `https://${domain}`
+  const q = [input.title, input.author].filter(Boolean).join(" ").trim()
+  const { tag } = input
+
+  // Kindle (primary). An explicit buyUrl override wins as the exact product.
+  const override = (input.buyUrl || "").trim()
+  let kindle: AmazonFormatLink
+  if (override) {
+    const url = /^https?:\/\//i.test(override)
+      ? withTag(override, tag)
+      : amazonProductUrl(base, override, tag)
+    kindle = { id: "kindle", label: "Kindle eBook", url, exact: true, digital: true }
+  } else if (input.kindleAsin?.trim()) {
+    kindle = {
+      id: "kindle",
+      label: "Kindle eBook",
+      url: amazonProductUrl(base, input.kindleAsin, tag),
+      exact: true,
+      digital: true,
+    }
+  } else {
+    kindle = {
+      id: "kindle",
+      label: "Kindle eBook",
+      url: amazonSearchUrl(base, AMAZON_DEPARTMENT.kindle, q, tag),
+      exact: false,
+      digital: true,
+    }
+  }
+
+  // Audible.
+  const audible: AmazonFormatLink = input.audibleAsin?.trim()
+    ? {
+        id: "audible",
+        label: "Audible audiobook",
+        url: amazonProductUrl(base, input.audibleAsin, tag),
+        exact: true,
+        digital: true,
+      }
+    : {
+        id: "audible",
+        label: "Audible audiobook",
+        url: amazonSearchUrl(base, AMAZON_DEPARTMENT.audible, q, tag),
+        exact: false,
+        digital: true,
+      }
+
+  // Print (paperback / hardcover). Prefer an exact print ASIN, then the ISBN
+  // product page, then a Books-department search.
+  const printExact =
+    input.printAsin?.trim() || (isbnToAmazonAsin(input.isbn) ?? "")
+  const print: AmazonFormatLink = printExact
+    ? {
+        id: "print",
+        label: "Paperback / Hardcover",
+        url: amazonProductUrl(base, printExact, tag),
+        exact: true,
+        digital: false,
+      }
+    : {
+        id: "print",
+        label: "Paperback / Hardcover",
+        url: amazonSearchUrl(base, AMAZON_DEPARTMENT.print, q, tag),
+        exact: false,
+        digital: false,
+      }
+
+  return [kindle, audible, print]
+}
+
+/** The recommended primary Amazon format (Kindle-first). */
+export function primaryAmazonFormat(input: AmazonFormatInput): AmazonFormatLink {
+  return amazonFormatLinks(input)[0]
+}
+
 export const amazonProvider: AffiliateProvider = {
   id: "amazon",
   label: "Amazon",

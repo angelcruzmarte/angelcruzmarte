@@ -4,6 +4,7 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 import {
   BookMarked,
+  BookOpen,
   Check,
   Headphones,
   Loader2,
@@ -75,6 +76,8 @@ export type BookCardBadge =
   | { kind: "free" }
   | { kind: "listen" }
   | { kind: "sample" }
+  // Purchase format for affiliate titles, e.g. "Kindle eBook".
+  | { kind: "format"; label: string }
   | null
 
 export type BookCardAction =
@@ -232,6 +235,15 @@ function Badge({ badge }: { badge: BookCardBadge }) {
           className={cn(base, "bg-card/90 text-foreground backdrop-blur")}
         >
           {formatPrice(badge.priceInCents)}
+        </span>
+      )
+    case "format":
+      return (
+        <span
+          className={cn(base, "bg-card/90 text-foreground backdrop-blur")}
+        >
+          <BookOpen className="h-3 w-3" />
+          {badge.label}
         </span>
       )
   }

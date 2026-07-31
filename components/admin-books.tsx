@@ -45,7 +45,12 @@ import {
   type Availability,
   type LinkStatus,
 } from "@/lib/book-availability"
-import { affiliateBuyUrl, isValidIsbn, ACTIVE_AFFILIATE_LABEL } from "@/lib/affiliate"
+import {
+  affiliateBuyUrl,
+  amazonFormatLinks,
+  isValidIsbn,
+  ACTIVE_AFFILIATE_LABEL,
+} from "@/lib/affiliate"
 import { BookCover } from "@/components/book-cover"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -96,6 +101,9 @@ const empty: CommercialBookInput = {
   sampleText: "",
   isbn: "",
   buyUrl: "",
+  kindleAsin: "",
+  audibleAsin: "",
+  printAsin: "",
   coverImageUrl: "",
   coverColor: "#1f3a5f",
   accentColor: "#f4b740",
@@ -115,6 +123,9 @@ function toInput(b: AdminBook): CommercialBookInput {
     sampleText: b.sampleText ?? "",
     isbn: b.isbn ?? "",
     buyUrl: b.buyUrl ?? "",
+    kindleAsin: b.kindleAsin ?? "",
+    audibleAsin: b.audibleAsin ?? "",
+    printAsin: b.printAsin ?? "",
     coverImageUrl: b.coverImageUrl ?? "",
     coverColor: b.coverColor,
     accentColor: b.accentColor,

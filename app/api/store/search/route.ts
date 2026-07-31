@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { affiliateBuyUrl } from "@/lib/affiliate"
+import { primaryAmazonFormat } from "@/lib/affiliate"
 import { resolveAffiliateSettings } from "@/lib/affiliate-settings"
 
 // One page of live catalog results from Open Library.
@@ -45,8 +45,11 @@ export type StoreResult = {
   // True when the full text can legally be read aloud in-app (public domain
   // with a Project Gutenberg source).
   listenable: boolean
-  // Where to buy commercial titles we can't serve audio for.
+  // Where to buy commercial titles we can't serve audio for. Digital-first:
+  // this is the Kindle-Store link for the title.
   buyUrl: string
+  // What `buyUrl` points at, e.g. "Kindle eBook", so the card can label it.
+  buyFormat: string
 }
 
 type OpenLibraryDoc = {
@@ -80,8 +83,9 @@ function mapDoc(
     ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
     : null
 
-  // Commercial titles link out to Amazon with our Associate tag applied.
-  const buyUrl = affiliateBuyUrl({
+  // Commercial titles link out to Amazon with our Associate tag applied,
+  // prioritizing the Kindle edition (digital reading first).
+  const primary = primaryAmazonFormat({
     title: doc.title,
     author,
     tag: affiliate.tag,
@@ -96,7 +100,8 @@ function mapDoc(
     coverUrl,
     gutenbergId,
     listenable,
-    buyUrl,
+    buyUrl: primary.url,
+    buyFormat: primary.label,
   }
 }
 

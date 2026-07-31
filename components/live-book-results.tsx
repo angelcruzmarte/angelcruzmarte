@@ -25,6 +25,7 @@ type StoreResult = {
   gutenbergId: number | null
   listenable: boolean
   buyUrl: string
+  buyFormat?: string
 }
 
 type SearchPage = {
@@ -227,7 +228,13 @@ function LiveBookCard({ result }: { result: StoreResult }) {
       cover={cover}
       title={result.title}
       author={authorLine}
-      badge={result.listenable ? { kind: "listen" } : null}
+      badge={
+        result.listenable
+          ? { kind: "listen" }
+          : result.buyFormat
+            ? { kind: "format", label: result.buyFormat }
+            : null
+      }
       action={action}
       error={error}
       footer={
