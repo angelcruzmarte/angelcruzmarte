@@ -44,6 +44,11 @@ import {
 import type { BookCard as Book, Document } from "@/lib/db/schema"
 import type { Storefront } from "@/app/actions/books"
 import { BookCover } from "@/components/book-cover"
+import {
+  BookCard as StoreCard,
+  type BookCardAction,
+  type BookCardBadge,
+} from "@/components/store/book-card"
 import { FavoriteButton } from "@/components/favorite-button"
 import { LiveBookResults } from "@/components/live-book-results"
 import type { Suggestion } from "@/app/api/store/suggest/route"
@@ -425,8 +430,13 @@ export function BooksStore({
         <section>
           <h2 className="mb-3 text-lg font-semibold">
             Results for &ldquo;{debounced}&rdquo;
+            {languageFilter !== "all" && languageFilter !== "en" && (
+              <span className="ml-2 text-sm font-medium text-muted-foreground">
+                in {languageLabel(languageFilter)}
+              </span>
+            )}
           </h2>
-          <LiveBookResults query={debounced} />
+          <LiveBookResults query={debounced} language={languageFilter} />
         </section>
       ) : showFavorites ? (
         <FavoritesView
@@ -958,81 +968,42 @@ function StoreBookCard({
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
 
+  const badge: BookCardBadge = owned
+    ? { kind: "owned" }
+    : isAffiliate
+      ? { kind: "sample" }
+      : { kind: "price", priceInCents: book.priceInCents }
+
+  const action: BookCardAction = owned
+    ? { kind: "listen", href: `/app/listen/book/${book.id}` }
+    : isAffiliate
+      ? { kind: "sample", href: `/app/books/${book.id}` }
+      : {
+          kind: "add",
+          priceInCents: book.priceInCents,
+          inCart,
+          onAdd: () => add(toCartItem(book)),
+          onRemove: () => remove(book.id),
+        }
+
   return (
-    <div className="group flex flex-col gap-2">
-      <div className="relative">
-        <Link href={`/app/books/${book.id}`} aria-label={book.title}>
-          <BookCover
-            book={book}
-            className="w-full transition-transform group-hover:-translate-y-1"
-          />
-        </Link>
+    <StoreCard
+      cover={book}
+      title={book.title}
+      author={book.author}
+      language={book.language}
+      href={`/app/books/${book.id}`}
+      badge={badge}
+      favorite={
         <FavoriteButton
           bookId={book.id}
           initialFavorited={favorited}
           size="sm"
-          className="absolute left-1.5 top-1.5 h-7 w-7 bg-card/90 shadow-sm backdrop-blur"
+          className="h-8 w-8 bg-card/90 shadow-sm backdrop-blur hover:bg-card"
         />
-        <span
-          className={cn(
-            "absolute right-1.5 top-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold shadow-sm",
-            owned
-              ? "bg-primary text-primary-foreground"
-              : "bg-card/90 text-foreground backdrop-blur",
-          )}
-        >
-          {owned ? "Owned" : isAffiliate ? "Sample" : formatPrice(book.priceInCents)}
-        </span>
-      </div>
-      <div className="min-w-0">
-        <Link href={`/app/books/${book.id}`}>
-          <p className="truncate text-sm font-semibold">{book.title}</p>
-          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-            {book.language && book.language !== "en" && (
-              <span className="inline-flex shrink-0 items-center rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase text-secondary-foreground">
-                {languageLabel(book.language)}
-              </span>
-            )}
-            <span className="truncate">{book.author}</span>
-          </p>
-        </Link>
-      </div>
-      {owned ? (
-        <Link
-          href={`/app/listen/book/${book.id}`}
-          className="flex h-8 items-center justify-center gap-1.5 rounded-full bg-secondary text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80"
-        >
-          <Headphones className="h-3.5 w-3.5" />
-          Listen
-        </Link>
-      ) : isAffiliate ? (
-        <Link
-          href={`/app/books/${book.id}`}
-          className="flex h-8 items-center justify-center gap-1.5 rounded-full bg-secondary text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80"
-        >
-          <Headphones className="h-3.5 w-3.5" />
-          Sample
-        </Link>
-      ) : inCart ? (
-        <button
-          type="button"
-          onClick={() => remove(book.id)}
-          className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-primary bg-primary/10 text-xs font-semibold text-primary transition-colors"
-        >
-          <Check className="h-3.5 w-3.5" />
-          In cart
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => add(toCartItem(book))}
-          className="flex h-8 items-center justify-center gap-1.5 rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </button>
-      )}
-    </div>
+      }
+      action={action}
+    />
   )
 }
 

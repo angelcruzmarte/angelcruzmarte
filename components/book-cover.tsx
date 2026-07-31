@@ -3,7 +3,7 @@
 import { useState } from "react"
 import type { Book } from "@/lib/db/schema"
 
-type CoverBook = Pick<
+export type CoverBook = Pick<
   Book,
   "title" | "author" | "coverColor" | "accentColor" | "coverImageUrl"
 >

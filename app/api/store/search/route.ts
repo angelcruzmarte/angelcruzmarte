@@ -6,6 +6,35 @@ import { resolveAffiliateSettings } from "@/lib/affiliate-settings"
 // One page of live catalog results from Open Library.
 const PAGE_SIZE = 24
 
+// Maps our 2-letter store language codes to Open Library's 3-letter language
+// codes, so the store's language filter is honored for live search too. Codes
+// not in this map (or "all") fall back to an unfiltered, cross-language search.
+const OPEN_LIBRARY_LANG: Record<string, string> = {
+  en: "eng",
+  es: "spa",
+  fr: "fre",
+  de: "ger",
+  it: "ita",
+  pt: "por",
+  nl: "dut",
+  hi: "hin",
+  zh: "chi",
+  ja: "jpn",
+  ko: "kor",
+  ar: "ara",
+  ru: "rus",
+  tr: "tur",
+  pl: "pol",
+  sv: "swe",
+  fi: "fin",
+  da: "dan",
+  hu: "hun",
+  el: "gre",
+  la: "lat",
+  cs: "cze",
+  eo: "epo",
+}
+
 export type StoreResult = {
   key: string
   title: string
@@ -44,11 +73,12 @@ function mapDoc(
     gutenbergId !== null &&
     Number.isFinite(gutenbergId)
 
+  // Prefer a real, high-resolution Open Library cover. When none exists we
+  // return null so the UI renders its own on-brand branded card instead of a
+  // generic Project Gutenberg placeholder image (which is often low quality).
   const coverUrl = doc.cover_i
-    ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-    : gutenbergId
-      ? `https://www.gutenberg.org/cache/epub/${gutenbergId}/pg${gutenbergId}.cover.medium.jpg`
-      : null
+    ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
+    : null
 
   // Commercial titles link out to Amazon with our Associate tag applied.
   const buyUrl = affiliateBuyUrl({
@@ -89,9 +119,16 @@ export async function GET(request: Request) {
     "ebook_access",
   ].join(",")
 
+  // Respect the store's language filter. "en" maps to English; a specific
+  // language restricts results to that language; "all"/unknown searches
+  // everything.
+  const langCode = (searchParams.get("lang") ?? "en").trim().toLowerCase()
+  const olLang = OPEN_LIBRARY_LANG[langCode]
+  const langQuery = olLang ? `&language=${olLang}` : ""
+
   const url =
     `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}` +
-    `&page=${page}&limit=${PAGE_SIZE}&language=eng&fields=${fields}`
+    `&page=${page}&limit=${PAGE_SIZE}${langQuery}&fields=${fields}`
 
   try {
     const res = await fetch(url, {
