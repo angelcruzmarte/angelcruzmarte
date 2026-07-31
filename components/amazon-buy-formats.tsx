@@ -8,7 +8,7 @@ import {
   Headphones,
   ShoppingCart,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { trackAffiliateClick } from "@/lib/affiliate-track"
 import type { AmazonFormatId, AmazonFormatLink } from "@/lib/affiliate"
@@ -63,21 +63,19 @@ export function AmazonBuyFormats({
 
   return (
     <div className="flex flex-col gap-2">
-      <Button
-        size="lg"
-        className="w-full gap-2 sm:w-auto"
-        render={
-          <a
-            href={primary.url}
-            target="_blank"
-            rel="noopener noreferrer sponsored nofollow"
-            onClick={track}
-          />
-        }
+      <a
+        href={primary.url}
+        target="_blank"
+        rel="noopener noreferrer sponsored nofollow"
+        onClick={track}
+        className={cn(
+          buttonVariants({ size: "lg" }),
+          "w-full gap-2 sm:w-auto",
+        )}
       >
         <ShoppingCart className="h-4 w-4" />
         {primaryLabel}
-      </Button>
+      </a>
 
       {/* Format pill: always tells the user what the primary action buys. */}
       <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">

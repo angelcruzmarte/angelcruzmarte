@@ -433,6 +433,9 @@ export type BookCard = Omit<
   Book,
   | "content"
   | "sampleText"
+  | "kindleAsin"
+  | "audibleAsin"
+  | "printAsin"
   | "availability"
   | "linkStatus"
   | "linkCheckedAt"

@@ -51,6 +51,7 @@ import {
   isValidIsbn,
   ACTIVE_AFFILIATE_LABEL,
 } from "@/lib/affiliate"
+import { cn } from "@/lib/utils"
 import { BookCover } from "@/components/book-cover"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -531,32 +532,100 @@ export function AdminBooks({
                 placeholder="https://www.amazon.com/dp/…"
                 onChange={(e) => set("buyUrl", e.target.value)}
               />
-              {/* Live preview of the affiliate link customers will actually
-                  get (tag is applied server-side at click time). */}
-              {editingIsAffiliate && (
-                <p className="truncate text-xs text-muted-foreground">
-                  Amazon link:{" "}
-                  <a
-                    href={affiliateBuyUrl({
-                      title: form.title,
-                      author: form.author,
-                      isbn: form.isbn,
-                      buyUrl: form.buyUrl,
-                    })}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    {affiliateBuyUrl({
-                      title: form.title,
-                      author: form.author,
-                      isbn: form.isbn,
-                      buyUrl: form.buyUrl,
-                    })}
-                  </a>
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Overrides the Kindle primary with an exact product. Leave blank
+                to prioritize the Kindle edition automatically.
+              </p>
             </div>
+
+            {editingIsAffiliate && (
+              <>
+                <div className="grid gap-1.5 sm:col-span-2">
+                  <Label htmlFor="kindleAsin">
+                    Kindle ASIN (optional — deep-links the exact Kindle eBook)
+                  </Label>
+                  <Input
+                    id="kindleAsin"
+                    value={form.kindleAsin ?? ""}
+                    placeholder="e.g. B000FC0PDA"
+                    onChange={(e) => set("kindleAsin", e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A Kindle edition&apos;s ASIN can&apos;t be derived from an
+                    ISBN. Paste it to link the precise eBook; otherwise the buy
+                    button opens a Kindle Store search for the title.
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="audibleAsin">Audible ASIN (optional)</Label>
+                  <Input
+                    id="audibleAsin"
+                    value={form.audibleAsin ?? ""}
+                    placeholder="e.g. B0092XZL7Q"
+                    onChange={(e) => set("audibleAsin", e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="printAsin">Print ASIN (optional)</Label>
+                  <Input
+                    id="printAsin"
+                    value={form.printAsin ?? ""}
+                    placeholder="e.g. 0743273567"
+                    onChange={(e) => set("printAsin", e.target.value)}
+                  />
+                </div>
+
+                {/* Kindle-first preview of every format link customers get.
+                    The tag is applied server-side at click time; here it is
+                    omitted, so these are the exact URLs minus the tag. */}
+                <div className="grid gap-2 rounded-lg border border-border bg-muted/40 p-3 sm:col-span-2">
+                  <p className="text-xs font-semibold text-foreground">
+                    Amazon buy links (digital-first)
+                  </p>
+                  {amazonFormatLinks({
+                    title: form.title,
+                    author: form.author,
+                    isbn: form.isbn,
+                    buyUrl: form.buyUrl,
+                    kindleAsin: form.kindleAsin,
+                    audibleAsin: form.audibleAsin,
+                    printAsin: form.printAsin,
+                  }).map((f, i) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <span
+                        className={cn(
+                          "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-semibold",
+                          i === 0
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground",
+                        )}
+                      >
+                        {i === 0 ? "Primary" : f.label}
+                      </span>
+                      {i === 0 && (
+                        <span className="shrink-0 font-medium text-foreground">
+                          {f.label}
+                        </span>
+                      )}
+                      <span className="shrink-0 text-muted-foreground">
+                        {f.exact ? "exact product" : "store search"}
+                      </span>
+                      <a
+                        href={f.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate text-primary underline underline-offset-2"
+                      >
+                        {f.url}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="grid gap-1.5 sm:col-span-2">
               <Label htmlFor="coverImageUrl">Cover image URL (optional)</Label>
               <Input
