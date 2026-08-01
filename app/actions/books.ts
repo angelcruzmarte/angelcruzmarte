@@ -20,6 +20,7 @@ import { getBaseUrl } from "@/lib/urls"
 import { and, count, desc, eq, gte, inArray, ne, notInArray, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
+import { MIN_RATINGS_TO_SHOW, type BookRatingSummary } from "@/lib/ratings"
 import type { BookCard } from "@/lib/db/schema"
 
 // Columns needed to render book cards / the storefront — everything except the
@@ -820,23 +821,6 @@ export async function confirmCartCheckout(sessionId: string) {
 }
 
 // ----- VOXYFI ratings & reviews (our own, for EVERY book) -----
-
-// Aggregates are only surfaced once there are at least this many ratings, so a
-// single opinion never masquerades as a meaningful score.
-export const MIN_RATINGS_TO_SHOW = 3
-
-export type BookRatingSummary = {
-  /** Mean stars, rounded to 1 decimal. 0 when below the display threshold. */
-  average: number
-  /** Total number of ratings. */
-  count: number
-  /** The signed-in user's own rating (1-5), or 0 if they haven't rated. */
-  mine: number
-  /** True once `count >= MIN_RATINGS_TO_SHOW` (aggregate is meaningful). */
-  hasEnough: boolean
-  /** True when the current viewer is signed in and may submit a rating. */
-  canRate: boolean
-}
 
 /**
  * VOXYFI's own rating summary for a book. Works for EVERY book (in-app AND

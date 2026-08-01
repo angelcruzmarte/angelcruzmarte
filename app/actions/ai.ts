@@ -212,6 +212,21 @@ async function contentToolGuard(): Promise<ContentToolGuard> {
   return { userId: user.id, message: null, subscribed: false }
 }
 
+/**
+ * Quota gate for the Reading Assistant, reusing the SAME free-tier token bucket
+ * as every other AI tool (subscribers/admins unlimited). A token is NOT spent
+ * here — call `spendAssistantToken` only after a message is answered so failed
+ * requests stay free. Exported for the assistant route handler.
+ */
+export async function assistantQuotaGuard(): Promise<ContentToolGuard> {
+  return contentToolGuard()
+}
+
+/** Spend one free-tier AI token for the assistant (no-op for subscribers). */
+export async function spendAssistantToken(userId: string): Promise<void> {
+  await consumeAiToken(userId)
+}
+
 export interface SummaryResult {
   summary: string
   keyPoints: string[]

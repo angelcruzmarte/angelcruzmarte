@@ -6,6 +6,7 @@ import { PlayerProvider } from "@/components/player-provider"
 import { ListeningPreferencesProvider } from "@/components/listening-preferences"
 import { CartProvider } from "@/components/cart-provider"
 import { CartDrawer } from "@/components/cart-drawer"
+import { ReadingAssistant } from "@/components/reading-assistant"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
 import { BrandLogo } from "@/components/brand-logo"
@@ -72,6 +73,7 @@ export default async function AppLayout({
 
       <AppTabBar />
       <CartDrawer />
+      <ReadingAssistant />
     </div>
     </PlayerProvider>
     </ListeningPreferencesProvider>

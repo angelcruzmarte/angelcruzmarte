@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react"
 import { Star } from "lucide-react"
-import { rateBook, type BookRatingSummary } from "@/app/actions/books"
+import { rateBook } from "@/app/actions/books"
+import type { BookRatingSummary } from "@/lib/ratings"
 import { cn } from "@/lib/utils"
 
 /**
