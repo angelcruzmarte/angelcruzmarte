@@ -41,6 +41,41 @@ export function extForMime(mime: string): string {
   return "webm"
 }
 
+/**
+ * Build the correct "mic blocked" guidance for the current browser.
+ *
+ * On iOS, third-party browsers (Chrome = CriOS, Firefox = FxiOS, Edge = EdgiOS)
+ * run on WKWebView, where the microphone is gated by a PER-APP iOS permission
+ * (Settings > <Browser> > Microphone) rather than Safari's per-site prompt.
+ * When that app-level toggle is off, getUserMedia throws NotAllowedError and the
+ * browser will not re-prompt from the page — so telling the user to allow it
+ * "for this site" is wrong. Detect that case and give the accurate remedy.
+ */
+function describeMicBlocked(): string {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
+  const isIOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    // iPadOS 13+ reports as Mac; disambiguate with touch support.
+    (/Macintosh/.test(ua) &&
+      typeof navigator !== "undefined" &&
+      navigator.maxTouchPoints > 1)
+
+  if (isIOS) {
+    let app: string | null = null
+    if (/CriOS/.test(ua)) app = "Chrome"
+    else if (/FxiOS/.test(ua)) app = "Firefox"
+    else if (/EdgiOS/.test(ua)) app = "Edge"
+
+    if (app) {
+      return `Microphone access is blocked. On iPhone, open Settings › ${app} and turn on Microphone, then try again. (Safari also works if the toggle is unavailable.)`
+    }
+    // iOS Safari: permission is per-site and lives under the "aA" address-bar menu.
+    return "Microphone access is blocked. Tap the “aA” button in the address bar › Website Settings › Microphone › Allow, then try again."
+  }
+
+  return "Microphone access is blocked. Allow the microphone for this site in your browser settings, then try again."
+}
+
 export interface UseAudioRecorderOptions {
   /** Called with the finished clip when the user stops (not on cancel). */
   onComplete?: (blob: Blob, mime: string) => void
@@ -138,11 +173,10 @@ export function useAudioRecorder(
       setStatus("idle")
       const name = err instanceof DOMException ? err.name : ""
       if (name === "NotAllowedError" || name === "SecurityError") {
-        // Either the user denied the prompt, or a Permissions-Policy /
-        // WKWebView capability is blocking the mic before any prompt appears.
-        onErrorRef.current?.(
-          "Microphone access is blocked. Allow the microphone for this site in your settings, then try again.",
-        )
+        // Either the user denied the prompt, or (commonly on iOS Chrome/Firefox/
+        // Edge) the browser's per-APP microphone permission is off, so no prompt
+        // ever appears. describeMicBlocked() gives the browser-correct remedy.
+        onErrorRef.current?.(describeMicBlocked())
       } else if (name === "NotFoundError" || name === "OverconstrainedError") {
         onErrorRef.current?.("No microphone was found on this device.")
       } else if (name === "NotReadableError" || name === "AbortError") {
