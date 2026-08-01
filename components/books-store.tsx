@@ -65,6 +65,12 @@ import { formatPrice } from "@/lib/plans"
 import { languageLabel } from "@/lib/languages"
 import { cn } from "@/lib/utils"
 
+// How many books to show per curated storefront row. The server sends a
+// language-aware pool (up to this many per language); the client slices to
+// this size after applying the active language filter. Mirrors ROW_SIZE in
+// app/actions/books.ts.
+const SHELF_SIZE = 12
+
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
 const CATEGORY_ORDER = [
@@ -183,10 +189,24 @@ export function BooksStore({
   // English store never surfaces a Chinese/Japanese/etc. spotlight. "All
   // languages" keeps the original cross-language storefront.
   const localizedStorefront = useMemo<Storefront | undefined>(() => {
-    if (!storefront || languageFilter === "all") return storefront
+    if (!storefront) return storefront
+    // "All languages": keep the cross-language pool (English-led) and cap each
+    // row to the shelf size. The server sends a larger per-language pool, so we
+    // must slice here rather than render the whole pool.
+    if (languageFilter === "all") {
+      return {
+        hero: storefront.hero,
+        rows: storefront.rows
+          .map((row) => ({ ...row, books: row.books.slice(0, SHELF_SIZE) }))
+          .filter((row) => row.books.length > 0),
+      }
+    }
+    // A specific language: filter every row to that language, then slice. The
+    // language-aware pool guarantees enough books survive the filter to fill a
+    // shelf even when the newest catalog additions skew to another language.
     const inLang = (b: Book) => (b.language || "en") === languageFilter
     const rows = storefront.rows
-      .map((row) => ({ ...row, books: row.books.filter(inLang) }))
+      .map((row) => ({ ...row, books: row.books.filter(inLang).slice(0, SHELF_SIZE) }))
       .filter((row) => row.books.length > 0)
     const hero =
       storefront.hero && inLang(storefront.hero)

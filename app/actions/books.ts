@@ -93,6 +93,38 @@ function bucketOffset(len: number): number {
 }
 
 /**
+ * Build a language-aware candidate pool from a semantically ordered list
+ * (e.g. newest-first, or rotated classics). Keeps up to `perLang` books for
+ * each language — English first, then other languages by how well represented
+ * they are — while preserving the incoming order within each language.
+ *
+ * Why: rows used to be sliced to a single ROW_SIZE window from the full
+ * cross-language catalog. When the newest / first books skewed to one language
+ * (e.g. a batch of Chinese Gutenberg imports), the English storefront filtered
+ * those rows to empty and dropped them entirely. Pooling per language
+ * guarantees the English view (and the All view, which leads English) can
+ * always fill a shelf. The client still slices each row to ROW_SIZE after
+ * applying the active language filter.
+ */
+function languageAwarePool(ordered: BookCard[], perLang = ROW_SIZE): BookCard[] {
+  const byLang = new Map<string, BookCard[]>()
+  for (const b of ordered) {
+    const code = b.language || "en"
+    const list = byLang.get(code) ?? []
+    if (list.length < perLang) {
+      list.push(b)
+      byLang.set(code, list)
+    }
+  }
+  const langs = Array.from(byLang.keys()).sort((a, b) => {
+    if (a === "en") return -1
+    if (b === "en") return 1
+    return byLang.get(b)!.length - byLang.get(a)!.length
+  })
+  return langs.flatMap((code) => byLang.get(code)!)
+}
+
+/**
  * Builds the storefront: a hero spotlight plus curated rows. "New Releases"
  * and "Editor's Picks" are derived from catalog metadata; "Trending" (last 30
  * days) and "Best Sellers" (all-time) are derived from real purchase counts,
@@ -122,24 +154,28 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
       .orderBy(desc(count())),
   ])
 
+  // Each row keeps a language-aware pool (up to ROW_SIZE books per language,
+  // English first); the client slices to ROW_SIZE after applying the active
+  // language filter, so the English store always fills.
   const rankToBooks = (ranked: { bookId: number }[]) =>
-    ranked
-      .map((r) => byId.get(r.bookId))
-      .filter((b): b is BookCard => Boolean(b))
-      .slice(0, ROW_SIZE)
+    languageAwarePool(
+      ranked
+        .map((r) => byId.get(r.bookId))
+        .filter((b): b is BookCard => Boolean(b)),
+    )
 
   const rows: StorefrontRow[] = []
 
   // Editor's Picks — curated featured titles.
-  const editors = all.filter((b) => b.featured).slice(0, ROW_SIZE)
+  const editors = languageAwarePool(all.filter((b) => b.featured))
   if (editors.length > 0) {
     rows.push({ key: "editors", title: "Editor's Picks", books: editors })
   }
 
   // New Releases — newest additions to the catalog.
-  const newReleases = [...all]
-    .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
-    .slice(0, ROW_SIZE)
+  const newReleases = languageAwarePool(
+    [...all].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+  )
   if (newReleases.length > 0) {
     rows.push({ key: "new", title: "New Releases", books: newReleases })
   }
@@ -167,7 +203,7 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
     rows.push({
       key: "classics",
       title: "Classic Literature",
-      books: rotated.slice(0, ROW_SIZE),
+      books: languageAwarePool(rotated),
     })
   }
 
