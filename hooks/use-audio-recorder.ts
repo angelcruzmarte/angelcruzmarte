@@ -45,11 +45,15 @@ export function extForMime(mime: string): string {
  * Build the correct "mic blocked" guidance for the current browser.
  *
  * On iOS, third-party browsers (Chrome = CriOS, Firefox = FxiOS, Edge = EdgiOS)
- * run on WKWebView, where the microphone is gated by a PER-APP iOS permission
- * (Settings > <Browser> > Microphone) rather than Safari's per-site prompt.
- * When that app-level toggle is off, getUserMedia throws NotAllowedError and the
- * browser will not re-prompt from the page — so telling the user to allow it
- * "for this site" is wrong. Detect that case and give the accurate remedy.
+ * run on WKWebView and gate the microphone with TWO independent permissions:
+ *   1. a PER-APP iOS permission (Settings > <Browser> > Microphone), and
+ *   2. a PER-SITE content setting inside the browser itself.
+ * Either one being off makes getUserMedia throw NotAllowedError with no prompt.
+ * In practice the per-site block is the more common cause: if the site was ever
+ * denied (e.g. while an earlier build shipped a broken Permissions-Policy), the
+ * browser caches that decision and will not re-prompt from the page — the user
+ * must reset the site's permission. So the guidance must cover BOTH remedies,
+ * not just the app toggle.
  */
 function describeMicBlocked(): string {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : ""
@@ -67,13 +71,13 @@ function describeMicBlocked(): string {
     else if (/EdgiOS/.test(ua)) app = "Edge"
 
     if (app) {
-      return `Microphone access is blocked. On iPhone, open Settings › ${app} and turn on Microphone, then try again. (Safari also works if the toggle is unavailable.)`
+      return `Microphone access is blocked. In ${app}: tap the page-settings icon by the address bar › Permissions › allow Microphone (or reset it), then reload. Also check Settings › ${app} › Microphone is on. If it still fails, Safari works too.`
     }
     // iOS Safari: permission is per-site and lives under the "aA" address-bar menu.
-    return "Microphone access is blocked. Tap the “aA” button in the address bar › Website Settings › Microphone › Allow, then try again."
+    return "Microphone access is blocked. Tap the “aA” button in the address bar › Website Settings › Microphone › Allow, then reload and try again."
   }
 
-  return "Microphone access is blocked. Allow the microphone for this site in your browser settings, then try again."
+  return "Microphone access is blocked. Allow the microphone for this site (tap the lock/settings icon by the address bar, or reset the site’s permissions), then reload and try again."
 }
 
 export interface UseAudioRecorderOptions {
