@@ -6,13 +6,13 @@ import {
   LayoutDashboard,
   LogOut,
   User as UserIcon,
-  Sparkles,
   ArrowUp,
   BarChart3,
   CreditCard,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
+import { PremiumBadge } from "@/components/premium-badge"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
@@ -53,7 +53,7 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
       <DropdownMenuTrigger
         className={cn(
           buttonVariants({ variant: "secondary", size: "icon" }),
-          "relative rounded-full",
+          "relative rounded-full shadow-sm transition-transform duration-200 hover:scale-105 focus-visible:scale-105",
           isSubscribed &&
             "ring-2 ring-primary ring-offset-2 ring-offset-background",
         )}
@@ -80,10 +80,7 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
               {email}
             </span>
             {isSubscribed ? (
-              <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
-                <Sparkles className="h-3 w-3" aria-hidden="true" />
-                Premium
-              </span>
+              <PremiumBadge size="sm" className="mt-0.5" />
             ) : (
               <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 Free plan

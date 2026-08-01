@@ -213,6 +213,118 @@
   }
 }
 
+/* === Brand identity: wordmark, logo & premium micro-interactions ==========
+   All motion here is GPU transform/opacity only (never layout) and fully
+   disabled under prefers-reduced-motion, so it stays smooth and free. */
+
+/* Custom VOXYFI wordmark — Geist tuned into a bespoke lockup: heavier optical
+   weight, corrected tracking and legibility hint so it reads as a designed
+   wordmark rather than default UI text. Paired with the mark in BrandLogo. */
+.voxyfi-wordmark {
+  font-family: var(--font-heading);
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11";
+}
+
+/* The logo lockup: the tile carries a soft two-layer brand shadow and an inset
+   light edge; on hover/focus it lifts a hair and a gentle sheen sweeps across,
+   giving the mark a premium, tactile feel. */
+.voxyfi-logo-tile {
+  box-shadow:
+    0 1px 2px rgba(18, 63, 46, 0.28),
+    0 6px 16px -8px rgba(18, 63, 46, 0.55);
+  transition:
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.voxyfi-logo:hover .voxyfi-logo-tile,
+.voxyfi-logo:focus-visible .voxyfi-logo-tile {
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 4px rgba(18, 63, 46, 0.32),
+    0 12px 24px -8px rgba(18, 63, 46, 0.6);
+}
+.voxyfi-logo-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 68%
+  );
+  transform: translateX(-130%);
+  opacity: 0;
+}
+.voxyfi-logo:hover .voxyfi-logo-sheen,
+.voxyfi-logo:focus-visible .voxyfi-logo-sheen {
+  animation: voxyfi-sheen 760ms ease-out;
+}
+@keyframes voxyfi-sheen {
+  0% {
+    transform: translateX(-130%);
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(130%);
+    opacity: 0;
+  }
+}
+
+/* Premium membership badge — the signature green gradient with an inset light
+   edge and a slow, understated shine that loops once per cycle then rests. A
+   quiet "members" shimmer that signals status without shouting. */
+.voxyfi-premium {
+  isolation: isolate;
+}
+.voxyfi-premium-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 62%
+  );
+  transform: translateX(-160%);
+  animation: voxyfi-premium-shine 6s ease-in-out infinite;
+}
+@keyframes voxyfi-premium-shine {
+  0% {
+    transform: translateX(-160%);
+  }
+  16% {
+    transform: translateX(160%);
+  }
+  100% {
+    transform: translateX(160%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voxyfi-logo-tile {
+    transition: none;
+  }
+  .voxyfi-logo:hover .voxyfi-logo-tile,
+  .voxyfi-logo:focus-visible .voxyfi-logo-tile {
+    transform: none;
+  }
+  .voxyfi-logo-sheen,
+  .voxyfi-premium-sheen {
+    animation: none !important;
+    opacity: 0;
+  }
+}
+
 /* Pause the store hero marquee for users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee-left,
