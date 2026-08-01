@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
-import { Sparkles, X, ArrowUp, BookOpen } from "lucide-react"
+import { Sparkles, X, ArrowUp, BookOpen, RefreshCw, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type CatalogPick = {
@@ -30,22 +30,61 @@ const SUGGESTIONS = [
  * Free users spend one AI token per message (same bucket as other AI tools);
  * subscribers are unlimited. A 429 surfaces the quota/upgrade message inline.
  */
+type Notice = {
+  kind: "quota" | "rate_limit" | "error" | "retrying"
+  text: string
+}
+
+// Wait this long before automatically retrying a rate-limited request. Gives
+// the shared AI Gateway limit a moment to recover without hammering it.
+const AUTO_RETRY_DELAY_MS = 4000
+
 export function ReadingAssistant() {
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState("")
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // The last thing the reader asked, so we can transparently retry it.
+  const lastTextRef = useRef("")
+  // How many automatic retries we've spent on the current message (cap: 1).
+  const autoRetriesRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({ api: "/api/assistant" }),
-    onError: async (err) => {
-      // The route returns JSON { error } with 429 when out of quota.
+    onError: (err) => {
+      // Both the pre-stream guard (JSON body) and streaming errors deliver a
+      // structured { kind, error } string. Fall back gracefully if parsing fails.
+      let kind: Notice["kind"] = "error"
+      let text = "Something went wrong. Please try again."
       try {
         const parsed = JSON.parse(err.message)
-        setNotice(parsed.error ?? "Something went wrong. Please try again.")
+        if (parsed?.error) text = parsed.error
+        if (parsed?.kind) kind = parsed.kind
       } catch {
-        setNotice("Something went wrong. Please try again.")
+        // Non-JSON error (network, etc.) — keep the neutral default.
       }
+
+      // Rate limits are transient: quietly auto-retry once before surfacing a
+      // manual control, so most blips resolve without the reader doing anything.
+      if (kind === "rate_limit" && autoRetriesRef.current < 1) {
+        autoRetriesRef.current += 1
+        setNotice({
+          kind: "retrying",
+          text: "The assistant is busy — retrying in a moment…",
+        })
+        // Resend directly (not via `dispatch`) so a stale `busy` guard can't
+        // swallow the retry. `sendMessage` and the ref are both stable here.
+        retryTimerRef.current = setTimeout(() => {
+          const value = lastTextRef.current.trim()
+          if (!value) return
+          setNotice(null)
+          sendMessage({ text: value })
+        }, AUTO_RETRY_DELAY_MS)
+        return
+      }
+
+      setNotice({ kind, text })
     },
   })
 
@@ -55,12 +94,33 @@ export function ReadingAssistant() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, busy])
 
-  function send(text: string) {
+  // Clear any pending retry timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    }
+  }, [])
+
+  // Core send. `isRetry` preserves the auto-retry counter; a fresh send resets it.
+  function dispatch(text: string, isRetry: boolean) {
     const value = text.trim()
     if (!value || busy) return
+    if (!isRetry) autoRetriesRef.current = 0
+    lastTextRef.current = value
     setNotice(null)
     setInput("")
     sendMessage({ text: value })
+  }
+
+  function send(text: string) {
+    dispatch(text, false)
+  }
+
+  // Manual retry from the notice — treated as a fresh attempt so the reader can
+  // keep trying (and the gentle auto-retry can kick in again if needed).
+  function retry() {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    dispatch(lastTextRef.current, false)
   }
 
   return (
@@ -143,13 +203,36 @@ export function ReadingAssistant() {
 
             {notice && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-                <p className="text-foreground">{notice}</p>
-                <Link
-                  href="/subscribe"
-                  className="mt-1 inline-block text-sm font-semibold text-primary underline underline-offset-2"
-                >
-                  See premium
-                </Link>
+                <p className="flex items-center gap-2 text-foreground">
+                  {notice.kind === "retrying" && (
+                    <Loader2
+                      className="h-4 w-4 shrink-0 animate-spin text-primary"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span>{notice.text}</span>
+                </p>
+
+                {notice.kind === "quota" && (
+                  <Link
+                    href="/subscribe"
+                    className="mt-1 inline-block text-sm font-semibold text-primary underline underline-offset-2"
+                  >
+                    See premium
+                  </Link>
+                )}
+
+                {(notice.kind === "rate_limit" || notice.kind === "error") && (
+                  <button
+                    type="button"
+                    onClick={retry}
+                    disabled={busy}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-primary/40 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Try again
+                  </button>
+                )}
               </div>
             )}
           </div>
