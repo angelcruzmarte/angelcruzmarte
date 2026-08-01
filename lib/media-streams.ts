@@ -20,6 +20,25 @@ export type MediaKind = "mic" | "camera"
 
 const streams: Partial<Record<MediaKind, MediaStream>> = {}
 
+/**
+ * Devices the user has actually *used* this session (recorded a clip / captured
+ * a scan) — not merely opened. Behavior requested: "warm only after first use".
+ * Before a kind's first successful use we still release it on close for privacy;
+ * once used, we keep its stream warm for the rest of the session so reopening is
+ * silent and iOS shows its native capture banner only that first time.
+ */
+const usedKinds = new Set<MediaKind>()
+
+/** Mark a device as used, enabling warm reuse for the rest of the session. */
+export function markKindUsed(kind: MediaKind): void {
+  usedKinds.add(kind)
+}
+
+/** Whether this device should be kept warm (i.e. has been used this session). */
+export function isKindWarm(kind: MediaKind): boolean {
+  return usedKinds.has(kind)
+}
+
 const constraintsFor: Record<MediaKind, MediaStreamConstraints> = {
   mic: { audio: true },
   camera: { video: { facingMode: { ideal: "environment" } }, audio: false },
@@ -86,12 +105,24 @@ export function releaseStream(kind: MediaKind): void {
   delete streams[kind]
 }
 
+/**
+ * Release the stream on close/unmount UNLESS this device has been used this
+ * session — in which case keep it warm so reopening never re-prompts and the
+ * native banner doesn't flash again. (It is still fully released on pagehide.)
+ */
+export function releaseUnlessWarm(kind: MediaKind): void {
+  if (usedKinds.has(kind)) return
+  releaseStream(kind)
+}
+
 /** Release every cached stream. */
 export function releaseAllStreams(): void {
   ;(Object.keys(streams) as MediaKind[]).forEach(releaseStream)
 }
 
-// Never leave the mic/camera on when the tab is hidden or closed.
+// Never leave the mic/camera on when the tab is actually going away. Use
+// pagehide (fires on tab close and real navigations) rather than visibility
+// changes, so briefly switching apps doesn't tear down a warm stream.
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", releaseAllStreams)
 }
