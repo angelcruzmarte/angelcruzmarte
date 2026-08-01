@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   FolderOpen,
@@ -130,6 +130,7 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
                   onText={(t) =>
                     setContent((prev) => (prev ? prev + " " + t : t))
                   }
+                  onError={setError}
                 />
               )}
             </div>
@@ -288,52 +289,180 @@ function FileImport({
   )
 }
 
-function DictateButton({ onText }: { onText: (text: string) => void }) {
-  const [recording, setRecording] = useState(false)
-  const recognitionRef = useRef<any>(null)
+/** Pick an audio container MediaRecorder actually supports on this browser. */
+function pickAudioMimeType(): string | undefined {
+  if (
+    typeof MediaRecorder === "undefined" ||
+    typeof MediaRecorder.isTypeSupported !== "function"
+  ) {
+    return undefined
+  }
+  // Chrome/Firefox/Android prefer webm/opus; iOS Safari records mp4/aac. Try
+  // them in order and let the browser fall back to its default if none match.
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/aac",
+  ]
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type))
+}
+
+/** Map a MediaRecorder mime type to a file extension for the upload. */
+function extForMime(mime: string): string {
+  if (mime.includes("mp4")) return "mp4"
+  if (mime.includes("aac")) return "aac"
+  return "webm"
+}
+
+type DictateState = "idle" | "recording" | "transcribing"
+
+/**
+ * Records a short mic clip with MediaRecorder and transcribes it server-side
+ * via ElevenLabs Scribe (see /api/transcribe). This replaces the old
+ * `webkitSpeechRecognition` implementation, which never activated the mic in
+ * iOS Safari or the App Store WKWebView. getUserMedia + MediaRecorder are
+ * supported across those targets and trigger the native mic-permission prompt.
+ */
+function DictateButton({
+  onText,
+  onError,
+}: {
+  onText: (text: string) => void
+  onError: (msg: string) => void
+}) {
+  const [state, setState] = useState<DictateState>("idle")
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const streamRef = useRef<MediaStream | null>(null)
+  const mimeRef = useRef<string>("audio/webm")
+
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+  }
+
+  // Release the mic if the component unmounts while recording.
+  useEffect(() => {
+    return () => {
+      try {
+        if (recorderRef.current?.state === "recording") {
+          recorderRef.current.stop()
+        }
+      } catch {
+        // Recorder may already be inactive; ignore.
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+  }, [])
+
+  async function transcribe(blob: Blob) {
+    setState("transcribing")
+    try {
+      const body = new FormData()
+      const ext = extForMime(mimeRef.current)
+      body.append("audio", blob, `dictation.${ext}`)
+      const res = await fetch("/api/transcribe", { method: "POST", body })
+      const data = (await res.json()) as { text?: string; error?: string }
+      if (!res.ok || !data.text) {
+        onError(data.error ?? "Couldn't transcribe that audio. Please try again.")
+      } else {
+        onText(data.text)
+      }
+    } catch {
+      onError("Couldn't transcribe that audio. Please check your connection.")
+    } finally {
+      setState("idle")
+    }
+  }
+
+  async function start() {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      onError("Dictation isn't supported in this browser. Try typing instead.")
+      return
+    }
+    onError("")
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (err) {
+      // NotAllowedError = permission denied; NotFoundError = no mic.
+      const name = err instanceof DOMException ? err.name : ""
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        onError("Microphone access was denied. Enable it in your browser settings.")
+      } else if (name === "NotFoundError") {
+        onError("No microphone was found on this device.")
+      } else {
+        onError("Couldn't start the microphone. Please try again.")
+      }
+      return
+    }
+
+    streamRef.current = stream
+    const mimeType = pickAudioMimeType()
+    mimeRef.current = mimeType ?? "audio/webm"
+    chunksRef.current = []
+    const recorder = new MediaRecorder(
+      stream,
+      mimeType ? { mimeType } : undefined,
+    )
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data)
+    }
+    recorder.onstop = () => {
+      stopStream()
+      const blob = new Blob(chunksRef.current, { type: mimeRef.current })
+      if (blob.size === 0) {
+        setState("idle")
+        onError("No audio was recorded. Please try again.")
+        return
+      }
+      void transcribe(blob)
+    }
+    recorderRef.current = recorder
+    recorder.start()
+    setState("recording")
+  }
+
+  function stop() {
+    recorderRef.current?.stop()
+  }
 
   function toggle() {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      alert("Speech recognition isn't supported in this browser. Try Chrome.")
-      return
-    }
-    if (recording) {
-      recognitionRef.current?.stop()
-      return
-    }
-    const recognition = new SpeechRecognition()
-    recognition.continuous = true
-    recognition.interimResults = false
-    recognition.lang = "en-US"
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .slice(event.resultIndex)
-        .map((r: any) => r[0].transcript)
-        .join(" ")
-      if (transcript.trim()) onText(transcript.trim())
-    }
-    recognition.onend = () => setRecording(false)
-    recognition.onerror = () => setRecording(false)
-    recognitionRef.current = recognition
-    recognition.start()
-    setRecording(true)
+    if (state === "recording") stop()
+    else if (state === "idle") void start()
   }
 
   return (
     <Button
       type="button"
       size="sm"
-      variant={recording ? "destructive" : "secondary"}
+      variant={state === "recording" ? "destructive" : "secondary"}
       onClick={toggle}
+      disabled={state === "transcribing"}
       className="gap-1.5"
+      aria-label={
+        state === "recording"
+          ? "Stop dictation"
+          : state === "transcribing"
+            ? "Transcribing dictation"
+            : "Start dictation"
+      }
     >
-      {recording ? (
+      {state === "recording" ? (
         <>
           <Square className="h-3.5 w-3.5" />
           Stop
+        </>
+      ) : state === "transcribing" ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Transcribing…
         </>
       ) : (
         <>
