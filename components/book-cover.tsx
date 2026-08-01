@@ -1,18 +1,108 @@
+"use client"
+
+import { useState } from "react"
 import type { Book } from "@/lib/db/schema"
+
+export type CoverBook = Pick<
+  Book,
+  "title" | "author" | "coverColor" | "accentColor" | "coverImageUrl"
+>
+
+// Pick a readable foreground (dark vs light) for an arbitrary hex background so
+// the branded placeholder always meets contrast, whatever palette a book got.
+function readableInk(hex: string | null | undefined): {
+  fg: string
+  sub: string
+  shadow: string
+} {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim())
+  if (m) {
+    const int = Number.parseInt(m[1], 16)
+    const r = (int >> 16) & 255
+    const g = (int >> 8) & 255
+    const b = int & 255
+    // Perceived luminance (sRGB weights).
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    if (lum > 0.6) {
+      return {
+        fg: "rgba(15,23,42,0.92)",
+        sub: "rgba(15,23,42,0.65)",
+        shadow: "none",
+      }
+    }
+  }
+  return {
+    fg: "rgba(255,255,255,0.96)",
+    sub: "rgba(255,255,255,0.75)",
+    shadow: "0 1px 2px rgba(0,0,0,0.35)",
+  }
+}
+
+/** Clean, on-brand placeholder used when no real cover art is available (or a
+ *  real cover URL fails to load at runtime). */
+function BrandedCard({
+  book,
+  className,
+}: {
+  book: CoverBook
+  className: string
+}) {
+  const ink = readableInk(book.coverColor)
+  return (
+    <div
+      className={`relative flex aspect-[2/3] flex-col justify-between overflow-hidden rounded-lg p-3 shadow-md ${className}`}
+      style={{ backgroundColor: book.coverColor || "#1f2937" }}
+    >
+      {/* Subtle spine + accent so the card reads as a book, not a color swatch. */}
+      <span
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ backgroundColor: book.accentColor, opacity: 0.6 }}
+        aria-hidden
+      />
+      <div className="flex items-center justify-between">
+        <span
+          className="h-1.5 w-8 rounded-full"
+          style={{ backgroundColor: book.accentColor }}
+          aria-hidden
+        />
+        <span
+          className="text-[0.6rem] font-semibold uppercase tracking-widest"
+          style={{ color: ink.sub }}
+          aria-hidden
+        >
+          VOXYFI
+        </span>
+      </div>
+      <div>
+        <p
+          className="line-clamp-4 text-pretty text-[0.95rem] font-bold leading-tight"
+          style={{ color: ink.fg, textShadow: ink.shadow }}
+        >
+          {book.title}
+        </p>
+        <p
+          className="mt-1 line-clamp-1 text-[0.7rem] font-medium uppercase tracking-wide"
+          style={{ color: ink.sub }}
+        >
+          {book.author}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export function BookCover({
   book,
   className = "",
 }: {
-  book: Pick<
-    Book,
-    "title" | "author" | "coverColor" | "accentColor" | "coverImageUrl"
-  >
+  book: CoverBook
   className?: string
 }) {
-  // Prefer the real cover image (e.g. Project Gutenberg). Fall back to the
-  // generated color card when no image is available.
-  if (book.coverImageUrl) {
+  const [failed, setFailed] = useState(false)
+
+  // Prefer real cover art; if it fails to load, gracefully fall back to the
+  // branded card instead of showing a broken image.
+  if (book.coverImageUrl && !failed) {
     return (
       <div
         className={`relative aspect-[2/3] overflow-hidden rounded-lg shadow-md ${className}`}
@@ -23,38 +113,13 @@ export function BookCover({
           src={book.coverImageUrl || "/placeholder.svg"}
           alt={`Cover of ${book.title} by ${book.author}`}
           loading="lazy"
+          crossOrigin="anonymous"
+          onError={() => setFailed(true)}
           className="h-full w-full object-cover"
         />
       </div>
     )
   }
 
-  return (
-    <div
-      className={`relative flex aspect-[2/3] flex-col justify-between overflow-hidden rounded-lg p-3 shadow-md ${className}`}
-      style={{ backgroundColor: book.coverColor }}
-    >
-      <span
-        className="h-1.5 w-8 rounded-full"
-        style={{ backgroundColor: book.accentColor }}
-        aria-hidden
-      />
-      <span
-        className="absolute inset-y-0 left-0 w-1"
-        style={{ backgroundColor: book.accentColor, opacity: 0.6 }}
-        aria-hidden
-      />
-      <div>
-        <p
-          className="text-pretty text-[0.95rem] font-bold leading-tight text-white"
-          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}
-        >
-          {book.title}
-        </p>
-        <p className="mt-1 text-[0.7rem] font-medium uppercase tracking-wide text-white/75">
-          {book.author}
-        </p>
-      </div>
-    </div>
-  )
+  return <BrandedCard book={book} className={className} />
 }

@@ -1,6 +1,6 @@
 import { AddContent } from "@/components/add-content"
 
-type Mode = "text" | "link" | "file" | "dictate"
+type Mode = "text" | "link" | "file" | "dictate" | "scan"
 
 export default async function NewPage({
   searchParams,
@@ -9,11 +9,12 @@ export default async function NewPage({
 }) {
   const { mode } = await searchParams
   const normalized: Mode =
-    mode === "link" || mode === "file" || mode === "dictate"
+    mode === "link" ||
+    mode === "file" ||
+    mode === "dictate" ||
+    mode === "scan"
       ? mode
-      : mode === "scan"
-        ? "file"
-        : "text"
+      : "text"
 
   return <AddContent initialMode={normalized} />
 }

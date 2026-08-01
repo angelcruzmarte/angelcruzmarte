@@ -2,7 +2,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AISummaryTool } from "@/components/ai-summary-tool"
-import { PremiumGate } from "@/components/premium-gate"
+import { FreeQuotaBanner } from "@/components/free-quota-banner"
 import { buttonVariants } from "@/components/ui/button"
 
 export default async function SummaryPage() {
@@ -22,7 +22,8 @@ export default async function SummaryPage() {
       <p className="mb-6 text-muted-foreground">
         Condense any text into a clear summary and key takeaways.
       </p>
-      {subscribed ? <AISummaryTool /> : <PremiumGate feature="AI Summary" />}
+      {!subscribed && <FreeQuotaBanner className="mb-4" />}
+      <AISummaryTool />
     </div>
   )
 }

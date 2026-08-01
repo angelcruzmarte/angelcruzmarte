@@ -37,7 +37,6 @@ import {
   isHumanLikeVoice,
   voiceQualityScore,
 } from "@/lib/voices"
-import { READING_LANGUAGES } from "@/lib/languages"
 import type { SpeechVoice } from "@/hooks/use-speech"
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
@@ -50,21 +49,29 @@ type Props = {
   rate: number
   voices: SpeechVoice[]
   voiceURI: string
-  /** Selected reading/translation language code ("en" = original). */
-  readingLang: string
   /** Whether a translation request is in flight. */
   translating: boolean
-  /** Whether the user may translate (premium). */
+  /** Whether automatic translation is available (premium + different langs). */
   canTranslate: boolean
+  /** Whether the content is currently being narrated as a translation. */
+  isTranslated: boolean
+  /** Human label of the reader's device language (translation target). */
+  deviceLangLabel: string
+  /** Human label of the document's own language. */
+  sourceLangLabel: string
   /** Error surfaced from a failed/blocked translation. */
   readingError: string | null
-  onReadingLangChange: (code: string) => void
+  onToggleTranslation: () => void
   onPlayPause: () => void
   onStop: () => void
   onSkip: (delta: number) => void
   onSeek: (index: number) => void
   onRateChange: (value: number) => void
   onVoiceChange: (uri: string) => void
+  /** When true, render only the card (no fixed dock) so a parent can position it. */
+  embedded?: boolean
+  /** Optional content rendered above the controls (e.g. the AI tools row). */
+  topSlot?: React.ReactNode
 }
 
 export function PlaybackBar({
@@ -75,17 +82,21 @@ export function PlaybackBar({
   rate,
   voices,
   voiceURI,
-  readingLang,
   translating,
   canTranslate,
+  isTranslated,
+  deviceLangLabel,
+  sourceLangLabel,
   readingError,
-  onReadingLangChange,
+  onToggleTranslation,
   onPlayPause,
   onStop,
   onSkip,
   onSeek,
   onRateChange,
   onVoiceChange,
+  embedded = false,
+  topSlot,
 }: Props) {
   const isPlaying = status === "playing"
 
@@ -100,28 +111,36 @@ export function PlaybackBar({
     [voices],
   )
 
-  // Voices that match the current reading language; fall back to all human
-  // voices when the device has none installed for that language.
+  // Prefer voices whose language matches the currently selected voice; fall
+  // back to all natural voices. This keeps the picker relevant after an
+  // automatic language switch without exposing a manual language menu.
+  const selectedVoiceLang = useMemo(
+    () => voices.find((v) => v.uri === voiceURI)?.lang,
+    [voices, voiceURI],
+  )
   const voicesForLang = useMemo(() => {
+    if (!selectedVoiceLang) return humanVoices
     const match = humanVoices.filter(
-      (v) => baseLang(v.lang) === baseLang(readingLang),
+      (v) => baseLang(v.lang) === baseLang(selectedVoiceLang),
     )
     return match.length > 0 ? match : humanVoices
-  }, [humanVoices, readingLang])
+  }, [humanVoices, selectedVoiceLang])
 
   // If the selected voice isn't in the human-like list (e.g. a novelty default),
   // switch to the first natural voice available.
   useEffect(() => {
     if (humanVoices.length === 0) return
-    if (!humanVoices.some((v) => v.uri === voiceURI)) {
+    if (voiceURI && !humanVoices.some((v) => v.uri === voiceURI)) {
       onVoiceChange(humanVoices[0].uri)
     }
   }, [humanVoices, voiceURI, onVoiceChange])
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
-        {/* Progress scrubber */}
+  const card = (
+    <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md sm:p-4">
+      {topSlot && (
+        <div className="mb-2 border-b border-border pb-2">{topSlot}</div>
+      )}
+      {/* Progress scrubber */}
         <div className="flex items-center gap-3">
           <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
             {progress}%
@@ -140,38 +159,46 @@ export function PlaybackBar({
           </span>
         </div>
 
-        {/* Language (translation) + voice selectors */}
+        {/* Automatic translation status + voice selector */}
         <div className="mt-3 flex items-center gap-2">
-          <div className="flex flex-1 items-center gap-1.5">
-            {translating ? (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-            ) : (
-              <Languages className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
-            <Select
-              value={readingLang}
-              onValueChange={(value) => onReadingLangChange((value as string) ?? "en")}
-              disabled={translating || !canTranslate}
-            >
-              <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Language">
-                <SelectValue placeholder="Language" />
-              </SelectTrigger>
-              <SelectContent>
-                {READING_LANGUAGES.map((l) => (
-                  <SelectItem key={l.code} value={l.code}>
-                    {l.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {canTranslate && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                {translating ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <Languages className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="truncate">
+                  {isTranslated
+                    ? `Auto-translated to ${deviceLangLabel}`
+                    : `In ${sourceLangLabel}`}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={onToggleTranslation}
+                disabled={translating}
+              >
+                {isTranslated
+                  ? `Original (${sourceLangLabel})`
+                  : `Translate to ${deviceLangLabel}`}
+              </Button>
+            </div>
+          )}
 
           <Select
             value={voiceURI}
             onValueChange={(value) => onVoiceChange((value as string) ?? "")}
             disabled={voicesForLang.length === 0}
           >
-            <SelectTrigger className="h-9 flex-1 text-sm" aria-label="Voice">
+            <SelectTrigger
+              className={cn("h-9 text-sm", canTranslate ? "w-[150px]" : "flex-1")}
+              aria-label="Voice"
+            >
               <SelectValue placeholder="Voice" />
             </SelectTrigger>
             <SelectContent>
@@ -189,11 +216,6 @@ export function PlaybackBar({
           </Select>
         </div>
 
-        {!canTranslate && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Translation to other languages is a premium feature.
-          </p>
-        )}
         {readingError && (
           <p className="mt-2 text-xs text-destructive" role="alert">
             {readingError}
@@ -286,6 +308,13 @@ export function PlaybackBar({
           </div>
         </div>
       </div>
+  )
+
+  if (embedded) return card
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+      {card}
     </div>
   )
 }

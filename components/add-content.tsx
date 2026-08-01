@@ -7,20 +7,24 @@ import {
   LinkIcon,
   Loader2,
   Mic,
+  ScanLine,
   Square,
   Type,
 } from "lucide-react"
 import { createDocument, importFromUrl } from "@/app/actions/documents"
+import { DocumentScanner } from "@/components/document-scanner"
+import { generateUploadThumbnail } from "@/lib/document-artwork"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-type Mode = "text" | "link" | "file" | "dictate"
+type Mode = "text" | "link" | "file" | "dictate" | "scan"
 
 const modes: { id: Mode; label: string; icon: React.ElementType }[] = [
   { id: "text", label: "Type or Paste", icon: Type },
+  { id: "scan", label: "Scan", icon: ScanLine },
   { id: "link", label: "Link", icon: LinkIcon },
   { id: "file", label: "File", icon: FolderOpen },
   { id: "dictate", label: "Dictate", icon: Mic },
@@ -192,6 +196,13 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
       {mode === "file" && (
         <FileImport onError={setError} onDone={(id) => router.push(`/app/listen/${id}`)} />
       )}
+
+      {mode === "scan" && (
+        <DocumentScanner
+          onError={setError}
+          onDone={(id) => router.push(`/app/listen/${id}`)}
+        />
+      )}
     </div>
   )
 }
@@ -230,6 +241,10 @@ function FileImport({
         setUploading(false)
         return
       }
+      // Automatically generate the branded first-page thumbnail from the PDF
+      // the user just uploaded, so the library grid and OG share card have a
+      // real preview immediately. Best-effort and bounded (no-op for non-PDFs).
+      await generateUploadThumbnail(data.id, file)
       onDone(data.id)
     } catch {
       onError("Upload failed. Please try again.")
@@ -256,13 +271,13 @@ function FileImport({
             : (fileName ?? "Choose a document")}
         </span>
         <span className="text-xs text-muted-foreground">
-          Supports PDF, DOCX, EPUB, TXT, and MD (up to 15MB)
+          Supports PDF, DOCX, EPUB, TXT, MD, and image scans (up to 15MB)
         </span>
       </button>
       <input
         ref={inputRef}
         type="file"
-        accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
+        accept=".txt,.md,.markdown,.pdf,.docx,.epub,.png,.jpg,.jpeg,.webp,.gif,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip,image/png,image/jpeg,image/webp,image/gif"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

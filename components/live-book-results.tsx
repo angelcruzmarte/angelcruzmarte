@@ -3,29 +3,18 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import useSWRInfinite from "swr/infinite"
-import {
-  BookOpen,
-  ChevronDown,
-  ExternalLink,
-  Headphones,
-  Library,
-  Loader2,
-  Play,
-  ShoppingCart,
-  Upload,
-} from "lucide-react"
+import { BookOpen, Loader2, Upload } from "lucide-react"
 import { addGutenbergBook } from "@/app/actions/books"
-import { storeLinksFor } from "@/lib/book-stores"
-import { Button } from "@/components/ui/button"
+import { trackAffiliateClick } from "@/lib/affiliate-track"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  AffiliateBuyNote,
+  AffiliateDisclosure,
+} from "@/components/affiliate-disclosure"
+import {
+  BookCard,
+  coverFrom,
+  type BookCardAction,
+} from "@/components/store/book-card"
 
 type StoreResult = {
   key: string
@@ -36,6 +25,7 @@ type StoreResult = {
   gutenbergId: number | null
   listenable: boolean
   buyUrl: string
+  buyFormat?: string
 }
 
 type SearchPage = {
@@ -47,10 +37,21 @@ type SearchPage = {
 const fetcher = (url: string): Promise<SearchPage> =>
   fetch(url).then((r) => r.json())
 
-export function LiveBookResults({ query }: { query: string }) {
+export function LiveBookResults({
+  query,
+  language = "en",
+}: {
+  query: string
+  /** The store's active language filter. Search results are restricted to this
+   *  language so the filter is respected for live results too. "all" searches
+   *  every language. */
+  language?: string
+}) {
   const getKey = (index: number, prev: SearchPage | null) => {
     if (prev && !prev.hasMore) return null
-    return `/api/store/search?q=${encodeURIComponent(query)}&page=${index + 1}`
+    const langParam =
+      language && language !== "all" ? `&lang=${encodeURIComponent(language)}` : ""
+    return `/api/store/search?q=${encodeURIComponent(query)}&page=${index + 1}${langParam}`
   }
 
   const { data, size, setSize, isLoading, isValidating } =
@@ -93,22 +94,12 @@ export function LiveBookResults({ query }: { query: string }) {
   }, [hasMore, isValidating, setSize])
 
   if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <div className="aspect-[2/3] animate-pulse rounded-lg bg-muted" />
-            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-    )
+    return <ResultsSkeleton />
   }
 
   if (results.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border py-12 text-center">
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-12 text-center">
         <BookOpen className="h-8 w-8 text-muted-foreground" />
         <p className="font-medium">No books found for &ldquo;{query}&rdquo;</p>
         <p className="text-sm text-muted-foreground">
@@ -120,7 +111,7 @@ export function LiveBookResults({ query }: { query: string }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
         {results.map((r) => (
           <LiveBookCard key={r.key} result={r} />
         ))}
@@ -138,6 +129,25 @@ export function LiveBookResults({ query }: { query: string }) {
           That&apos;s everything for &ldquo;{query}&rdquo;.
         </p>
       )}
+
+      {/* Amazon Associates disclosure — kept clear and conspicuous near the
+          "Buy on Amazon" links, as required by the program + FTC. */}
+      <AffiliateDisclosure className="border-t border-border/60 pt-4 text-center" />
+    </div>
+  )
+}
+
+function ResultsSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex flex-col gap-2.5">
+          <div className="aspect-[2/3] animate-pulse rounded-lg bg-secondary" />
+          <div className="h-3.5 w-3/4 animate-pulse rounded bg-secondary" />
+          <div className="h-3 w-1/2 animate-pulse rounded bg-secondary" />
+          <div className="mt-0.5 h-9 w-full animate-pulse rounded-full bg-secondary" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -169,8 +179,8 @@ function LiveBookCard({ result }: { result: StoreResult }) {
     })
   }
 
-  // Copyrighted: after buying elsewhere, import the file the user owns so it
-  // can be narrated in the app.
+  // Copyrighted: after buying on Amazon, import a file the user owns so it can
+  // be narrated in the app.
   async function handleImportFile(file: File) {
     if (file.size > 15 * 1024 * 1024) {
       setError("File is too large. Please use a file under 15MB.")
@@ -181,10 +191,7 @@ function LiveBookCard({ result }: { result: StoreResult }) {
     try {
       const body = new FormData()
       body.append("file", file)
-      const res = await fetch("/api/documents/upload", {
-        method: "POST",
-        body,
-      })
+      const res = await fetch("/api/documents/upload", { method: "POST", body })
       const data = (await res.json()) as { id?: number; error?: string }
       if (!res.ok || !data.id) {
         setError(data.error ?? "Could not process that file.")
@@ -198,159 +205,68 @@ function LiveBookCard({ result }: { result: StoreResult }) {
     }
   }
 
-  return (
-    <div className="flex flex-col gap-2">
-      <LiveCover result={result} />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{result.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {result.author}
-          {result.year ? ` · ${result.year}` : ""}
-        </p>
-      </div>
+  const cover = coverFrom({
+    title: result.title,
+    author: result.author,
+    coverImageUrl: result.coverUrl,
+  })
+  const authorLine = result.year
+    ? `${result.author} · ${result.year}`
+    : result.author
 
-      {result.listenable ? (
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={handleAddAndListen}
-          disabled={pending}
-        >
-          {pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-          Add &amp; Listen
-        </Button>
-      ) : (
-        <BuyElsewhereMenu
-          title={result.title}
-          author={result.author}
-          importing={importing}
-          onImport={() => fileRef.current?.click()}
-        />
-      )}
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleImportFile(file)
-        }}
-      />
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  )
-}
-
-function BuyElsewhereMenu({
-  title,
-  author,
-  importing,
-  onImport,
-}: {
-  title: string
-  author: string
-  importing: boolean
-  onImport: () => void
-}) {
-  const links = storeLinksFor(title, author)
-  const buyLinks = links.filter((l) => l.kind === "buy")
-  const borrowLinks = links.filter((l) => l.kind === "borrow")
+  const action: BookCardAction = result.listenable
+    ? { kind: "read-free", onClick: handleAddAndListen, pending }
+    : {
+        kind: "buy",
+        href: result.buyUrl,
+        onClick: () =>
+          trackAffiliateClick({ title: result.title, author: result.author }),
+      }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            size="sm"
-            variant="secondary"
-            className="w-full gap-1.5"
-            disabled={importing}
-          />
-        }
-      >
-        {importing ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShoppingCart className="h-4 w-4" />
-        )}
-        {importing ? "Importing…" : "Buy elsewhere"}
-        {!importing && <ChevronDown className="ml-auto h-4 w-4 opacity-70" />}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Buy from</DropdownMenuLabel>
-          {buyLinks.map((store) => (
-            <DropdownMenuItem
-              key={store.id}
-              render={<a href={store.url} target="_blank" rel="noreferrer" />}
+    <BookCard
+      cover={cover}
+      title={result.title}
+      author={authorLine}
+      badge={
+        result.listenable
+          ? { kind: "listen" }
+          : result.buyFormat
+            ? { kind: "format", label: result.buyFormat }
+            : null
+      }
+      action={action}
+      error={error}
+      footer={
+        result.listenable ? null : (
+          <>
+            <AffiliateBuyNote />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={importing}
+              className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-70"
             >
-              <ExternalLink className="h-4 w-4" />
-              {store.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Borrow</DropdownMenuLabel>
-          {borrowLinks.map((store) => (
-            <DropdownMenuItem
-              key={store.id}
-              render={<a href={store.url} target="_blank" rel="noreferrer" />}
-            >
-              <Library className="h-4 w-4" />
-              {store.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Already bought it?</DropdownMenuLabel>
-          <DropdownMenuItem onClick={onImport}>
-            <Upload className="h-4 w-4" />
-            Import your file to listen
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function LiveCover({ result }: { result: StoreResult }) {
-  const [broken, setBroken] = useState(false)
-  const showImage = result.coverUrl && !broken
-
-  return (
-    <div className="relative">
-      {showImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={result.coverUrl as string}
-          alt={`Cover of ${result.title}`}
-          loading="lazy"
-          onError={() => setBroken(true)}
-          className="aspect-[2/3] w-full rounded-lg object-cover shadow-md"
-        />
-      ) : (
-        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg bg-secondary p-3 shadow-md">
-          <BookOpen className="h-5 w-5 text-muted-foreground" aria-hidden />
-          <p className="text-pretty text-sm font-bold leading-tight">
-            {result.title}
-          </p>
-        </div>
-      )}
-      {result.listenable && (
-        <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-sm">
-          <Headphones className="h-3 w-3" />
-          Listen
-        </span>
-      )}
-    </div>
+              {importing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Upload className="h-3 w-3" />
+              )}
+              Already own it? Import file
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".txt,.md,.markdown,.pdf,.docx,.epub,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/epub+zip"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleImportFile(file)
+              }}
+            />
+          </>
+        )
+      }
+    />
   )
 }

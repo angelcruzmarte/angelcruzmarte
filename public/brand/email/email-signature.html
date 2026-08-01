@@ -1,0 +1,56 @@
+<!--
+  VOXYFI staff email-signature template.
+  Table-based + inline styles so it pastes cleanly into Gmail, Outlook and
+  Apple Mail signature settings. Replace the {{PLACEHOLDERS}} below, then
+  copy the rendered signature (not the source) into your mail client.
+
+  Placeholders: {{FULL_NAME}} {{ROLE}} {{EMAIL}} {{PHONE}}
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>VOXYFI signature</title>
+  </head>
+  <body style="margin:0; padding:24px; background-color:#ffffff;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="font-family:'Geist','Helvetica Neue',Arial,sans-serif;">
+      <tr>
+        <!-- Logo tile -->
+        <td valign="top" style="padding-right:18px;">
+          <a href="https://www.voxyfi.com" style="text-decoration:none;">
+            <img
+              src="https://www.voxyfi.com/brand/email/signature-logo.png"
+              width="56"
+              height="56"
+              alt="VOXYFI"
+              style="display:block; width:56px; height:56px; border:0; border-radius:14px;"
+            />
+          </a>
+        </td>
+
+        <!-- Divider -->
+        <td valign="top" style="padding-right:18px;">
+          <div style="width:1px; height:72px; background-color:#e7e2d6; line-height:1px;">&nbsp;</div>
+        </td>
+
+        <!-- Details -->
+        <td valign="top">
+          <div style="font-size:16px; font-weight:700; color:#1c2b22; line-height:1.3;">
+            {{FULL_NAME}}
+          </div>
+          <div style="font-size:14px; color:#6b7b70; line-height:1.4; padding-bottom:6px;">
+            {{ROLE}} · <span style="color:#176b43; font-weight:600;">VOXYFI</span>
+          </div>
+          <div style="font-size:13px; line-height:1.6;">
+            <a href="mailto:{{EMAIL}}" style="color:#3a4a40; text-decoration:none;">{{EMAIL}}</a>
+            &nbsp;·&nbsp;
+            <span style="color:#3a4a40;">{{PHONE}}</span>
+          </div>
+          <div style="font-size:13px; line-height:1.6;">
+            <a href="https://www.voxyfi.com" style="color:#176b43; text-decoration:none; font-weight:600;">voxyfi.com</a>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

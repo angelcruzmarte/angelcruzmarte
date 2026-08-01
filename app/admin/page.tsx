@@ -3,14 +3,19 @@ import {
   BookOpen,
   CircleDollarSign,
   FileText,
+  Filter,
   Library,
   Repeat,
   ShoppingBag,
+  Tag,
   TrendingUp,
   Users,
 } from "lucide-react"
 import { getAdminStats, getFinanceData } from "@/app/actions/admin"
+import { getFunnelData } from "@/app/actions/funnel"
+import { getActivePromotion } from "@/app/actions/promotions"
 import { buttonVariants } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 
 function dollars(cents: number): string {
@@ -21,9 +26,11 @@ function dollars(cents: number): string {
 }
 
 export default async function AdminOverviewPage() {
-  const [stats, finance] = await Promise.all([
+  const [stats, finance, funnel, promo] = await Promise.all([
     getAdminStats(),
     getFinanceData(),
+    getFunnelData(),
+    getActivePromotion(),
   ])
 
   const money = [
@@ -96,6 +103,97 @@ export default async function AdminOverviewPage() {
         </Link>
       </div>
 
+      {/* Growth: pricing funnel + active promotion */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Pricing funnel</span>
+            </div>
+            <Link
+              href="/funnel"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              View details
+            </Link>
+          </div>
+          <div className="mt-4 flex items-end gap-6">
+            <div>
+              <p className="text-3xl font-semibold tabular-nums tracking-tight">
+                {funnel.conversionRate.toFixed(1)}%
+              </p>
+              <p className="text-xs text-muted-foreground">
+                visitor → registration
+              </p>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>
+                <span className="font-medium text-foreground">
+                  {funnel.visitors.toLocaleString()}
+                </span>{" "}
+                viewed pricing
+              </p>
+              <p>
+                <span className="font-medium text-foreground">
+                  {funnel.unconverted.toLocaleString()}
+                </span>{" "}
+                didn&apos;t register
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{
+                width: `${Math.min(100, Math.max(2, funnel.conversionRate))}%`,
+              }}
+            />
+          </div>
+        </Card>
+
+        <Card className="flex flex-col p-5">
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Active promotion</span>
+          </div>
+          {promo ? (
+            <div className="mt-4 flex flex-1 flex-col">
+              <div className="flex items-center gap-2">
+                <p className="text-2xl font-semibold tracking-tight">
+                  {promo.percentOff}% off
+                </p>
+                <Badge variant="default">Live</Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{promo.name}</p>
+              <Link
+                href="/promotions"
+                className={
+                  buttonVariants({ variant: "secondary", size: "sm" }) +
+                  " mt-auto w-fit"
+                }
+              >
+                Manage promotions
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-1 flex-col">
+              <p className="text-sm text-muted-foreground">
+                No promotion is currently running.
+              </p>
+              <Link
+                href="/promotions"
+                className={
+                  buttonVariants({ size: "sm" }) + " mt-auto w-fit"
+                }
+              >
+                Create a promotion
+              </Link>
+            </div>
+          )}
+        </Card>
+      </div>
+
       {/* Operational stats */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => (
@@ -125,27 +223,28 @@ export default async function AdminOverviewPage() {
           </Link>
         </Card>
         <Card className="p-6">
-          <h2 className="font-semibold">Add a new title</h2>
+          <h2 className="font-semibold">Run a promotion</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Publish an article or chapter for your subscribers to listen to.
+            Offer a discount that applies automatically at checkout and shows
+            during signup.
           </p>
           <Link
-            href="/content"
+            href="/promotions"
             className={buttonVariants({ variant: "secondary" }) + " mt-4"}
           >
-            Manage content
+            Manage promotions
           </Link>
         </Card>
         <Card className="p-6">
-          <h2 className="font-semibold">Manage subscribers</h2>
+          <h2 className="font-semibold">Manage users</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review subscription status and assign admin access.
+            Review accounts, billing history, renewal dates, and admin access.
           </p>
           <Link
-            href="/subscribers"
+            href="/users"
             className={buttonVariants({ variant: "secondary" }) + " mt-4"}
           >
-            View subscribers
+            View users
           </Link>
         </Card>
       </div>

@@ -4,24 +4,29 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
-import { LogoMark } from "@/components/logo-mark"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { markVisitorConverted } from "@/app/actions/funnel"
+import { BrandLogo } from "@/components/brand-logo"
 
 type Props = {
   mode: "sign-in" | "sign-up"
   redirectTo?: string
   notice?: string
+  promo?: { name: string; percentOff: number; description?: string | null } | null
 }
 
-export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
+export function AuthForm({
+  mode,
+  redirectTo = "/app",
+  notice,
+  promo = null,
+}: Props) {
   const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -43,6 +48,8 @@ export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
           setError(error.message ?? "Could not create account.")
           return
         }
+        // Record the pricing-funnel conversion for this visitor.
+        void markVisitorConverted()
         // Email verification is required, so no session exists yet.
         router.push(`/verify-email?email=${encodeURIComponent(email)}`)
         return
@@ -71,99 +78,130 @@ export function AuthForm({ mode, redirectTo = "/app", notice }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
-      <Link href="/" className="mb-8 flex items-center gap-2.5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <LogoMark className="h-5 w-5" />
-        </div>
-        <span className="text-xl font-semibold tracking-tight">VOXYFI</span>
+    <div className="flex min-h-screen flex-col px-6 py-10">
+      <Link href="/" className="mx-auto mb-10 mt-2">
+        <BrandLogo size="md" />
       </Link>
 
-      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">
-          {isSignUp ? "Create your account" : "Welcome back"}
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col">
+        <h1 className="text-center text-3xl font-bold tracking-tight text-foreground">
+          {isSignUp ? "Create Account" : "Welcome Back"}
         </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {isSignUp
-            ? "Start listening to your library in minutes."
-            : "Sign in to continue listening."}
-        </p>
+
+        {isSignUp && promo && (
+          <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-3.5 text-center">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Sign up &amp; save {promo.percentOff}%
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-foreground">
+              {promo.description ||
+                `${promo.name} — ${promo.percentOff}% off your subscription`}
+            </p>
+          </div>
+        )}
 
         {notice && (
-          <p className="mt-4 rounded-lg bg-secondary px-3 py-2 text-sm text-secondary-foreground">
+          <p className="mt-6 rounded-xl bg-secondary px-3 py-2 text-center text-sm text-secondary-foreground">
             {notice}
           </p>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-3">
           {isSignUp && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Ada Lovelace"
-                required
-                autoComplete="name"
-              />
-            </div>
-          )}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+            <input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name"
               required
-              autoComplete="email"
+              autoComplete="name"
+              aria-label="Name"
+              className="h-16 w-full rounded-2xl border border-border bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              {!isSignUp && (
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  Forgot password?
-                </Link>
-              )}
-            </div>
-            <Input
+          )}
+
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            required
+            autoComplete="email"
+            aria-label="Email"
+            className="h-16 w-full rounded-2xl border border-border bg-muted px-5 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+
+          <div className="relative">
+            <input
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="Password"
               required
               minLength={8}
               autoComplete={isSignUp ? "new-password" : "current-password"}
+              aria-label="Password"
+              className="h-16 w-full rounded-2xl border border-border bg-muted px-5 pr-14 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {showPassword ? (
+                <EyeOff className="h-5 w-5" />
+              ) : (
+                <Eye className="h-5 w-5" />
+              )}
+            </button>
           </div>
 
+          {!isSignUp && (
+            <Link
+              href="/forgot-password"
+              className="mt-1 self-start text-sm font-semibold text-primary hover:underline"
+            >
+              Forgot Password?
+            </Link>
+          )}
+
           {error && (
-            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
           )}
 
-          <Button type="submit" disabled={loading} className="mt-1 gap-2">
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isSignUp ? "Create account" : "Sign in"}
-          </Button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-5 flex h-16 w-full items-center justify-center gap-2 rounded-full bg-primary text-lg font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {loading && <Loader2 className="h-5 w-5 animate-spin" />}
+            {isSignUp ? "Create Account" : "Log In"}
+          </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-muted-foreground">
+        <p className="mt-8 text-center text-base text-muted-foreground">
           {isSignUp ? "Already have an account? " : "New to VOXYFI? "}
           <Link
             href={isSignUp ? "/sign-in" : "/sign-up"}
-            className="font-medium text-primary hover:underline"
+            className="font-semibold text-primary hover:underline"
           >
-            {isSignUp ? "Sign in" : "Create an account"}
+            {isSignUp ? "Log In" : "Create Account"}
+          </Link>
+        </p>
+
+        <p className="mx-auto mt-auto max-w-xs pt-10 text-center text-sm leading-relaxed text-muted-foreground">
+          By continuing you accept the{" "}
+          <Link href="/legal/terms" className="font-semibold text-primary hover:underline">
+            terms of use
+          </Link>{" "}
+          and{" "}
+          <Link href="/legal/privacy" className="font-semibold text-primary hover:underline">
+            privacy policy
           </Link>
         </p>
       </div>

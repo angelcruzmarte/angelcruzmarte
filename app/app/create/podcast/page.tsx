@@ -2,7 +2,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AIPodcastTool } from "@/components/ai-podcast-tool"
-import { PremiumGate } from "@/components/premium-gate"
+import { FreeQuotaBanner } from "@/components/free-quota-banner"
 import { buttonVariants } from "@/components/ui/button"
 
 export default async function PodcastPage() {
@@ -22,7 +22,8 @@ export default async function PodcastPage() {
       <p className="mb-6 text-muted-foreground">
         Turn any text into a lively two-host podcast you can play aloud.
       </p>
-      {subscribed ? <AIPodcastTool /> : <PremiumGate feature="AI Podcast" />}
+      {!subscribed && <FreeQuotaBanner className="mb-4" />}
+      <AIPodcastTool />
     </div>
   )
 }

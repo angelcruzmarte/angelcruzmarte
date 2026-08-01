@@ -2,16 +2,33 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, TriangleAlert, Sparkles, AudioLines } from "lucide-react"
+import { ArrowLeft, TriangleAlert, FileText, Lock } from "lucide-react"
 import { useSpeech } from "@/hooks/use-speech"
 import { ReaderPanel } from "@/components/reader-panel"
 import { PlaybackBar } from "@/components/playback-bar"
 import { PremiumNarration } from "@/components/premium-narration"
+import { ReaderAiTools } from "@/components/reader-ai-tools"
 import { DownloadAudioButton } from "@/components/download-audio-button"
+import {
+  OriginalDocumentView,
+  isViewableOriginal,
+} from "@/components/original-document-view"
+import {
+  PdfFollowAlong,
+  type PdfFollowAlongHandle,
+} from "@/components/pdf-follow-along"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { baseLang, voiceQualityScore } from "@/lib/voices"
+import { normalizeLang, isSupportedLang, languageLabel } from "@/lib/languages"
 import { translateText } from "@/app/actions/ai"
+import { resolveDocumentArtwork } from "@/lib/document-artwork"
+import {
+  trackerAddWords,
+  trackerPause,
+  trackerStart,
+} from "@/lib/listening-tracker"
+import { FREE_DAILY_LISTEN_SECONDS } from "@/lib/limits"
 
 type Props = {
   title: string
@@ -29,6 +46,22 @@ type Props = {
   documentId?: number
   /** Whether to show the premium offline MP3 download control. */
   allowDownload?: boolean
+  /** Blob URL of the original uploaded file (PDF/image), if preserved. */
+  originalUrl?: string | null
+  /** MIME type of the original file. */
+  originalMime?: string | null
+  /** Persisted first-page thumbnail URL, used directly as OS artwork if set. */
+  thumbnailUrl?: string | null
+  /** How the document was created ("file", "ai", "url", …). */
+  sourceType?: string | null
+  /** Detected language (ISO/BCP-47) of the document content. */
+  sourceLang?: string | null
+  /**
+   * Seconds this user has already listened today (server-provided). Used to
+   * seed the free-tier daily listening cap so it survives reloads. Ignored for
+   * subscribers/admins (premium=true).
+   */
+  initialListenSeconds?: number
 }
 
 export function ListenPlayer({
@@ -41,20 +74,119 @@ export function ListenPlayer({
   bookId,
   documentId,
   allowDownload = false,
+  originalUrl,
+  originalMime,
+  thumbnailUrl,
+  sourceType,
+  sourceLang,
+  initialListenSeconds = 0,
 }: Props) {
-  const [mode, setMode] = useState<"standard" | "premium">(
-    premium ? "premium" : "standard",
-  )
+  // Everyone reads with the premium AI narration UI so free users can preview a
+  // few premium voices (with the rest locked behind a subscribe prompt). The
+  // `premium` (subscriber) flag only controls which voices are unlocked and
+  // whether offline downloads are available — not whether the player renders.
+  // The cast keeps the union type (instead of narrowing to the "premium"
+  // literal) so the retained device-voice fallback below still type-checks.
+  const mode = "premium" as "premium" | "standard"
 
-  // Reading/translation language for the device-voice path. "en" = original.
-  const [readingLang, setReadingLang] = useState("en")
+  // Whether we can render the real uploaded pages (PDFs / image scans).
+  const hasOriginal =
+    Boolean(originalUrl) && isViewableOriginal(originalMime, originalUrl)
+  // A file that was uploaded before we started preserving the original pages.
+  // These can't show the real-page follow-along until re-uploaded.
+  const needsReupload = sourceType === "file" && !originalUrl
+  // When the original pages are available we always show them (Speechify-style
+  // page follow-along). There is no Page/Text toggle — plain text is only used
+  // as a fallback for documents without a viewable original.
+  const view = hasOriginal ? "original" : "text"
+  // `originalUrl` already points at the ownership-checked serving route.
+  const originalSrc = originalUrl ?? ""
+  const isPdf =
+    originalMime === "application/pdf" || /\.pdf(\?|$)/i.test(originalSrc)
+
+  // Follow-along on the real PDF pages: text is extracted client-side from the
+  // PDF so device-voice highlighting maps 1:1 to the rendered word spans.
+  const [pdfText, setPdfText] = useState<string | null>(null)
+  const [pdfWordCount, setPdfWordCount] = useState(0)
+  const [pdfFailed, setPdfFailed] = useState(false)
+  const [pdfPage, setPdfPage] = useState({ current: 1, total: 0 })
+  // Premium AI narration reports an approximate word position we map by fraction.
+  const [premiumPos, setPremiumPos] = useState({ word: -1, total: 0 })
+  // Whether the premium AI voice is actively playing (gates auto-scroll so it
+  // never yanks the user back to the top when paused/idle).
+  const [premiumPlaying, setPremiumPlaying] = useState(false)
+
+  // Free-tier daily listening cap. Subscribers/admins (premium) are unlimited.
+  // We seed with today's server-side total so the limit survives reloads, then
+  // add locally-observed seconds while the premium voice plays. When the cap is
+  // reached we force-pause the narration and show an upgrade prompt.
+  const [listenSeconds, setListenSeconds] = useState(initialListenSeconds)
+  const capReached = !premium && listenSeconds >= FREE_DAILY_LISTEN_SECONDS
+  useEffect(() => {
+    if (premium || !premiumPlaying) return
+    const id = setInterval(() => {
+      setListenSeconds((s) => s + 1)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [premium, premiumPlaying])
+  // Whether an AI tool panel (Chat/Summary/Podcast/Quiz) is open. While open we
+  // pause narration; closing it returns to the reader.
+  const [toolOpen, setToolOpen] = useState(false)
+  const usePdfFollow = isPdf && !pdfFailed && Boolean(originalSrc)
+  const pdfRef = useRef<PdfFollowAlongHandle>(null)
+
+  // Reading/translation language for the device-voice path. "original" narrates
+  // the document as-is; any other value is a target language we translate INTO.
+  const [readingLang, setReadingLang] = useState("original")
   const [translations, setTranslations] = useState<Record<string, string>>({})
   const [translating, setTranslating] = useState(false)
   const [readingError, setReadingError] = useState<string | null>(null)
 
+  // Reader's device/browser language, normalized to a two-letter code.
+  const [deviceLang, setDeviceLang] = useState("")
+  useEffect(() => {
+    setDeviceLang(normalizeLang(navigator.language))
+  }, [])
+
+  // Resolve high-res artwork (first PDF page / image) for the OS now-playing
+  // surfaces. Falls back to the VOXYFI logo inside the resolver. Recomputes
+  // whenever the source document changes.
+  const [artworkUrl, setArtworkUrl] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    void resolveDocumentArtwork({
+      originalUrl,
+      originalMime,
+      thumbnailUrl,
+      docId: documentId,
+    }).then((url) => {
+      if (!cancelled) setArtworkUrl(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [originalUrl, originalMime, thumbnailUrl, documentId])
+
+  const sourceNorm = sourceLang ? normalizeLang(sourceLang) : ""
+  // Offer translation only when the document language is known, the device
+  // language is supported, and the two differ.
+  const canTranslate =
+    premium &&
+    Boolean(sourceNorm) &&
+    Boolean(deviceLang) &&
+    isSupportedLang(deviceLang) &&
+    deviceLang !== sourceNorm
+
   const activeContent = useMemo(
-    () => (readingLang === "en" ? content : translations[readingLang] ?? content),
-    [readingLang, translations, content],
+    () =>
+      readingLang === "original"
+        ? // Prefer the client-extracted PDF text so highlighting lines up with
+          // the rendered pages; fall back to server text until it's parsed.
+          usePdfFollow && pdfText
+          ? pdfText
+          : content
+        : translations[readingLang] ?? content,
+    [readingLang, translations, content, usePdfFollow, pdfText],
   )
 
   const {
@@ -74,26 +206,28 @@ export function ListenPlayer({
     setVoiceURI,
   } = useSpeech(activeContent, initialWord)
 
-  // Translate the document for device narration and pick a matching device
-  // voice. Only English (original) is available without a subscription.
-  const handleReadingLangChange = useCallback(
+  const pickVoiceFor = useCallback(
+    (langCode: string) => {
+      // Choose the clearest available device voice for the target language.
+      const matches = voices
+        .filter((v) => baseLang(v.lang) === baseLang(langCode))
+        .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
+      if (matches[0]) setVoiceURI(matches[0].uri)
+    },
+    [voices, setVoiceURI],
+  )
+
+  // Translate the document into a target language for device narration and pick
+  // a matching device voice. Translation is a premium capability.
+  const translateTo = useCallback(
     async (code: string) => {
-      if (code === readingLang) return
       stop()
       setReadingError(null)
 
-      const pickVoiceFor = (langCode: string) => {
-        // Choose the clearest available voice for the target language.
-        const matches = voices
-          .filter((v) => baseLang(v.lang) === baseLang(langCode))
-          .sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a))
-        if (matches[0]) setVoiceURI(matches[0].uri)
-      }
-
-      // Original, or an already-translated language: switch instantly.
-      if (code === "en" || translations[code]) {
+      // Already translated: switch instantly.
+      if (translations[code]) {
         setReadingLang(code)
-        if (code !== "en") pickVoiceFor(code)
+        pickVoiceFor(code)
         return
       }
 
@@ -115,8 +249,31 @@ export function ListenPlayer({
         setTranslating(false)
       }
     },
-    [readingLang, translations, content, voices, stop, setVoiceURI],
+    [translations, content, stop, pickVoiceFor],
   )
+
+  // Toggle between the document's original language and an automatic
+  // translation into the reader's device language. No manual language menu.
+  const toggleTranslation = useCallback(() => {
+    if (readingLang === "original") {
+      void translateTo(deviceLang)
+    } else {
+      stop()
+      setReadingLang("original")
+      setVoiceURI("") // let the browser default voice handle the source language
+    }
+  }, [readingLang, deviceLang, translateTo, stop, setVoiceURI])
+
+  // Automatically translate into the device language once, the first time we
+  // detect it differs from the document's language.
+  const autoTranslatedRef = useRef(false)
+  useEffect(() => {
+    if (autoTranslatedRef.current) return
+    if (canTranslate) {
+      autoTranslatedRef.current = true
+      void translateTo(deviceLang)
+    }
+  }, [canTranslate, deviceLang, translateTo])
 
   // Debounced persistence of the resume position.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -150,8 +307,32 @@ export function ListenPlayer({
   useEffect(() => {
     // Only persist resume position for the original text; translated word
     // indices don't map back to the stored document.
-    if (status === "playing" && readingLang === "en") persistProgress(currentWord)
+    if (status === "playing" && readingLang === "original")
+      persistProgress(currentWord)
   }, [currentWord, status, persistProgress, readingLang])
+
+  // Feed listening statistics: run a timer while playing. Everyone now uses the
+  // premium AI narration path, so we track its play/pause state (the legacy
+  // device-voice `status` stays wired for the fallback engine below).
+  useEffect(() => {
+    if (status === "playing" || premiumPlaying) trackerStart()
+    else trackerPause()
+  }, [status, premiumPlaying])
+
+  const lastTrackedWord = useRef(-1)
+  useEffect(() => {
+    if (status !== "playing") return
+    const prev = lastTrackedWord.current
+    if (currentWord > prev) trackerAddWords(currentWord - prev)
+    lastTrackedWord.current = currentWord
+  }, [currentWord, status])
+
+  // Flush stats when leaving the page.
+  useEffect(() => {
+    return () => {
+      trackerPause()
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -185,6 +366,148 @@ export function ListenPlayer({
     )
   }
 
+  // Speechify-style immersive experience: the real document page is the hero
+  // surface and a compact player + AI tools dock to the bottom of the screen.
+  const immersive = hasOriginal && view === "original"
+  // Use the best-available text (client-extracted PDF text when ready, else the
+  // server-extracted content). Some documents have empty server `content` (the
+  // original was rendered client-side), which would make the AI tools fail.
+  const aiTools = premium ? (
+    <ReaderAiTools text={activeContent} onOpenChange={setToolOpen} />
+  ) : null
+
+  // Which word to highlight on the rendered PDF pages.
+  // - Device voice reads the PDF text directly, so currentWord maps 1:1.
+  // - Premium AI has no word timing, so we map its approximate position onto
+  //   the PDF word list by fraction (still auto-scrolls through to the end).
+  const pdfActiveWord = (() => {
+    if (!usePdfFollow || readingLang !== "original") return -1
+    if (premium && mode === "premium") {
+      if (premiumPos.total <= 0 || pdfWordCount <= 0) return -1
+      return Math.min(
+        pdfWordCount - 1,
+        Math.round((premiumPos.word / premiumPos.total) * pdfWordCount),
+      )
+    }
+    return currentWord
+  })()
+
+  // Overall playback progress (0..1) for the robust, word-independent scroll
+  // engine. This guarantees the document scrolls through to the end as the
+  // premium voice plays, even if the two word lists don't align perfectly.
+  const premiumFraction =
+    premium && mode === "premium" && premiumPlaying && premiumPos.total > 0
+      ? Math.min(1, premiumPos.word / premiumPos.total)
+      : -1
+
+  if (immersive) {
+    return (
+      <div className="flex min-h-[100dvh] flex-col">
+        <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md sm:px-6">
+          <Link
+            href={backHref}
+            aria-label={backLabel}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "h-9 w-9 shrink-0",
+            )}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold">{title}</h1>
+            {usePdfFollow && pdfPage.total > 0 && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                Page {pdfPage.current} of {pdfPage.total}
+              </p>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 pb-44 sm:pb-40">
+          {usePdfFollow ? (
+            <PdfFollowAlong
+              ref={pdfRef}
+              src={originalSrc}
+              activeWord={pdfActiveWord}
+              scrollFraction={premiumFraction}
+              onWords={(text, count) => {
+                setPdfText(text)
+                setPdfWordCount(count)
+              }}
+              onWordClick={(i) => {
+                // Word taps seek the device-voice engine (exact mapping). With
+                // the premium reader active for everyone, premium narration owns
+                // the highlight, so this is effectively a no-op here.
+                if (mode !== "premium") seekToWord(i)
+              }}
+              onPageChange={(current, total) =>
+                setPdfPage({ current, total })
+              }
+              onError={() => setPdfFailed(true)}
+              className="mx-auto max-w-2xl"
+            />
+          ) : (
+            <OriginalDocumentView
+              src={originalSrc}
+              mime={originalMime}
+              title={title}
+              immersive
+            />
+          )}
+        </main>
+
+        {mode === "premium" ? (
+          <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] sm:px-6">
+            {capReached && (
+              <div className="mx-auto mb-2 max-w-2xl">
+                <ListenCapNotice />
+              </div>
+            )}
+            <PremiumNarration
+              text={content}
+              title={title}
+              documentId={documentId}
+              sourceLang={sourceLang}
+              artworkUrl={artworkUrl}
+              subscribed={premium}
+              showReader={false}
+              immersive
+              topSlot={aiTools}
+              paused={toolOpen || capReached}
+              onActiveWord={(word, total) => setPremiumPos({ word, total })}
+              onPlayingChange={setPremiumPlaying}
+            />
+          </div>
+        ) : (
+          <PlaybackBar
+            status={status}
+            progress={progress}
+            totalWords={words.length}
+            currentWord={currentWord}
+            rate={rate}
+            voices={voices}
+            voiceURI={voiceURI}
+            translating={translating}
+            canTranslate={canTranslate}
+            isTranslated={readingLang !== "original"}
+            deviceLangLabel={deviceLang ? languageLabel(deviceLang) : ""}
+            sourceLangLabel={sourceNorm ? languageLabel(sourceNorm) : ""}
+            readingError={readingError}
+            onToggleTranslation={toggleTranslation}
+            onPlayPause={handlePlayPause}
+            onStop={stop}
+            onSkip={skip}
+            onSeek={seekToWord}
+            onRateChange={setRate}
+            onVoiceChange={setVoiceURI}
+            topSlot={aiTools}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-6 sm:px-6">
@@ -200,55 +523,66 @@ export function ListenPlayer({
         )}
       </div>
 
-      {premium && (
-        <div className="mx-auto mt-4 flex max-w-3xl gap-1 rounded-full border border-border bg-muted/50 p-1 px-4 sm:px-6">
-          <button
-            type="button"
-            onClick={() => {
-              stop()
-              setMode("premium")
-            }}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              mode === "premium"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Sparkles className="h-4 w-4" />
-            AI voice
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("standard")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              mode === "standard"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <AudioLines className="h-4 w-4" />
-            Device voice
-          </button>
+      {needsReupload && (
+        <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+          <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="text-pretty">
+              This document was added before the read-along page view was
+              available, so only the text is saved.{" "}
+              <Link
+                href="/app/upload"
+                className="font-medium text-primary underline underline-offset-2"
+              >
+                Re-upload the file
+              </Link>{" "}
+              to follow along on the original pages.
+            </p>
+          </div>
         </div>
       )}
 
-      {premium && mode === "premium" && (
+      {/* AI tools docked into the reader, matching the immersive experience. */}
+      {aiTools && (
         <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
-          <PremiumNarration text={content} title={title} />
+          <div className="rounded-2xl border border-border bg-card p-1.5">
+            {aiTools}
+          </div>
+        </div>
+      )}
+
+      {mode === "premium" && (
+        <div className="mx-auto mt-4 max-w-3xl px-4 sm:px-6">
+          {capReached && (
+            <div className="mb-3">
+              <ListenCapNotice />
+            </div>
+          )}
+          <PremiumNarration
+            text={content}
+            title={title}
+            documentId={documentId}
+            sourceLang={sourceLang}
+            artworkUrl={artworkUrl}
+            subscribed={premium}
+            showReader={view === "text"}
+            paused={capReached}
+            onPlayingChange={setPremiumPlaying}
+          />
         </div>
       )}
 
       {mode === "standard" && (
         <>
-          <ReaderPanel
-            title={title}
-            text={activeContent}
-            words={words}
-            currentWord={currentWord}
-            onWordClick={seekToWord}
-          />
+          {view === "text" && (
+            <ReaderPanel
+              title={title}
+              text={activeContent}
+              words={words}
+              currentWord={currentWord}
+              onWordClick={seekToWord}
+            />
+          )}
 
           <PlaybackBar
             status={status}
@@ -258,11 +592,13 @@ export function ListenPlayer({
             rate={rate}
             voices={voices}
             voiceURI={voiceURI}
-            readingLang={readingLang}
             translating={translating}
-            canTranslate={premium}
+            canTranslate={canTranslate}
+            isTranslated={readingLang !== "original"}
+            deviceLangLabel={deviceLang ? languageLabel(deviceLang) : ""}
+            sourceLangLabel={sourceNorm ? languageLabel(sourceNorm) : ""}
             readingError={readingError}
-            onReadingLangChange={handleReadingLangChange}
+            onToggleTranslation={toggleTranslation}
             onPlayPause={handlePlayPause}
             onStop={stop}
             onSkip={skip}
@@ -272,6 +608,37 @@ export function ListenPlayer({
           />
         </>
       )}
+    </div>
+  )
+}
+
+/** Upgrade prompt shown when a free user hits the daily listening cap. */
+function ListenCapNotice() {
+  return (
+    <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 shadow-lg backdrop-blur">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <Lock className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            You&apos;ve reached today&apos;s free listening limit
+          </p>
+          <p className="mt-0.5 text-pretty text-sm text-muted-foreground">
+            Subscribe for unlimited listening, every premium voice, and offline
+            downloads.
+          </p>
+          <Link
+            href="/subscribe"
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "mt-3 w-full sm:w-auto",
+            )}
+          >
+            Upgrade to Premium
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

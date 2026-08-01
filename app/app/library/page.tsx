@@ -5,6 +5,10 @@ import { getDocuments } from "@/app/actions/documents"
 import { LibraryView } from "@/components/library-view"
 import { buttonVariants } from "@/components/ui/button"
 
+// This route reads the signed-in user's documents/books at request time, so it
+// must never be statically prerendered at build.
+export const dynamic = "force-dynamic"
+
 export default async function LibraryPage() {
   const [docs, books] = await Promise.all([
     getDocuments(),

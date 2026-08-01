@@ -1,0 +1,103 @@
+<!--
+  VOXYFI branded email header + shell.
+  Table-based and inline-styled for maximum email-client compatibility
+  (Gmail, Outlook, Apple Mail). The gradient/logo is a hosted raster banner
+  because CSS gradients and SVG are unreliable in email.
+
+  Usage: paste into your ESP (transactional or marketing). Replace the
+  {{PLACEHOLDERS}} and the body copy. Keep the 600px content width.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>VOXYFI</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f5f2ea; -webkit-font-smoothing:antialiased;">
+    <!-- Preheader (hidden preview text) -->
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+      {{PREHEADER_TEXT}}
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f2ea;">
+      <tr>
+        <td align="center" style="padding:24px 16px;">
+          <!-- 600px content card -->
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:20px; overflow:hidden; box-shadow:0 8px 30px rgba(18,63,46,0.08);">
+            <!-- Header banner -->
+            <tr>
+              <td style="background-color:#123f2e;">
+                <a href="https://www.voxyfi.com" style="text-decoration:none;">
+                  <img
+                    src="https://www.voxyfi.com/brand/email/email-banner.png"
+                    width="600"
+                    alt="VOXYFI — Listen to anything"
+                    style="display:block; width:100%; max-width:600px; height:auto; border:0;"
+                  />
+                </a>
+              </td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding:40px 44px 8px 44px; font-family:'Geist','Helvetica Neue',Arial,sans-serif; color:#1c2b22;">
+                <h1 style="margin:0 0 16px 0; font-size:24px; line-height:1.25; font-weight:700; color:#123f2e;">
+                  {{HEADING}}
+                </h1>
+                <p style="margin:0 0 20px 0; font-size:16px; line-height:1.6; color:#3a4a40;">
+                  {{BODY_PARAGRAPH}}
+                </p>
+
+                <!-- CTA button (bulletproof) -->
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 12px 0;">
+                  <tr>
+                    <td align="center" bgcolor="#123f2e" style="border-radius:999px;">
+                      <a
+                        href="{{CTA_URL}}"
+                        style="display:inline-block; padding:14px 30px; font-family:'Geist','Helvetica Neue',Arial,sans-serif; font-size:16px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:999px;"
+                      >
+                        {{CTA_LABEL}}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Divider -->
+            <tr>
+              <td style="padding:24px 44px 0 44px;">
+                <div style="height:1px; background-color:#e7e2d6; line-height:1px;">&nbsp;</div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:20px 44px 36px 44px; font-family:'Geist','Helvetica Neue',Arial,sans-serif;">
+                <p style="margin:0 0 6px 0; font-size:13px; line-height:1.5; color:#6b7b70;">
+                  You are receiving this email because you have a VOXYFI account.
+                </p>
+                <p style="margin:0; font-size:13px; line-height:1.5; color:#6b7b70;">
+                  <a href="https://www.voxyfi.com" style="color:#176b43; text-decoration:none;">voxyfi.com</a>
+                  &nbsp;·&nbsp;
+                  <a href="{{UNSUBSCRIBE_URL}}" style="color:#6b7b70; text-decoration:underline;">Unsubscribe</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Wordmark under card -->
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px;">
+            <tr>
+              <td align="center" style="padding:18px 0 4px 0; font-family:'Geist','Helvetica Neue',Arial,sans-serif; font-size:12px; letter-spacing:1px; color:#9aa89e;">
+                VOXYFI · © {{YEAR}}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

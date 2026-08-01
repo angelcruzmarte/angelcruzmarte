@@ -6,7 +6,8 @@ import { ArrowLeft } from "lucide-react"
 import { getCurrentUser, isAdmin } from "@/lib/session"
 import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import { AdminNav } from "@/components/admin-nav"
-import { LogoMark } from "@/components/logo-mark"
+import { BrandLogo } from "@/components/brand-logo"
+import { getReviewCount } from "@/app/actions/admin"
 
 export default async function AdminLayout({
   children,
@@ -24,17 +25,13 @@ export default async function AdminLayout({
   if (!user) redirect(signInUrl)
   if (!isAdmin(user)) redirect(appUrl)
 
+  const reviewCount = await getReviewCount()
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="border-b border-border bg-sidebar lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
         <div className="flex h-16 items-center gap-2.5 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <LogoMark className="h-4 w-4" />
-          </div>
-          <div className="leading-none">
-            <p className="text-sm font-semibold">VOXYFI</p>
-            <p className="text-xs text-muted-foreground">Admin</p>
-          </div>
+          <BrandLogo size="sm" subtitle="Admin" />
           {/* Always-visible return button (mobile shows only the icon). */}
           <Link
             href={appUrl}
@@ -47,7 +44,7 @@ export default async function AdminLayout({
         </div>
 
         <div className="px-3 pb-4 lg:pb-0">
-          <AdminNav />
+          <AdminNav reviewCount={reviewCount} />
         </div>
 
         <div className="hidden px-3 lg:block">

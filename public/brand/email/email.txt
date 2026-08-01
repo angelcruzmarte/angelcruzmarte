@@ -1,0 +1,20 @@
+VOXYFI — Listen to anything
+==============================
+
+{{PREHEADER_TEXT}}
+
+{{HEADING}}
+
+{{BODY_PARAGRAPH}}
+
+{{CTA_LABEL}}:
+{{CTA_URL}}
+
+------------------------------
+
+You are receiving this email because you have a VOXYFI account.
+
+voxyfi.com  ·  https://www.voxyfi.com
+Unsubscribe: {{UNSUBSCRIBE_URL}}
+
+VOXYFI · © {{YEAR}}

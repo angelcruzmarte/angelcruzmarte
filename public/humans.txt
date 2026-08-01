@@ -1,0 +1,32 @@
+/* humans.txt — the people & tech behind VOXYFI */
+
+/* TEAM */
+  Company: VOXYFI
+  Site: https://www.voxyfi.com
+  Contact: hello [at] voxyfi.com
+  Press: press [at] voxyfi.com
+
+/* ABOUT */
+  VOXYFI turns anything you read — PDFs, documents, articles, and web pages —
+  into natural, human-quality audio you can listen to anywhere, in dozens of
+  languages. Built for commuters, students, researchers, and anyone who
+  retains more by listening.
+
+/* MEDIA */
+  Press kit: https://www.voxyfi.com/press
+  Brand guidelines: https://www.voxyfi.com/brand
+  Brand assets (ZIP): https://www.voxyfi.com/brand/voxyfi-brand-kit.zip
+
+/* TECHNOLOGY */
+  Framework: Next.js (App Router) + React
+  Language: TypeScript
+  Styling: Tailwind CSS
+  Database: Neon (Postgres)
+  Storage: Vercel Blob
+  Hosting: Vercel
+  Typeface: Geist
+
+/* SITE */
+  Last update: 2026/07/27
+  Standards: HTML5, CSS3, WCAG-minded
+  Components: Accessible, responsive, mobile-first

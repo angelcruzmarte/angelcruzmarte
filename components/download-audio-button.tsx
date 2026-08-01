@@ -15,9 +15,9 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
-import { PREMIUM_VOICES } from "@/lib/voices"
+import { PREMIUM_VOICES, getPremiumVoice } from "@/lib/voices"
+import { VoiceAvatar } from "@/components/voice-avatar"
 
 function base64ToBlobUrl(base64: string, mediaType: string) {
   const byteChars = atob(base64)
@@ -55,6 +55,7 @@ export function DownloadAudioButton({
   const [voice, setVoice] = useState<string>(PREMIUM_VOICES[0].id)
   const [status, setStatus] = useState<"idle" | "loading">("idle")
   const [error, setError] = useState<string | null>(null)
+  const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
 
   if (!premium) {
     return (
@@ -111,13 +112,36 @@ export function DownloadAudioButton({
             Voice
           </label>
           <Select value={voice} onValueChange={(v) => setVoice((v as string) ?? PREMIUM_VOICES[0].id)}>
-            <SelectTrigger className="h-9 w-full">
-              <SelectValue />
+            <SelectTrigger className="h-11 w-full gap-2">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <VoiceAvatar
+                  name={selectedVoice.name}
+                  image={selectedVoice.image}
+                  size={28}
+                  alt=""
+                />
+                <span className="flex min-w-0 flex-col text-left leading-tight">
+                  <span className="truncate text-sm font-medium">
+                    {selectedVoice.name}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {selectedVoice.tagline}
+                  </span>
+                </span>
+              </span>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[min(60vh,26rem)]">
               {PREMIUM_VOICES.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.label}
+                <SelectItem key={v.id} value={v.id} className="py-2">
+                  <span className="flex items-center gap-2.5">
+                    <VoiceAvatar name={v.name} image={v.image} size={36} alt="" />
+                    <span className="flex flex-col leading-tight">
+                      <span className="text-sm font-medium">{v.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {v.tagline}
+                      </span>
+                    </span>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>

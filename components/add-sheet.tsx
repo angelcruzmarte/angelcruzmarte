@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Plus,
   FilePlus2,
+  ScanLine,
   LinkIcon,
   Type,
   Mic,
@@ -44,6 +45,7 @@ type AppItem = {
 }
 
 const addItems: Item[] = [
+  { label: "Scan Document", icon: ScanLine, href: "/app/new?mode=scan" },
   { label: "Import File", icon: FilePlus2, href: "/app/new?mode=file" },
   { label: "Paste Link", icon: LinkIcon, href: "/app/new?mode=link" },
   { label: "Type or Paste Text", icon: Type, href: "/app/new?mode=text" },
@@ -58,8 +60,8 @@ const createItems: Item[] = [
 
 const appItems: AppItem[] = [
   { id: "google-drive", label: "Google Drive", icon: HardDrive },
-  { id: "dropbox", label: "Dropbox", icon: Cloud, comingSoon: true },
-  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog, comingSoon: true },
+  { id: "dropbox", label: "Dropbox", icon: Cloud },
+  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog },
 ]
 
 export function AddSheet({
@@ -80,10 +82,17 @@ export function AddSheet({
     driveFiles,
     selectDriveFile,
     closeDrive,
-  } = useCloudImport((id) => {
-    onClose()
-    router.push(`/app/listen/${id}`)
-  })
+  } = useCloudImport(
+    (id) => {
+      onClose()
+      router.push(`/app/listen/${id}`)
+    },
+    {
+      // Background delta-sync refreshed one or more Drive documents — refresh
+      // the library so the updated content/covers show without a manual reload.
+      onSynced: () => router.refresh(),
+    },
+  )
 
   // Drive enter/exit animation.
   useEffect(() => {

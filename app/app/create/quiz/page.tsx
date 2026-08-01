@@ -2,7 +2,7 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AIQuizTool } from "@/components/ai-quiz-tool"
-import { PremiumGate } from "@/components/premium-gate"
+import { FreeQuotaBanner } from "@/components/free-quota-banner"
 import { buttonVariants } from "@/components/ui/button"
 
 export default async function QuizPage() {
@@ -22,7 +22,8 @@ export default async function QuizPage() {
       <p className="mb-6 text-muted-foreground">
         Test your understanding with an auto-generated quiz.
       </p>
-      {subscribed ? <AIQuizTool /> : <PremiumGate feature="AI Quiz" />}
+      {!subscribed && <FreeQuotaBanner className="mb-4" />}
+      <AIQuizTool />
     </div>
   )
 }

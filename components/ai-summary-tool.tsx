@@ -18,9 +18,11 @@ export function AISummaryTool() {
     setError(null)
     setResult(null)
     try {
-      setResult(await generateSummary(input))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.")
+      const r = await generateSummary(input)
+      if (r.error) setError(r.error)
+      else setResult(r)
+    } catch {
+      setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
     }

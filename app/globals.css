@@ -37,6 +37,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-brand-green-deep: var(--brand-green-deep);
+  --color-brand-green-emerald: var(--brand-green-emerald);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -73,79 +75,99 @@
 
 :root {
   color-scheme: light;
-  --background: oklch(0.985 0.005 250);
-  --foreground: oklch(0.22 0.03 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.03 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.03 260);
-  --primary: oklch(0.55 0.21 263);
-  --primary-foreground: oklch(0.99 0.005 250);
-  --secondary: oklch(0.96 0.012 255);
-  --secondary-foreground: oklch(0.3 0.04 263);
-  --muted: oklch(0.96 0.012 255);
-  --muted-foreground: oklch(0.55 0.025 260);
-  --accent: oklch(0.94 0.03 255);
-  --accent-foreground: oklch(0.3 0.06 263);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.91 0.012 255);
-  --input: oklch(0.91 0.012 255);
-  --ring: oklch(0.55 0.21 263);
-  --highlight: oklch(0.88 0.16 95);
-  --highlight-foreground: oklch(0.28 0.06 80);
-  --spoken: oklch(0.6 0.02 260);
-  --chart-1: oklch(0.55 0.21 263);
-  --chart-2: oklch(0.65 0.17 180);
+  /* Warm sand/cream neutrals for a friendly, editorial feel. */
+  --background: oklch(0.97 0.008 85);
+  /* Near-black warm ink for maximum legibility on the cream base. */
+  --foreground: oklch(0.21 0.02 60);
+  --card: oklch(0.995 0.004 85);
+  --card-foreground: oklch(0.21 0.02 60);
+  --popover: oklch(0.995 0.004 85);
+  --popover-foreground: oklch(0.21 0.02 60);
+  /* Barnes & Noble deep hunter green — distinct from amber highlight & red destructive. */
+  --primary: oklch(0.4 0.11 152);
+  --primary-foreground: oklch(0.99 0.012 95);
+  /* Signature two-tone brand gradient: deep hunter green → bright emerald.
+     A brand constant used for the logo tile, icons and marketing — intentionally
+     identical in light and dark so the mark looks the same everywhere. */
+  --brand-green-deep: oklch(0.33 0.098 152);
+  --brand-green-emerald: oklch(0.72 0.16 160);
+  --brand-gradient: linear-gradient(
+    135deg,
+    var(--brand-green-deep) 0%,
+    var(--brand-green-emerald) 100%
+  );
+  --secondary: oklch(0.93 0.013 85);
+  --secondary-foreground: oklch(0.27 0.03 90);
+  --muted: oklch(0.94 0.01 85);
+  /* Darker secondary text so labels/placeholders stay readable. */
+  --muted-foreground: oklch(0.45 0.02 70);
+  --accent: oklch(0.9 0.05 152);
+  --accent-foreground: oklch(0.3 0.09 152);
+  --destructive: oklch(0.55 0.245 27.325);
+  /* Stronger hairlines so cards, inputs and dividers read clearly. */
+  --border: oklch(0.85 0.014 80);
+  --input: oklch(0.83 0.016 80);
+  --ring: oklch(0.4 0.11 152);
+  /* Warm amber word-follow highlight (Speechify-style). */
+  --highlight: oklch(0.86 0.15 85);
+  --highlight-foreground: oklch(0.3 0.07 75);
+  --spoken: oklch(0.62 0.02 70);
+  --chart-1: oklch(0.39 0.09 152);
+  --chart-2: oklch(0.72 0.14 55);
   --chart-3: oklch(0.7 0.15 95);
-  --chart-4: oklch(0.6 0.18 30);
-  --chart-5: oklch(0.5 0.1 300);
-  --radius: 0.875rem;
-  --sidebar: oklch(0.985 0.005 250);
-  --sidebar-foreground: oklch(0.22 0.03 260);
-  --sidebar-primary: oklch(0.55 0.21 263);
-  --sidebar-primary-foreground: oklch(0.99 0.005 250);
-  --sidebar-accent: oklch(0.94 0.03 255);
-  --sidebar-accent-foreground: oklch(0.3 0.06 263);
-  --sidebar-border: oklch(0.91 0.012 255);
-  --sidebar-ring: oklch(0.55 0.21 263);
+  --chart-4: oklch(0.62 0.13 25);
+  --chart-5: oklch(0.55 0.1 152);
+  --radius: 1rem;
+  --sidebar: oklch(0.955 0.01 85);
+  --sidebar-foreground: oklch(0.26 0.02 60);
+  --sidebar-primary: oklch(0.39 0.09 152);
+  --sidebar-primary-foreground: oklch(0.98 0.012 95);
+  --sidebar-accent: oklch(0.92 0.04 152);
+  --sidebar-accent-foreground: oklch(0.33 0.08 152);
+  --sidebar-border: oklch(0.9 0.012 80);
+  --sidebar-ring: oklch(0.39 0.09 152);
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.17 0.02 264);
-  --foreground: oklch(0.95 0.01 250);
-  --card: oklch(0.22 0.025 264);
-  --card-foreground: oklch(0.95 0.01 250);
-  --popover: oklch(0.22 0.025 264);
-  --popover-foreground: oklch(0.95 0.01 250);
-  --primary: oklch(0.68 0.18 263);
-  --primary-foreground: oklch(0.16 0.02 264);
-  --secondary: oklch(0.28 0.03 264);
-  --secondary-foreground: oklch(0.95 0.01 250);
-  --muted: oklch(0.28 0.03 264);
-  --muted-foreground: oklch(0.7 0.02 260);
-  --accent: oklch(0.32 0.05 264);
-  --accent-foreground: oklch(0.95 0.01 250);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.68 0.18 263);
-  --highlight: oklch(0.82 0.16 95);
+  /* Warm charcoal base — soft on the eyes for long reading/listening sessions. */
+  --background: oklch(0.19 0.008 70);
+  --foreground: oklch(0.95 0.008 85);
+  --card: oklch(0.235 0.01 70);
+  --card-foreground: oklch(0.95 0.008 85);
+  --popover: oklch(0.235 0.01 70);
+  --popover-foreground: oklch(0.95 0.008 85);
+  /* Barnes & Noble green, brightened & richer for contrast on charcoal. */
+  --primary: oklch(0.66 0.14 152);
+  --primary-foreground: oklch(0.15 0.01 70);
+  --secondary: oklch(0.33 0.013 70);
+  --secondary-foreground: oklch(0.97 0.008 85);
+  --muted: oklch(0.33 0.013 70);
+  /* Brighter secondary text for readable captions/placeholders. */
+  --muted-foreground: oklch(0.78 0.015 75);
+  --accent: oklch(0.38 0.06 152);
+  --accent-foreground: oklch(0.97 0.008 85);
+  --destructive: oklch(0.72 0.2 22.216);
+  /* Clearer hairlines / input outlines on the dark base. */
+  --border: oklch(1 0 0 / 22%);
+  --input: oklch(1 0 0 / 26%);
+  --ring: oklch(0.66 0.14 152);
+  --highlight: oklch(0.82 0.16 90);
   --highlight-foreground: oklch(0.2 0.05 80);
-  --spoken: oklch(0.5 0.02 260);
-  --chart-1: oklch(0.68 0.18 263);
-  --chart-2: oklch(0.7 0.15 180);
-  --chart-3: oklch(0.78 0.14 95);
-  --chart-4: oklch(0.65 0.18 30);
-  --chart-5: oklch(0.6 0.12 300);
-  --sidebar: oklch(0.2 0.022 264);
-  --sidebar-foreground: oklch(0.95 0.01 250);
-  --sidebar-primary: oklch(0.68 0.18 263);
-  --sidebar-primary-foreground: oklch(0.16 0.02 264);
-  --sidebar-accent: oklch(0.32 0.05 264);
-  --sidebar-accent-foreground: oklch(0.95 0.01 250);
+  --spoken: oklch(0.55 0.015 75);
+  --chart-1: oklch(0.62 0.12 152);
+  --chart-2: oklch(0.75 0.13 55);
+  --chart-3: oklch(0.8 0.14 95);
+  --chart-4: oklch(0.68 0.14 25);
+  --chart-5: oklch(0.66 0.1 152);
+  --sidebar: oklch(0.22 0.009 70);
+  --sidebar-foreground: oklch(0.95 0.008 85);
+  --sidebar-primary: oklch(0.62 0.12 152);
+  --sidebar-primary-foreground: oklch(0.16 0.01 70);
+  --sidebar-accent: oklch(0.35 0.05 152);
+  --sidebar-accent-foreground: oklch(0.95 0.008 85);
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.68 0.18 263);
+  --sidebar-ring: oklch(0.62 0.12 152);
 }
 
 @layer base {
@@ -160,10 +182,60 @@
   }
 }
 
+/* Signature VOXYFI brand gradient fill (deep green → emerald). Used for the
+   logo tile and other brand surfaces so the two-tone identity is consistent. */
+.bg-brand-gradient {
+  background-image: var(--brand-gradient);
+}
+
+/* Animated VOXYFI mark: the five waveform bars pulse like an equalizer while
+   "playing", then settle into the resting waveform+V shape. Each bar scales
+   about its own vertical center (transform-box: fill-box) so the dip stays
+   centered. Per-bar delay/duration is set inline for a lively, organic motion. */
+@keyframes voxyfi-eq {
+  0%,
+  100% {
+    transform: scaleY(0.42);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.voxyfi-anim rect {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: voxyfi-eq 1100ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .voxyfi-anim rect {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
 /* Pause the store hero marquee for users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee-left,
   .animate-marquee-right {
     animation: none !important;
   }
+}
+
+/* Follow-along highlighting drawn over the real PDF pages (Speechify-style). */
+.pdf-word {
+  transition: background-color 120ms ease;
+}
+.pdf-word-sentence {
+  background-color: color-mix(in oklch, var(--primary) 16%, transparent);
+}
+.pdf-word-active {
+  background-color: color-mix(in oklch, var(--primary) 34%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
+}
+
+/* When the docked mini-player is visible (flagged on <body> by PlayerProvider)
+   the page content needs extra bottom padding so its last section isn't hidden
+   behind the floating bar that sits above the tab bar. */
+body[data-miniplayer="true"] main {
+  padding-bottom: 12rem;
 }

@@ -1,11 +1,12 @@
-import Image from "next/image"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
 import { getCurrentUser } from "@/lib/session"
 import { PLANS, formatPrice } from "@/lib/plans"
+import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { LogoMark } from "@/components/logo-mark"
+import { PromoCountdown } from "@/components/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
@@ -17,60 +18,47 @@ export default async function HomePage() {
     redirect("/app")
   }
 
-  const primaryHref = user ? "/app" : "/sign-up"
-  const primaryLabel = user ? "Open the app" : "Start listening free"
+  // Reflect any active promotion on the public homepage. This is the same
+  // promo that is applied as a real discount at checkout, so the prices shown
+  // here are truthful. The banner/countdown only appears while the promo is
+  // live (getActivePromotion respects the start/end window).
+  const promo = await getActivePromotion()
+  const showPromo = Boolean(promo && promo.showBanner)
 
   return (
     <div className="min-h-screen">
       <SiteHeader />
 
-      {/* Hero */}
-      <section className="mx-auto grid max-w-5xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
-        <div>
+      {/* Hero — clean, centered, no imagery */}
+      <section className="mx-auto flex max-w-2xl flex-col items-center px-4 py-20 text-center sm:px-6 lg:py-28">
+        {showPromo ? (
+          <a
+            href="/sign-up"
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Limited time: {promo!.percentOff}% off Premium
+          </a>
+        ) : (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
             Listen to anything, anywhere
           </span>
-          <h1 className="mt-5 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Turn reading into listening with VOXYFI
-          </h1>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-muted-foreground">
-            Subscribe to a growing library of articles and books, narrated with
-            natural voices and word-by-word highlighting. Read with your ears
-            while you commute, cook, or unwind.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link href={primaryHref} className={buttonVariants({ size: "lg" })}>
-              {primaryLabel}
-            </Link>
-            <Link
-              href={user ? "/app" : "/sign-up"}
-              className={buttonVariants({ variant: "secondary", size: "lg" })}
-            >
-              Browse the app
-            </Link>
-          </div>
-          {!user && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link
-                href="/sign-in"
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Sign in
-              </Link>
-            </p>
-          )}
-        </div>
-
-        <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-border bg-muted shadow-sm">
-          <Image
-            src="/images/hero-listening.png"
-            alt="A person listening to narrated text with headphones"
-            fill
-            className="object-cover"
-            priority
-          />
+        )}
+        <h1 className="mt-6 text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
+          Turn reading into listening
+        </h1>
+        <p className="mt-5 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
+          Natural voices narrate your articles and books with word-by-word
+          highlighting. Read with your ears while you commute, cook, or unwind.
+        </p>
+        <div className="mt-8">
+          <Link
+            href="/sign-up"
+            className={buttonVariants({ size: "lg" }) + " w-full sm:w-auto"}
+          >
+            Start listening free
+          </Link>
         </div>
       </section>
 
@@ -118,8 +106,38 @@ export default async function HomePage() {
               Unlimited listening across the entire library. Cancel anytime.
             </p>
           </div>
+
+          {showPromo && (
+            <div className="mx-auto mt-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Limited-time offer
+              </p>
+              <p className="mt-1 text-balance text-xl font-semibold">
+                {promo!.name} &mdash; {promo!.percentOff}% off Premium
+              </p>
+              {promo!.description && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {promo!.description}
+                </p>
+              )}
+              <PromoCountdown
+                endsAt={promo!.endsAt ? promo!.endsAt.toISOString() : null}
+              />
+              <p className="mt-3 text-sm font-medium text-primary">
+                Sign up now &mdash; discount applied automatically at checkout
+              </p>
+            </div>
+          )}
+
           <div className="mx-auto mt-8 grid max-w-2xl gap-4 sm:grid-cols-2">
-            {PLANS.map((plan) => (
+            {PLANS.map((plan) => {
+              const promoApplies =
+                showPromo &&
+                (promo!.planScope === "all" || promo!.planScope === plan.id)
+              const discounted = promoApplies
+                ? Math.round(plan.priceInCents * (1 - promo!.percentOff / 100))
+                : null
+              return (
               <Card
                 key={plan.id}
                 className={
@@ -137,13 +155,23 @@ export default async function HomePage() {
                   )}
                 </div>
                 <p className="mt-3 text-3xl font-semibold tracking-tight">
-                  {formatPrice(plan.priceInCents)}
+                  {discounted !== null && (
+                    <span className="mr-2 align-middle text-lg font-normal text-muted-foreground line-through">
+                      {formatPrice(plan.priceInCents)}
+                    </span>
+                  )}
+                  {formatPrice(discounted ?? plan.priceInCents)}
                   <span className="text-base font-normal text-muted-foreground">
                     /{plan.interval}
                   </span>
                 </p>
+                {discounted !== null && (
+                  <p className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                    Save {promo!.percentOff}% for a limited time
+                  </p>
+                )}
                 <Link
-                  href={user ? "/subscribe" : "/sign-up"}
+                  href="/sign-up"
                   className={
                     buttonVariants({
                       variant: plan.highlighted ? "default" : "secondary",
@@ -153,7 +181,8 @@ export default async function HomePage() {
                   Get {plan.name}
                 </Link>
               </Card>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>

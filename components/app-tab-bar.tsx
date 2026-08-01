@@ -3,14 +3,13 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Library, Compass, BookOpen } from "lucide-react"
+import { Home, Library, BookOpen } from "lucide-react"
 import { AddSheet, AddSheetTrigger } from "@/components/add-sheet"
 import { cn } from "@/lib/utils"
 
 const tabs = [
   { href: "/app", label: "Home", icon: Home, exact: true },
   { href: "/app/library", label: "Library", icon: Library },
-  { href: "/app/discover", label: "Discover", icon: Compass },
   { href: "/app/books", label: "Books", icon: BookOpen },
 ]
 
@@ -27,8 +26,14 @@ export function AppTabBar() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40">
-      <div className="mx-auto max-w-2xl px-4 pb-4">
-        <div className="flex items-center justify-between gap-1 rounded-full border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur">
+      {/* Fade the page content out before it reaches the floating bar so no
+          button ever appears to overlap or bleed through the tab bar. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background via-background to-transparent"
+      />
+      <div className="relative mx-auto max-w-2xl px-4 pb-4">
+        <div className="flex items-center justify-between gap-1 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
           {tabs.map((tab) => {
             const active = isActive(tab.href, tab.exact)
             const Icon = tab.icon
@@ -36,20 +41,23 @@ export function AppTabBar() {
               <Link
                 key={tab.href}
                 href={tab.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex flex-1 flex-col items-center gap-0.5 rounded-full py-1.5 text-xs font-medium transition-colors",
-                  active
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                  active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <span
                   className={cn(
-                    "flex h-7 items-center justify-center rounded-full px-3 transition-colors",
-                    active && "bg-secondary",
+                    "flex h-7 items-center justify-center rounded-full px-4 transition-colors",
+                    active && "bg-primary/12 text-primary",
                   )}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon
+                    className="h-5 w-5"
+                    strokeWidth={active ? 2.25 : 1.75}
+                    aria-hidden="true"
+                  />
                 </span>
                 {tab.label}
               </Link>

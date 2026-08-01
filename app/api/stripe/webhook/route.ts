@@ -1,4 +1,4 @@
-import { grantBookPurchase } from "@/app/actions/books"
+import { grantBookPurchase, grantCartPurchase } from "@/app/actions/books"
 import { db } from "@/lib/db"
 import { user as userTable } from "@/lib/db/schema"
 import { stripe } from "@/lib/stripe"
@@ -19,6 +19,7 @@ async function applySubscription(sub: Stripe.Subscription) {
       stripeSubscriptionId: sub.id,
       subscriptionStatus: sub.status,
       plan: planId,
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
       currentPeriodEnd: item?.current_period_end
         ? new Date(item.current_period_end * 1000)
         : null,
@@ -30,15 +31,34 @@ async function applySubscription(sub: Stripe.Subscription) {
 export async function POST(req: Request) {
   const body = await req.text()
   const signature = (await headers()).get("stripe-signature")
-  const secret = process.env.STRIPE_WEBHOOK_SECRET
+  // Prefer the integration-independent override (see lib/stripe.ts) so the live
+  // webhook secret isn't shadowed by a connected Stripe integration.
+  const secret =
+    process.env.STRIPE_LIVE_WEBHOOK_SECRET?.trim() ||
+    process.env.STRIPE_WEBHOOK_SECRET
+
+  const isProd = process.env.NODE_ENV === "production"
+
+  // In production a verified signature is MANDATORY — never grant purchases or
+  // subscriptions from an unverified payload, which could be forged.
+  if (isProd && (!secret || !signature)) {
+    console.error(
+      "[v0] Stripe webhook rejected in production: missing secret or signature.",
+    )
+    return NextResponse.json(
+      { error: "Webhook signature verification required" },
+      { status: 400 },
+    )
+  }
 
   let event: Stripe.Event
   try {
     if (secret && signature) {
       event = stripe.webhooks.constructEvent(body, signature, secret)
     } else {
-      // No webhook secret configured (common in the sandbox). Fall back to
-      // trusting the parsed payload so local/preview testing still works.
+      // Dev/preview only: no webhook secret configured (common in the sandbox).
+      // Fall back to trusting the parsed payload so local testing still works.
+      // The production guard above ensures this branch never runs in prod.
       event = JSON.parse(body) as Stripe.Event
     }
   } catch (err) {
@@ -72,6 +92,18 @@ export async function POST(req: Request) {
             Number(session.metadata.bookId),
             session.id,
           )
+        } else if (
+          session.metadata?.kind === "book-cart" &&
+          session.metadata?.userId &&
+          session.metadata?.bookIds &&
+          (session.payment_status === "paid" || session.status === "complete")
+        ) {
+          // Multi-book cart purchase — grant lifetime ownership of each book.
+          const ids = session.metadata.bookIds
+            .split(",")
+            .map((s) => Number(s))
+            .filter((n) => Number.isFinite(n) && n > 0)
+          await grantCartPurchase(session.metadata.userId, ids, session.id)
         }
         break
       }

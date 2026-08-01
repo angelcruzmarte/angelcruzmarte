@@ -1,10 +1,8 @@
 import Link from "next/link"
 import {
   FolderOpen,
-  ScanLine,
   LinkIcon,
   Type,
-  Mic,
   Plus,
   FileText,
   AudioLines,
@@ -14,18 +12,20 @@ import {
 } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { getDocuments } from "@/app/actions/documents"
+import { getAiQuotaStatus } from "@/app/actions/ai"
 import { QuickCreate } from "@/components/quick-create"
 import { SavedStat } from "@/components/saved-stat"
 import { ContinueListening } from "@/components/continue-listening"
 import { cn } from "@/lib/utils"
 
+// The floating "+" button (and its Add sheet) is the canonical way to reach
+// every input method. On Home we surface only the most-used quick adds so the
+// screen stays calm; "More" opens the full add flow.
 const ttsTiles = [
   { href: "/app/new?mode=file", label: "File", icon: FolderOpen },
-  { href: "/app/new?mode=scan", label: "Scan", icon: ScanLine },
   { href: "/app/new?mode=link", label: "Link", icon: LinkIcon },
   { href: "/app/new?mode=text", label: "Paste", icon: Type },
-  { href: "/app/new?mode=dictate", label: "Dictate", icon: Mic },
-  { href: "/app/new", label: "Add", icon: Plus },
+  { href: "/app/new", label: "More", icon: Plus },
 ]
 
 const aiTiles = [
@@ -37,7 +37,23 @@ const aiTiles = [
 export default async function AppHome() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
+  // `unlocked` means unlimited access (paid, in-trial, or admin). Free users
+  // still reach this page but get the limited experience with daily quotas.
+  const unlocked = subscribed || user?.role === "admin"
+  const isTrialing = user?.subscriptionStatus === "trialing"
+  const trialDaysLeft =
+    isTrialing && user?.currentPeriodEnd
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(user.currentPeriodEnd).getTime() - Date.now()) /
+              86_400_000,
+          ),
+        )
+      : 0
   const docs = await getDocuments()
+  // Free users see how many banked AI generations remain as a nudge.
+  const aiLeft = unlocked ? 0 : (await getAiQuotaStatus()).available
   const totalWords = docs.reduce((sum, d) => sum + d.wordCount, 0)
   const minutesSaved = Math.round((totalWords / 200) * 0.6)
 
@@ -45,7 +61,28 @@ export default async function AppHome() {
     <div className="space-y-8 px-4 py-6 sm:px-6">
       <SavedStat minutesSaved={minutesSaved} docCount={docs.length} />
 
-      {subscribed ? (
+      {isTrialing ? (
+        <Link
+          href="/account"
+          className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 transition-colors hover:bg-primary/10"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">
+              Free trial active &mdash;{" "}
+              {trialDaysLeft} {trialDaysLeft === 1 ? "day" : "days"} left
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              Everything is unlocked. Manage your plan anytime.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+            Manage
+          </span>
+        </Link>
+      ) : subscribed ? (
         <div className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Sparkles className="h-4 w-4" aria-hidden="true" />
@@ -66,21 +103,54 @@ export default async function AppHome() {
             <Lock className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">You&apos;re on the Free plan</p>
+            <p className="text-sm font-semibold">Start your free trial</p>
             <p className="truncate text-xs text-muted-foreground">
-              Upgrade to unlock AI Summary, Podcast, and Quiz.
+              7 days free &mdash; unlock everything VOXYFI can do.
             </p>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
             <Sparkles className="h-3 w-3" aria-hidden="true" />
-            Upgrade
+            Start
           </span>
         </Link>
       )}
 
+      {/* Returning users want to pick up where they left off, so this leads. */}
+      {docs.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-bold tracking-tight">
+              Continue listening
+            </h2>
+            <Link
+              href="/app/library"
+              className="text-sm font-medium text-primary"
+            >
+              See all
+            </Link>
+          </div>
+          <ContinueListening
+            docs={            docs.slice(0, 3).map((doc) => ({
+              id: doc.id,
+              title: doc.title,
+              content: doc.content,
+              wordCount: doc.wordCount,
+              originalUrl: doc.originalUrl,
+              originalMime: doc.originalMime,
+              thumbnailUrl: doc.thumbnailUrl,
+            }))}
+          />
+        </section>
+      )}
+
+      {/* One calm "Add" area: the free-text box is the hero, with a compact
+          row of the most-used quick adds beneath it. */}
       <section>
-        <h2 className="mb-3 text-2xl font-bold tracking-tight">Text to Speech</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <h2 className="mb-3 text-xl font-bold tracking-tight">
+          {docs.length > 0 ? "Add something new" : "Start listening"}
+        </h2>
+        <QuickCreate />
+        <div className="mt-3 grid grid-cols-4 gap-3">
           {ttsTiles.map((tile) => (
             <TileLink key={tile.label} {...tile} />
           ))}
@@ -89,45 +159,23 @@ export default async function AppHome() {
 
       <section>
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-2xl font-bold tracking-tight">Create with AI</h2>
-          {!subscribed && (
+          <h2 className="text-xl font-bold tracking-tight">Create with AI</h2>
+          {!unlocked && (
             <Link
               href="/subscribe"
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
             >
               <Sparkles className="h-3 w-3" aria-hidden="true" />
-              Premium
+              {aiLeft > 0 ? `${aiLeft} AI credits free` : "Upgrade for more"}
             </Link>
           )}
         </div>
         <div className="grid grid-cols-3 gap-3">
           {aiTiles.map((tile) => (
-            <TileLink key={tile.label} {...tile} locked={!subscribed} />
+            <TileLink key={tile.label} {...tile} />
           ))}
         </div>
-        <div className="mt-4">
-          <QuickCreate subscribed={subscribed} />
-        </div>
       </section>
-
-      {docs.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Continue listening</h2>
-            <Link href="/app/library" className="text-sm font-medium text-primary">
-              See all
-            </Link>
-          </div>
-          <ContinueListening
-            docs={docs.slice(0, 3).map((doc) => ({
-              id: doc.id,
-              title: doc.title,
-              content: doc.content,
-              wordCount: doc.wordCount,
-            }))}
-          />
-        </section>
-      )}
     </div>
   )
 }

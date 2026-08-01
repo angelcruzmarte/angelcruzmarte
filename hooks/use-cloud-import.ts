@@ -8,12 +8,26 @@ import {
   isCloudProviderConfigured,
   type CloudProviderId,
 } from "@/lib/cloud-providers"
+import { getCloudTrackedDocuments } from "@/app/actions/documents"
+
+type CloudImportOptions = {
+  // Called after background delta-sync re-imported one or more changed files,
+  // so the caller can refresh the library. `count` is how many were updated.
+  onSynced?: (count: number) => void
+}
 
 type PickResult = {
   url: string
   name: string
   auth?: string
   mimeType?: string
+  // Cloud delta-sync origin, forwarded to the import route so the document
+  // records where it came from and can be re-synced when the source changes.
+  provider?: CloudProviderId
+  fileId?: string
+  revision?: string
+  // When set, re-sync (update in place) this existing document id.
+  docId?: number
 }
 
 type Status = "idle" | "picking" | "importing"
@@ -78,7 +92,19 @@ async function pickDropbox(): Promise<PickResult | null> {
       extensions: DROPBOX_EXTENSIONS,
       success: (files: any[]) => {
         const f = files?.[0]
-        resolve(f ? { url: f.link, name: f.name } : null)
+        resolve(
+          f
+            ? {
+                url: f.link,
+                name: f.name,
+                provider: "dropbox",
+                // Dropbox Chooser exposes a stable file id; there's no reusable
+                // token or rev, so background re-sync isn't available, but the
+                // origin is still tracked for consistency + future support.
+                fileId: f.id,
+              }
+            : null,
+        )
       },
       cancel: () => resolve(null),
       error: (e: unknown) =>
@@ -105,7 +131,18 @@ async function pickOneDrive(): Promise<PickResult | null> {
         const f = response?.value?.[0]
         const url =
           f?.["@microsoft.graph.downloadUrl"] || f?.["@content.downloadUrl"]
-        resolve(url ? { url, name: f.name } : null)
+        resolve(
+          url
+            ? {
+                url,
+                name: f.name,
+                provider: "onedrive",
+                fileId: f.id,
+                // OneDrive items carry an eTag/cTag change token.
+                revision: f.eTag ?? f.cTag,
+              }
+            : null,
+        )
       },
       cancel: () => resolve(null),
       error: (e: unknown) =>
@@ -179,6 +216,10 @@ function driveFileToPick(file: DriveFile, token: string): PickResult {
     name,
     auth: `Bearer ${token}`,
     mimeType: isGoogleDoc ? GOOGLE_EXPORT_MIME : file.mimeType,
+    provider: "google-drive",
+    fileId: file.id,
+    // modifiedTime is Drive's change token — bumps on every edit.
+    revision: file.modifiedTime,
   }
 }
 
@@ -193,7 +234,10 @@ async function pick(provider: CloudProviderId): Promise<PickResult | null> {
   }
 }
 
-export function useCloudImport(onDone: (id: number) => void) {
+export function useCloudImport(
+  onDone: (id: number) => void,
+  options?: CloudImportOptions,
+) {
   const [status, setStatus] = useState<Status>("idle")
   const [activeProvider, setActiveProvider] = useState<CloudProviderId | null>(
     null,
@@ -201,10 +245,51 @@ export function useCloudImport(onDone: (id: number) => void) {
   const [error, setError] = useState<string | null>(null)
   const busyRef = useRef(false)
 
+  // Keep the latest options in a ref so the reconcile callback never goes stale.
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+
   // Google Drive custom browser state.
   const [driveOpen, setDriveOpen] = useState(false)
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null)
   const tokenRef = useRef<string | null>(null)
+
+  // Background delta-sync: right after we list the user's Drive with a fresh
+  // token, compare each tracked Drive-sourced document's stored revision
+  // (modifiedTime) against the live one and re-import the changed files IN
+  // PLACE. This reuses the token we already hold, so it needs no extra consent
+  // and never blocks the picker UI. Fully best-effort and silent on failure.
+  const reconcileDrive = useCallback(
+    async (files: DriveFile[], token: string) => {
+      try {
+        const tracked = await getCloudTrackedDocuments("google-drive")
+        if (!tracked.length) return
+        const byId = new Map(files.map((f) => [f.id, f]))
+        let synced = 0
+        for (const t of tracked) {
+          if (!t.cloudFileId) continue
+          const live = byId.get(t.cloudFileId)
+          if (!live || !live.modifiedTime) continue
+          if (live.modifiedTime === t.cloudRevision) continue // unchanged
+          try {
+            const picked = { ...driveFileToPick(live, token), docId: t.id }
+            const res = await fetch("/api/documents/import-cloud", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(picked),
+            })
+            if (res.ok) synced++
+          } catch {
+            // Skip this one; other files still sync.
+          }
+        }
+        if (synced > 0) optionsRef.current?.onSynced?.(synced)
+      } catch {
+        // Silent — delta-sync is a background nicety, never a blocker.
+      }
+    },
+    [],
+  )
 
   // Shared: send a picked file to the server importer.
   const runImport = useCallback(
@@ -245,6 +330,8 @@ export function useCloudImport(onDone: (id: number) => void) {
           tokenRef.current = token
           const files = await listGoogleDriveFiles(token)
           setDriveFiles(files)
+          // Kick off background delta-sync for previously-imported Drive files.
+          void reconcileDrive(files, token)
         } catch (e) {
           setError(
             e instanceof Error ? e.message : "Could not open Google Drive.",

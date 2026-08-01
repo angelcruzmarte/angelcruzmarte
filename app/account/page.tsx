@@ -1,6 +1,10 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import {
+  getCurrentUser,
+  hasActiveSubscription,
+  isTrialActive,
+} from "@/lib/session"
 import { syncSubscription } from "@/app/actions/subscription"
 import { getPlan, formatPrice } from "@/lib/plans"
 import { SiteHeader } from "@/components/site-header"
@@ -8,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ManageBillingButton } from "@/components/manage-billing-button"
+import { CancelSubscriptionButton } from "@/components/cancel-subscription-button"
 
 export default async function AccountPage() {
   // Reconcile with Stripe on load so status is correct even without webhooks.
@@ -24,6 +29,22 @@ export default async function AccountPage() {
 
   const subscribed = hasActiveSubscription(user)
   const plan = user.plan ? getPlan(user.plan) : undefined
+  const trialing = isTrialActive(user)
+  const periodEndIso = user.currentPeriodEnd
+    ? new Date(user.currentPeriodEnd).toISOString()
+    : null
+
+  const status = user.subscriptionStatus
+  // A subscription is still "manageable" (can be cancelled / card updated) in
+  // any state except fully ended — this includes a past_due/unpaid plan whose
+  // card is failing. Those users MUST be able to reach the cancel and billing
+  // controls to stop repeated charge attempts, even though access is locked.
+  const manageable = Boolean(
+    status && status !== "canceled" && status !== "incomplete_expired",
+  )
+  // Payment is actively failing and Stripe is retrying the card.
+  const paymentFailing =
+    status === "past_due" || status === "unpaid" || status === "incomplete"
 
   return (
     <div className="min-h-screen">
@@ -53,14 +74,22 @@ export default async function AccountPage() {
             <h2 className="text-sm font-medium text-muted-foreground">
               Subscription
             </h2>
-            <Badge variant={subscribed ? "default" : "secondary"}>
+            <Badge
+              variant={
+                paymentFailing
+                  ? "destructive"
+                  : subscribed
+                    ? "default"
+                    : "secondary"
+              }
+            >
               {user.subscriptionStatus
                 ? user.subscriptionStatus
                 : "no subscription"}
             </Badge>
           </div>
 
-          {subscribed ? (
+          {manageable ? (
             <div className="mt-4">
               <p className="text-lg font-semibold">
                 {plan?.name ?? "VOXYFI Premium"}
@@ -70,9 +99,22 @@ export default async function AccountPage() {
                   {formatPrice(plan.priceInCents)} / {plan.interval}
                 </p>
               )}
-              {user.currentPeriodEnd && (
+              {paymentFailing && (
+                <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                  <p className="text-sm font-medium text-destructive">
+                    Your last payment failed.
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Update your card in the billing portal to keep your plan, or
+                    cancel below to stop further charge attempts.
+                  </p>
+                </div>
+              )}
+              {user.currentPeriodEnd &&
+                !user.cancelAtPeriodEnd &&
+                !paymentFailing && (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Renews on{" "}
+                  {trialing ? "Free trial — first charge on " : "Renews on "}
                   {new Date(user.currentPeriodEnd).toLocaleDateString(undefined, {
                     year: "numeric",
                     month: "long",
@@ -81,6 +123,17 @@ export default async function AccountPage() {
                 </p>
               )}
               <div className="mt-5">
+                <CancelSubscriptionButton
+                  cancelAtPeriodEnd={user.cancelAtPeriodEnd}
+                  periodEnd={periodEndIso}
+                  isTrialing={trialing}
+                  paymentFailing={paymentFailing}
+                />
+              </div>
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Update your card or view invoices in the billing portal.
+                </p>
                 <ManageBillingButton />
               </div>
             </div>

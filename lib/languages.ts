@@ -19,10 +19,42 @@ export const READING_LANGUAGES = [
   { code: "ru", label: "Russian", name: "Russian" },
   { code: "tr", label: "Turkish", name: "Turkish" },
   { code: "pl", label: "Polish", name: "Polish" },
+  // Additional languages present in the public-domain catalog. These are
+  // display labels for the Book Store's language filter/badges; TTS still
+  // auto-detects the language for narration.
+  { code: "sv", label: "Swedish", name: "Swedish" },
+  { code: "fi", label: "Finnish", name: "Finnish" },
+  { code: "da", label: "Danish", name: "Danish" },
+  { code: "hu", label: "Hungarian", name: "Hungarian" },
+  { code: "el", label: "Greek", name: "Greek" },
+  { code: "la", label: "Latin", name: "Latin" },
+  { code: "cs", label: "Czech", name: "Czech" },
+  { code: "eo", label: "Esperanto", name: "Esperanto" },
 ] as const
 
 export type ReadingLanguageCode = (typeof READING_LANGUAGES)[number]["code"]
 
 export function languageName(code: string): string {
   return READING_LANGUAGES.find((l) => l.code === code)?.name ?? "English"
+}
+
+/** Human-friendly label (without the "(original)" suffix) for a code. */
+export function languageLabel(code: string): string {
+  const l = READING_LANGUAGES.find((l) => l.code === code)
+  return l?.name ?? code.toUpperCase()
+}
+
+/**
+ * Normalizes a BCP-47 tag (e.g. "en-US", "pt-BR", "ZH-Hans") to the primary
+ * two-letter subtag we key voices/translation on (e.g. "en", "pt", "zh").
+ */
+export function normalizeLang(code: string | null | undefined): string {
+  if (!code) return "en"
+  return code.trim().toLowerCase().split(/[-_]/)[0]
+}
+
+/** Whether we can read/narrate the given (normalized) language. */
+export function isSupportedLang(code: string | null | undefined): boolean {
+  const c = normalizeLang(code)
+  return READING_LANGUAGES.some((l) => l.code === c)
 }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/backfill-thumbnails",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-cloud",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/check-book-links",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/prune-audit-log",
+      "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/import-books",
+      "schedule": "0 5 * * 0"
+    }
+  ]
+}

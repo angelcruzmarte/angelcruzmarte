@@ -2,10 +2,17 @@
 
 import { createHash } from "node:crypto"
 import { head, put } from "@vercel/blob"
+import { createElevenLabs } from "@ai-sdk/elevenlabs"
 import { chunkText } from "@/lib/chunk-text"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
-import { PREMIUM_VOICES, type PremiumVoiceId } from "@/lib/voices"
+import {
+  PREMIUM_VOICES,
+  getPremiumVoice,
+  isFreePreviewVoice,
+  voiceEngine,
+  type PremiumVoice,
+} from "@/lib/voices"
 
 const VALID_VOICES = new Set<string>(PREMIUM_VOICES.map((v) => v.id))
 // OpenAI TTS accepts up to ~4096 characters per request; stay safely under it.
@@ -13,22 +20,118 @@ const MAX_CHARS = 3500
 // Cap total download length so a single request stays within reason.
 const MAX_DOWNLOAD_CHARS = 60000
 
-// Premium quality first, with an automatic fallback. "tts-1-hd" gives the
-// clearest, richest audio, but it is throttled harder on the AI Gateway free
-// tier, so if it is rate-limited we fall back to the standard "tts-1" model,
-// which has far more headroom. This keeps playback instant instead of erroring.
-const TTS_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+// OpenAI TTS on the AI Gateway currently exposes only "tts-1-hd" and "tts-1"
+// (the higher-quality "gpt-4o-mini-tts" model was removed). We try the HD model
+// first for quality, then fall back to the standard model for rate-limit
+// headroom. These models support the 6 classic voices and do NOT support the
+// `instructions` field, so we map every persona onto a classic voice and never
+// send instructions on this path (see openAiVoiceFor / synthOnce).
+const OPENAI_MODELS = ["openai/tts-1-hd", "openai/tts-1"] as const
+
+// The only voices the tts-1 / tts-1-hd models accept.
+const CLASSIC_VOICES = new Set([
+  "alloy",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "shimmer",
+])
+
+// Map the newer engine ids (used by many personas) onto the closest classic
+// voice so every persona still produces audio on the available models.
+const ENGINE_TO_CLASSIC: Record<string, string> = {
+  ash: "onyx",
+  ballad: "fable",
+  verse: "echo",
+  cedar: "onyx",
+  coral: "shimmer",
+  sage: "nova",
+  marin: "nova",
+}
+
+/** Resolve a persona to a voice the tts-1 / tts-1-hd models actually support. */
+function openAiVoiceFor(persona: PremiumVoice): string {
+  const engine = voiceEngine(persona)
+  if (CLASSIC_VOICES.has(engine)) return engine
+  if (ENGINE_TO_CLASSIC[engine]) return ENGINE_TO_CLASSIC[engine]
+  // Fall back by gender for any unmapped engine.
+  if (persona.gender === "male") return "onyx"
+  if (persona.gender === "female") return "nova"
+  return "alloy"
+}
+
+// ElevenLabs (ultra-realistic) provider. Reads ELEVENLABS_API_KEY from the env.
+// "eleven_multilingual_v2" is the high-quality, widely-available model.
+const elevenlabs = createElevenLabs({
+  apiKey: process.env.ELEVENLABS_API_KEY,
+})
+const ELEVEN_MODEL = "eleven_multilingual_v2"
+// Sentinel used in the model fallback chain to mark the ElevenLabs path.
+const ELEVEN_SENTINEL = "elevenlabs"
+
+// Gender-matched ElevenLabs fallback voice_ids (Brian / Sarah). Used as a
+// last-resort cross-provider fallback when an OpenAI persona is rate-limited, so
+// audio is still produced — ultra-realistically — instead of failing.
+const ELEVEN_FALLBACK_BY_GENDER: Record<"male" | "female" | "neutral", string> = {
+  male: "nPczCjzI2devNBz1zQrb", // Brian
+  female: "EXAVITQu4vr4xnSDxMaL", // Sarah
+  neutral: "EXAVITQu4vr4xnSDxMaL",
+}
+
+/** Resolve the ElevenLabs voice_id to use for a persona (native or fallback). */
+function elevenVoiceIdFor(persona: PremiumVoice): string {
+  if (persona.provider === "elevenlabs") return voiceEngine(persona)
+  return (
+    ELEVEN_FALLBACK_BY_GENDER[persona.gender] ?? ELEVEN_FALLBACK_BY_GENDER.neutral
+  )
+}
+
+/**
+ * Ordered model fallback chain for the given persona. Every persona now falls
+ * back across providers so a rate limit on one never surfaces a "high demand"
+ * error: ElevenLabs personas try ElevenLabs first then OpenAI; OpenAI personas
+ * try OpenAI (HD then standard) then ElevenLabs.
+ */
+function modelsForVoice(persona: PremiumVoice): string[] {
+  if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL, ...OPENAI_MODELS]
+  return [...OPENAI_MODELS, ELEVEN_SENTINEL]
+}
 
 function isRateLimit(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
-  return /rate.?limit|429|GatewayRateLimit|quota|overloaded|capacity/i.test(msg)
+  return /rate.?limit|429|GatewayRateLimit|overloaded|capacity/i.test(msg)
 }
 
-async function synthOnce(model: string, text: string, voice: PremiumVoiceId) {
+// Quota/credit exhaustion (e.g. ElevenLabs "quota_exceeded") will NOT recover
+// by retrying, so we must fall back to the next provider immediately rather
+// than waste time backing off against a provider that can't serve the request.
+function isQuotaExhausted(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /quota|insufficient|credits?\s+remaining|out of credits|payment/i.test(
+    msg,
+  )
+}
+
+async function synthOnce(model: string, text: string, persona: PremiumVoice) {
+  // Ultra-realistic ElevenLabs path (native provider OR cross-provider fallback
+  // for an OpenAI persona). Pass the ElevenLabs voice_id via `voice`. No style
+  // instructions are supported here.
+  if (model === ELEVEN_SENTINEL) {
+    return generateSpeech({
+      model: elevenlabs.speech(ELEVEN_MODEL),
+      text,
+      voice: elevenVoiceIdFor(persona),
+      outputFormat: "mp3",
+      maxRetries: 0,
+    })
+  }
+  // OpenAI path: tts-1 / tts-1-hd only accept the classic voices and do not
+  // support the `instructions` field, so map the voice and omit instructions.
   return generateSpeech({
     model,
     text,
-    voice,
+    voice: openAiVoiceFor(persona),
     outputFormat: "mp3",
     maxRetries: 0,
   })
@@ -43,26 +146,34 @@ async function synthOnce(model: string, text: string, voice: PremiumVoiceId) {
  */
 async function synthWithRetry(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
   let lastErr: unknown
-  for (let m = 0; m < TTS_MODELS.length; m++) {
-    const model = TTS_MODELS[m]
-    const isLastModel = m === TTS_MODELS.length - 1
+  const models = modelsForVoice(persona)
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m]
+    const isLastModel = m === models.length - 1
     // Give the fallback (standard) model more retries since it's our safety net.
     const tries = isLastModel ? 4 : 2
     for (let attempt = 0; attempt < tries; attempt++) {
       try {
-        return await synthOnce(model, text, voice)
+        return await synthOnce(model, text, persona)
       } catch (err) {
         lastErr = err
-        // Non-rate-limit errors are real failures; surface them immediately.
-        if (!isRateLimit(err)) throw err
         const isLastAttempt = attempt === tries - 1
-        // On the last attempt for a non-final model, break to fall back fast.
-        if (isLastAttempt) break
-        const delay = 700 * 2 ** attempt
-        await new Promise((r) => setTimeout(r, delay))
+        // Transient rate limits/overload are worth a short backoff + retry on
+        // the SAME model. Quota exhaustion is NOT transient, so skip retries.
+        if (isRateLimit(err) && !isQuotaExhausted(err) && !isLastAttempt) {
+          const delay = 700 * 2 ** attempt
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        // Any other error (auth/quota/unavailable voice/etc.) — or exhausted
+        // rate-limit retries — should NOT hard-fail. Break out and try the next
+        // provider in the chain so, e.g., an ElevenLabs key that is unauthorized
+        // or out of credits transparently falls back to OpenAI TTS instead of
+        // surfacing "could not generate audio".
+        break
       }
     }
   }
@@ -103,9 +214,11 @@ const inflightUrl = new Map<string, Promise<string>>()
  */
 async function getOrCreateAudioUrl(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<string> {
-  const pathname = cacheKey(text, voice)
+  // Key by persona id so two personas sharing an engine but differing in style
+  // instructions never collide in the cache.
+  const pathname = cacheKey(text, persona.id)
   const cached = await getCachedUrl(pathname)
   if (cached) return cached
 
@@ -113,7 +226,7 @@ async function getOrCreateAudioUrl(
   if (running) return running
 
   const task = (async () => {
-    const result = await synthWithRetry(text, voice)
+    const result = await synthWithRetry(text, persona)
     const bytes = Buffer.from(result.audio.base64, "base64")
     const blob = await put(pathname, bytes, {
       access: "public",
@@ -140,9 +253,9 @@ async function getOrCreateAudioUrl(
  */
 async function getOrCreateAudioBytes(
   text: string,
-  voice: PremiumVoiceId,
+  persona: PremiumVoice,
 ): Promise<Uint8Array> {
-  const pathname = cacheKey(text, voice)
+  const pathname = cacheKey(text, persona.id)
   const cached = await getCachedUrl(pathname)
   if (cached) {
     try {
@@ -152,7 +265,7 @@ async function getOrCreateAudioBytes(
       // Fall through to regeneration if the cached object can't be fetched.
     }
   }
-  const result = await synthWithRetry(text, voice)
+  const result = await synthWithRetry(text, persona)
   const buffer = Buffer.from(result.audio.base64, "base64")
   await put(pathname, buffer, {
     access: "public",
@@ -172,8 +285,12 @@ export async function generatePremiumSpeech(
 ): Promise<SpeechResponse> {
   const user = await getCurrentUser()
   if (!user) return { error: "You must be signed in to use premium narration." }
-  if (!hasActiveSubscription(user)) {
-    return { error: "Premium narration requires an active subscription." }
+  // Non-subscribers may use a small set of free preview voices; all other
+  // premium voices require an active subscription.
+  if (!hasActiveSubscription(user) && !isFreePreviewVoice(voice)) {
+    return {
+      error: "This voice is available on Premium. Subscribe to unlock all voices.",
+    }
   }
 
   const trimmed = (text ?? "").trim()
@@ -182,12 +299,12 @@ export async function generatePremiumSpeech(
     return { error: "This passage is too long for a single request." }
   }
 
-  const selectedVoice: PremiumVoiceId = VALID_VOICES.has(voice)
-    ? (voice as PremiumVoiceId)
-    : "alloy"
+  const persona =
+    (VALID_VOICES.has(voice) ? getPremiumVoice(voice) : undefined) ??
+    getPremiumVoice("alloy")!
 
   try {
-    const url = await getOrCreateAudioUrl(trimmed, selectedVoice)
+    const url = await getOrCreateAudioUrl(trimmed, persona)
     return { url }
   } catch (err) {
     console.log("[v0] premium speech error:", err instanceof Error ? err.message : err)
@@ -224,9 +341,9 @@ export async function generateDownloadableAudio(
   const trimmed = (text ?? "").trim()
   if (!trimmed) return { error: "There is no text to narrate." }
 
-  const selectedVoice: PremiumVoiceId = VALID_VOICES.has(voice)
-    ? (voice as PremiumVoiceId)
-    : "alloy"
+  const persona =
+    (VALID_VOICES.has(voice) ? getPremiumVoice(voice) : undefined) ??
+    getPremiumVoice("alloy")!
 
   const chunks = chunkText(
     trimmed.slice(0, MAX_DOWNLOAD_CHARS),
@@ -237,7 +354,7 @@ export async function generateDownloadableAudio(
   try {
     const buffers: Uint8Array[] = []
     for (const chunk of chunks) {
-      buffers.push(await getOrCreateAudioBytes(chunk, selectedVoice))
+      buffers.push(await getOrCreateAudioBytes(chunk, persona))
     }
 
     const total = buffers.reduce((sum, b) => sum + b.length, 0)
@@ -263,4 +380,85 @@ export async function generateDownloadableAudio(
 
 function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64")
+}
+
+function isHostSpeaker(speaker: string): boolean {
+  return (speaker ?? "").toLowerCase().includes("host")
+}
+
+/**
+ * Stitches an entire AI podcast (Host/Guest segments) into one downloadable
+ * MP3. Each segment is synthesized with its speaker's voice and the MP3 byte
+ * buffers are concatenated (MP3 frames join cleanly). Uses the same per-voice
+ * permission rules as playback: subscribers get every voice; free users may
+ * only use the free preview voices.
+ */
+export async function generatePodcastAudio(
+  segments: { speaker: string; line: string }[],
+  hostVoice: string,
+  guestVoice: string,
+): Promise<DownloadResponse> {
+  const user = await getCurrentUser()
+  if (!user) return { error: "You must be signed in to download audio." }
+
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return { error: "There is no podcast audio to export yet." }
+  }
+
+  const subscribed = hasActiveSubscription(user)
+  // Which voices are actually used by this conversation.
+  const usesHost = segments.some((s) => isHostSpeaker(s.speaker))
+  const usesGuest = segments.some((s) => !isHostSpeaker(s.speaker))
+  const blocked =
+    (usesHost && !subscribed && !isFreePreviewVoice(hostVoice)) ||
+    (usesGuest && !subscribed && !isFreePreviewVoice(guestVoice))
+  if (blocked) {
+    return {
+      error:
+        "These voices are available on Premium. Subscribe to download this podcast.",
+    }
+  }
+
+  const hostPersona =
+    (VALID_VOICES.has(hostVoice) ? getPremiumVoice(hostVoice) : undefined) ??
+    getPremiumVoice("alloy")!
+  const guestPersona =
+    (VALID_VOICES.has(guestVoice) ? getPremiumVoice(guestVoice) : undefined) ??
+    getPremiumVoice("alloy")!
+
+  try {
+    const buffers: Uint8Array[] = []
+    for (const seg of segments) {
+      const line = (seg.line ?? "").trim()
+      if (!line) continue
+      const persona = isHostSpeaker(seg.speaker) ? hostPersona : guestPersona
+      buffers.push(await getOrCreateAudioBytes(line.slice(0, MAX_CHARS), persona))
+    }
+
+    if (buffers.length === 0) {
+      return { error: "There is no podcast audio to export yet." }
+    }
+
+    const total = buffers.reduce((sum, b) => sum + b.length, 0)
+    const merged = new Uint8Array(total)
+    let offset = 0
+    for (const b of buffers) {
+      merged.set(b, offset)
+      offset += b.length
+    }
+
+    return { audio: bytesToBase64(merged), mediaType: "audio/mpeg" }
+  } catch (err) {
+    console.log(
+      "[v0] podcast audio error:",
+      err instanceof Error ? err.message : err,
+    )
+    if (isRateLimit(err)) {
+      return {
+        error:
+          "Audio is in high demand right now. Please wait a moment and try again.",
+      }
+    }
+    return { error: "Could not generate the podcast audio right now. Try again." }
+  }
 }

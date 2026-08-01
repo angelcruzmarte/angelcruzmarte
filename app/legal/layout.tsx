@@ -6,6 +6,7 @@ const LINKS = [
   { href: "/legal/terms", label: "Terms of Service" },
   { href: "/legal/privacy", label: "Privacy Policy" },
   { href: "/legal/refund", label: "Refund Policy" },
+  { href: "/legal/affiliate-disclosure", label: "Affiliate Disclosure" },
 ]
 
 export default function LegalLayout({ children }: { children: ReactNode }) {
