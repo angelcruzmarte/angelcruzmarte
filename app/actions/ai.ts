@@ -3,7 +3,7 @@
 import { chunkText } from "@/lib/chunk-text"
 import { languageName } from "@/lib/languages"
 import { db } from "@/lib/db"
-import { aiQuota, document, documentTranslation } from "@/lib/db/schema"
+import { aiQuota, book, document, documentTranslation } from "@/lib/db/schema"
 import { sectionHash } from "@/lib/hash"
 import {
   FREE_AI_QUOTA_CAPACITY,
@@ -665,6 +665,115 @@ export async function askDocument(
     return { answer: text.trim() }
   } catch (e) {
     return { answer: "", error: friendlyAiError(e, "askDocument") }
+  }
+}
+
+export interface BookEnrichment {
+  summary: string
+  themes: string[]
+  difficulty: string
+  readingLevel: string
+  authorNote: string
+}
+
+/**
+ * AI-generated marketing enrichment for a book's detail page (summary, themes,
+ * difficulty, reading level, short author note). Generated ONCE and cached on
+ * the book row, so repeat views are instant and cheap. This is public-facing
+ * merchandising that drives purchases, so it is FREE for everyone and does NOT
+ * draw from the AI quota (no `contentToolGuard`/`consumeAiToken`). Returns null
+ * if the book doesn't exist or generation fails (the detail page simply omits
+ * the section). Never sends full copyrighted text — only catalog metadata.
+ */
+export async function getBookEnrichment(
+  bookId: number,
+): Promise<BookEnrichment | null> {
+  try {
+    const [row] = await db
+      .select({
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        category: book.category,
+        description: book.description,
+        excerpt: book.excerpt,
+        aiSummary: book.aiSummary,
+        aiThemes: book.aiThemes,
+        aiDifficulty: book.aiDifficulty,
+        aiReadingLevel: book.aiReadingLevel,
+        aiAuthorNote: book.aiAuthorNote,
+        aiEnrichedAt: book.aiEnrichedAt,
+      })
+      .from(book)
+      .where(eq(book.id, bookId))
+      .limit(1)
+    if (!row) return null
+
+    // Return the cached enrichment when present.
+    if (row.aiEnrichedAt && row.aiSummary) {
+      return {
+        summary: row.aiSummary,
+        themes: Array.isArray(row.aiThemes) ? (row.aiThemes as string[]) : [],
+        difficulty: row.aiDifficulty ?? "",
+        readingLevel: row.aiReadingLevel ?? "",
+        authorNote: row.aiAuthorNote ?? "",
+      }
+    }
+
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: z.object({
+        summary: z
+          .string()
+          .describe(
+            "An inviting 2-3 sentence overview of what the book is about and why someone would read it. Do not include spoilers.",
+          ),
+        themes: z
+          .array(z.string())
+          .describe("3 to 5 short theme or topic tags, each 1-3 words."),
+        difficulty: z
+          .enum(["Easy", "Moderate", "Challenging"])
+          .describe("How demanding the reading is for a general adult reader."),
+        readingLevel: z
+          .string()
+          .describe(
+            "A short audience descriptor, e.g. 'General adult', 'Young adult', 'Advanced'.",
+          ),
+        authorNote: z
+          .string()
+          .describe(
+            "One or two sentences of context about the author relevant to this book.",
+          ),
+      }),
+      prompt:
+        "You are a book concierge writing catalog copy for a reading app. " +
+        "Using only the metadata below, write helpful, accurate enrichment. " +
+        "Do not invent facts you cannot infer.\n\n" +
+        `Title: ${row.title}\n` +
+        `Author: ${row.author}\n` +
+        `Category: ${row.category}\n` +
+        `Description: ${row.description}\n` +
+        `Excerpt: ${row.excerpt}`,
+    })
+
+    // Cache it on the book row (best-effort; a failed write just means the
+    // next view regenerates).
+    await db
+      .update(book)
+      .set({
+        aiSummary: object.summary,
+        aiThemes: object.themes,
+        aiDifficulty: object.difficulty,
+        aiReadingLevel: object.readingLevel,
+        aiAuthorNote: object.authorNote,
+        aiEnrichedAt: new Date(),
+      })
+      .where(eq(book.id, bookId))
+
+    return object
+  } catch (e) {
+    console.error("[v0] getBookEnrichment failed:", e)
+    return null
   }
 }
 

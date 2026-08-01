@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/elevenlabs": "^3.0.8",
+    "@ai-sdk/react": "^4.0.50",
     "@base-ui/react": "^1.5.0",
     "@napi-rs/canvas": "^1.0.2",
     "@next/third-parties": "^16.2.10",

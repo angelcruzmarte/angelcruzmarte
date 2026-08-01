@@ -1,7 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
-import { book, bookFavorite, bookPurchase } from "@/lib/db/schema"
+import { book, bookFavorite, bookPurchase, bookRating } from "@/lib/db/schema"
 import { recordBookEvent } from "@/lib/book-analytics"
 import { fetchAndParseGutenberg } from "@/lib/gutenberg"
 import {
@@ -17,7 +17,7 @@ import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
-import { and, count, desc, eq, gte, inArray, ne, sql } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray, ne, notInArray, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
 import type { BookCard } from "@/lib/db/schema"
@@ -83,6 +83,14 @@ export type Storefront = {
 // How many books to show per curated storefront row.
 const ROW_SIZE = 12
 
+// Deterministic hourly rotation offset in [0, len). Keeps a large row stable
+// within the hour while advancing each hour so repeat visits feel fresh.
+const HOUR_MS = 60 * 60 * 1000
+function bucketOffset(len: number): number {
+  if (len <= 0) return 0
+  return Math.floor(Date.now() / HOUR_MS) % len
+}
+
 /**
  * Builds the storefront: a hero spotlight plus curated rows. "New Releases"
  * and "Editor's Picks" are derived from catalog metadata; "Trending" (last 30
@@ -147,6 +155,21 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
     rows.push({ key: "bestsellers", title: "Best Sellers", books: bestSellers })
   }
 
+  // Classic Literature — public-domain titles (sourced from Project Gutenberg),
+  // read and listened to directly in VOXYFI. Rotated by the hourly bucket so the
+  // row stays fresh on repeat visits rather than always showing the same slice.
+  // NB: these are paid in-app titles, so we do NOT label them "free".
+  const classics = all.filter((b) => b.gutenbergId != null)
+  if (classics.length >= 3) {
+    const start = classics.length > ROW_SIZE ? bucketOffset(classics.length) : 0
+    const rotated = [...classics.slice(start), ...classics.slice(0, start)]
+    rows.push({
+      key: "classics",
+      title: "Classic Literature",
+      books: rotated.slice(0, ROW_SIZE),
+    })
+  }
+
   // Hero: rotate the Featured pick hourly so the spotlight stays fresh on
   // repeat visits. The rotation pool prioritizes curated featured titles, then
   // fills with new releases and best sellers (deduped) so there's always more
@@ -163,10 +186,8 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
 
   // Deterministic hourly bucket keeps the choice stable within the hour while
   // advancing to the next book each hour.
-  const HOUR_MS = 60 * 60 * 1000
-  const bucket = Math.floor(Date.now() / HOUR_MS)
   const hero =
-    heroPool.length > 0 ? heroPool[bucket % heroPool.length] : null
+    heroPool.length > 0 ? heroPool[bucketOffset(heroPool.length)] : null
 
   return { hero, rows }
 }
@@ -495,8 +516,94 @@ export async function saveBookProgress(bookId: number, wordIndex: number) {
 }
 
 /**
+ * Builds the signed-in user's personalized storefront rows from real data:
+ * Continue Reading (owned + in progress), Recommended For You (by saved
+ * interests), and Because You Read {Title} (same category as the most recent
+ * purchase). Returns [] for signed-out users or when there's no data, so the
+ * store degrades gracefully to the curated rows. Reuses the already-fetched
+ * catalog (`byId`) — no extra catalog query.
+ */
+async function buildPersonalizedRows(
+  byId: Map<number, BookCard>,
+  interestIds: string[],
+  userId: string,
+): Promise<StorefrontRow[]> {
+  // The user's purchases: id, resume position, and recency.
+  const purchases = await db
+    .select({
+      bookId: bookPurchase.bookId,
+      lastWord: bookPurchase.lastWord,
+      createdAt: bookPurchase.createdAt,
+    })
+    .from(bookPurchase)
+    .where(eq(bookPurchase.userId, userId))
+    .orderBy(desc(bookPurchase.createdAt))
+
+  const ownedIds = new Set(purchases.map((p) => p.bookId))
+  const rows: StorefrontRow[] = []
+
+  // Continue Reading — owned titles the user has started (resume position > 0),
+  // most recently purchased first.
+  const continueReading = purchases
+    .filter((p) => p.lastWord > 0)
+    .map((p) => byId.get(p.bookId))
+    .filter((b): b is BookCard => Boolean(b))
+    .slice(0, ROW_SIZE)
+  if (continueReading.length > 0) {
+    rows.push({
+      key: "continue",
+      title: "Continue Reading",
+      books: continueReading,
+    })
+  }
+
+  // Recommended For You — catalog titles in the user's saved interest
+  // categories that they don't already own, featured first.
+  const wanted = new Set(
+    interestIds.map((id) => (INTEREST_LABELS.get(id) ?? id).toLowerCase()),
+  )
+  if (wanted.size > 0) {
+    const recommended = [...byId.values()]
+      .filter((b) => wanted.has(b.category.toLowerCase()) && !ownedIds.has(b.id))
+      .sort((a, b) => Number(b.featured) - Number(a.featured))
+      .slice(0, ROW_SIZE)
+    if (recommended.length >= 3) {
+      rows.push({
+        key: "recommended",
+        title: "Recommended For You",
+        books: recommended,
+      })
+    }
+  }
+
+  // Because You Read {Title} — same category as the user's most recent
+  // purchase, excluding books they already own.
+  const recent = purchases.map((p) => byId.get(p.bookId)).find(Boolean)
+  if (recent) {
+    const similar = [...byId.values()]
+      .filter(
+        (b) =>
+          b.id !== recent.id &&
+          !ownedIds.has(b.id) &&
+          b.category.toLowerCase() === recent.category.toLowerCase(),
+      )
+      .slice(0, ROW_SIZE)
+    if (similar.length >= 3) {
+      rows.push({
+        key: `because-${recent.id}`,
+        title: `Because You Read ${recent.title}`,
+        books: similar,
+      })
+    }
+  }
+
+  return rows
+}
+
+/**
  * Single entry point for the Book Store page. Fetches the catalog ONCE, then
- * derives both the personalized ordering (by the user's interests) and the
+ * derives the personalized ordering (by the user's interests), the personalized
+ * discovery rows (Continue Reading / Recommended / Because You Read), and the
  * curated storefront (hero + rows) from it. This replaces two separate calls
  * that each re-queried the whole catalog.
  */
@@ -505,8 +612,22 @@ export async function getStorefrontData(): Promise<{
   personalized: boolean
   storefront: Storefront
 }> {
-  const [all, interestIds] = await Promise.all([getBooks(), getMyInterests()])
+  const [all, interestIds, user] = await Promise.all([
+    getBooks(),
+    getMyInterests().catch(() => [] as string[]),
+    getCurrentUser(),
+  ])
   const storefront = await buildStorefront(all)
+
+  // Prepend the signed-in user's personalized rows so discovery leads with
+  // their own reading journey, then the curated rows follow.
+  if (user) {
+    const byId = new Map(all.map((b) => [b.id, b]))
+    const personalRows = await buildPersonalizedRows(byId, interestIds, user.id)
+    if (personalRows.length > 0) {
+      storefront.rows = [...personalRows, ...storefront.rows]
+    }
+  }
 
   const wanted = new Set(
     interestIds.map((id) => (INTEREST_LABELS.get(id) ?? id).toLowerCase()),
@@ -696,4 +817,131 @@ export async function confirmCartCheckout(sessionId: string) {
     console.error("[v0] confirmCartCheckout failed:", error)
   }
   return { owned: false }
+}
+
+// ----- VOXYFI ratings & reviews (our own, for EVERY book) -----
+
+// Aggregates are only surfaced once there are at least this many ratings, so a
+// single opinion never masquerades as a meaningful score.
+export const MIN_RATINGS_TO_SHOW = 3
+
+export type BookRatingSummary = {
+  /** Mean stars, rounded to 1 decimal. 0 when below the display threshold. */
+  average: number
+  /** Total number of ratings. */
+  count: number
+  /** The signed-in user's own rating (1-5), or 0 if they haven't rated. */
+  mine: number
+  /** True once `count >= MIN_RATINGS_TO_SHOW` (aggregate is meaningful). */
+  hasEnough: boolean
+  /** True when the current viewer is signed in and may submit a rating. */
+  canRate: boolean
+}
+
+/**
+ * VOXYFI's own rating summary for a book. Works for EVERY book (in-app AND
+ * affiliate) — these are our ratings, never sourced from Amazon. The aggregate
+ * is only meaningful once `count >= MIN_RATINGS_TO_SHOW`; below that the UI
+ * shows "Not enough ratings yet" rather than a misleading number.
+ */
+export async function getBookRating(bookId: number): Promise<BookRatingSummary> {
+  const user = await getCurrentUser()
+  const [agg] = await db
+    .select({
+      count: count(),
+      sum: sql<number>`coalesce(sum(${bookRating.stars}), 0)`,
+    })
+    .from(bookRating)
+    .where(eq(bookRating.bookId, bookId))
+
+  const total = Number(agg?.count ?? 0)
+  const sum = Number(agg?.sum ?? 0)
+  const hasEnough = total >= MIN_RATINGS_TO_SHOW
+  const average = total > 0 ? Math.round((sum / total) * 10) / 10 : 0
+
+  let mine = 0
+  if (user) {
+    const [row] = await db
+      .select({ stars: bookRating.stars })
+      .from(bookRating)
+      .where(and(eq(bookRating.bookId, bookId), eq(bookRating.userId, user.id)))
+      .limit(1)
+    mine = row?.stars ?? 0
+  }
+
+  return {
+    average: hasEnough ? average : 0,
+    count: total,
+    mine,
+    hasEnough,
+    canRate: Boolean(user),
+  }
+}
+
+/**
+ * Submits (or updates) the signed-in user's VOXYFI rating for a book. Any
+ * signed-in user may rate any title, including affiliate books. Idempotent per
+ * (user, book) via upsert. Does NOT touch the Amazon purchase flow.
+ */
+export async function rateBook(bookId: number, stars: number) {
+  const user = await getCurrentUser()
+  if (!user) return { error: "Please sign in to rate books." }
+  const value = Math.round(stars)
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    return { error: "Rating must be between 1 and 5 stars." }
+  }
+  // Guard against rating a non-existent book.
+  const [exists] = await db
+    .select({ id: book.id })
+    .from(book)
+    .where(eq(book.id, bookId))
+    .limit(1)
+  if (!exists) return { error: "That book no longer exists." }
+
+  await db
+    .insert(bookRating)
+    .values({ userId: user.id, bookId, stars: value })
+    .onConflictDoUpdate({
+      target: [bookRating.userId, bookRating.bookId],
+      set: { stars: value, updatedAt: new Date() },
+    })
+  revalidatePath(`/app/books/${bookId}`)
+  return await getBookRating(bookId)
+}
+
+/**
+ * Books similar to the given one for the detail page's "Similar Books" rail:
+ * same category first, then other published titles, excluding the book itself.
+ * Returns lean card rows; never includes the current book.
+ */
+export async function getRelatedBooks(
+  bookId: number,
+  category: string,
+  limit = 12,
+): Promise<BookCard[]> {
+  const sameCategory = await db
+    .select(bookCardColumns)
+    .from(book)
+    .where(
+      and(
+        eq(book.published, true),
+        eq(book.category, category),
+        ne(book.id, bookId),
+      ),
+    )
+    .orderBy(desc(book.featured), desc(book.createdAt))
+    .limit(limit)
+
+  if (sameCategory.length >= limit) return sameCategory
+
+  // Backfill with other published titles so the rail is never sparse.
+  const excludeIds = [bookId, ...sameCategory.map((b) => b.id)]
+  const fill = await db
+    .select(bookCardColumns)
+    .from(book)
+    .where(and(eq(book.published, true), notInArray(book.id, excludeIds)))
+    .orderBy(desc(book.featured), desc(book.createdAt))
+    .limit(limit - sameCategory.length)
+
+  return [...sameCategory, ...fill]
 }

@@ -258,6 +258,16 @@ export const book = pgTable("book", {
   qualityReport: jsonb("qualityReport"),
   // When the quality score was last computed.
   qualityCheckedAt: timestamp("qualityCheckedAt"),
+  // AI-generated marketing enrichment, produced ONCE on first detail view and
+  // cached here (free to view, never counts against the AI quota). All nullable
+  // so existing rows and un-enriched books render fine. `aiThemes` is a JSON
+  // string array of theme/topic tags. Regenerated only when explicitly cleared.
+  aiSummary: text("aiSummary"),
+  aiThemes: jsonb("aiThemes"),
+  aiDifficulty: text("aiDifficulty"),
+  aiReadingLevel: text("aiReadingLevel"),
+  aiAuthorNote: text("aiAuthorNote"),
+  aiEnrichedAt: timestamp("aiEnrichedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   // Last edit/refresh time, for "last updated" sorting in admin.
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
@@ -295,6 +305,30 @@ export const bookFavorite = pgTable(
   },
   (t) => ({
     uniqUserBookFav: unique().on(t.userId, t.bookId),
+  }),
+)
+
+// VOXYFI's own per-user star ratings + optional written review, for EVERY book
+// (in-app AND affiliate). One row per user per book. Aggregates are surfaced on
+// the detail page only once there are enough ratings to be meaningful; these
+// are entirely VOXYFI's data and never sourced from Amazon.
+export const bookRating = pgTable(
+  "book_rating",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("userId").notNull(),
+    bookId: integer("bookId")
+      .notNull()
+      .references(() => book.id, { onDelete: "cascade" }),
+    // 1-5 whole stars.
+    stars: integer("stars").notNull(),
+    // Optional short written review.
+    review: text("review"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqUserBookRating: unique().on(t.userId, t.bookId),
   }),
 )
 
@@ -423,6 +457,7 @@ export type ListeningStat = typeof listeningStat.$inferSelect
 export type AiQuota = typeof aiQuota.$inferSelect
 
 export type ReadingItem = typeof readingItem.$inferSelect
+export type BookRating = typeof bookRating.$inferSelect
 export type User = typeof user.$inferSelect
 export type Document = typeof document.$inferSelect
 export type Book = typeof book.$inferSelect
@@ -444,6 +479,12 @@ export type BookCard = Omit<
   | "qualityScore"
   | "qualityReport"
   | "qualityCheckedAt"
+  | "aiSummary"
+  | "aiThemes"
+  | "aiDifficulty"
+  | "aiReadingLevel"
+  | "aiAuthorNote"
+  | "aiEnrichedAt"
 >
 export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect
