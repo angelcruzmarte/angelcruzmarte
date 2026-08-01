@@ -1,6 +1,61 @@
+# VOXYFI v1.0.3
+
+**Tag:** `v1.0.3` · **Release branch:** `release/v1.0.0` · **Status:** App Store submission candidate
+
+Bug-fix patch on top of v1.0.2. No new features or redesign.
+
+## Root cause (dictation microphone)
+
+A full pass across the mic stack found the reported Safari failure had a single
+primary cause and several secondary error-handling gaps:
+
+- **Primary (fixed in v1.0.2):** the `Permissions-Policy` response header set
+  `microphone=()`, disabling the mic page-wide. Every browser — including iOS
+  Safari — rejected `getUserMedia` with `NotAllowedError` and never prompted.
+  Now `microphone=(self)` (camera/geolocation stay denied). The v0 preview
+  strips these headers, so it only reproduced on the deployed domain.
+- **Verified NOT the cause:** user-gesture preservation (getUserMedia is the
+  first `await` off the tap), MediaRecorder mime selection (`audio/mp4` on iOS),
+  the authenticated `/api/transcribe` ElevenLabs pipeline, and HTTPS in
+  production — all correct.
+
+## Changes since v1.0.2
+
+- **Accurate mic error messages** — distinct, correct copy for: insecure
+  (non-HTTPS) context, permission/policy blocked, no microphone found, and
+  microphone already in use by another app (`NotReadableError`/`AbortError`).
+- **Expired session is reported as auth** — a `401` from `/api/transcribe` now
+  says "session expired, sign in again" instead of a generic transcription
+  failure.
+- **iOS waveform** — the `AudioContext` is resumed on start so the live
+  waveform animates on iOS (recording itself was already working).
+
+## Rollback
+
+If v1.0.3 regresses, roll back to the previous stable tag:
+
+- **Previous stable:** `v1.0.2` → `8a6a285` (Permissions-Policy fix, without the
+  extra error messaging).
+- **Last known-good before dictation redesign:** `v1.0.0` → `4a8b9ed`.
+- Redeploy the desired tag, e.g. `git checkout v1.0.2 && <deploy>`. All tags are
+  immutable and were cut from `release/v1.0.0`.
+
+## On-device checklist (must pass before App Store submission)
+
+Runs only on a real iPhone build (cannot be verified in the CI sandbox):
+tap Dictate → iOS mic permission prompt appears → record → stop → upload →
+transcription succeeds → transcript inserts → word count updates → Create &
+Listen works. Confirm File, Scan, Link, and Paste are unaffected.
+
+> iOS shell requirement: the native wrapper must declare
+> `NSMicrophoneUsageDescription` and grant the WKWebView microphone access.
+> The web-layer `Permissions-Policy` fix does not replace this native config.
+
+---
+
 # VOXYFI v1.0.2
 
-**Tag:** `v1.0.2` · **Release branch:** `release/v1.0.0` · **Status:** App Store submission candidate
+**Tag:** `v1.0.2` · **Release branch:** `release/v1.0.0` · **Status:** superseded by v1.0.3
 
 Critical patch on top of v1.0.1.
 
