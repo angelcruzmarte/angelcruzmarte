@@ -29,6 +29,17 @@ primary cause and several secondary error-handling gaps:
   failure.
 - **iOS waveform** — the `AudioContext` is resumed on start so the live
   waveform animates on iOS (recording itself was already working).
+- **Browser-accurate "mic blocked" guidance** — on iOS, third-party browsers
+  (Chrome/`CriOS`, Firefox/`FxiOS`, Edge/`EdgiOS`) run on WKWebView, where the
+  microphone is gated by a **per-app** iOS permission (Settings › ‹Browser› ›
+  Microphone), not Safari's per-site prompt. When it is off, `getUserMedia`
+  throws `NotAllowedError` and no prompt appears. The error now detects the
+  browser and points the user to the correct setting (per-app for iOS
+  Chrome/Firefox/Edge, the "aA" menu for iOS Safari, per-site elsewhere).
+
+> Platform limitation: web code cannot force the microphone prompt to reappear
+> where iOS has blocked it. This change corrects the *guidance*; the user must
+> enable the mic in iOS Settings (or use Safari) to actually record.
 
 ## Rollback
 
