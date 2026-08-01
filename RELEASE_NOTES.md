@@ -1,6 +1,29 @@
+# VOXYFI v1.0.2
+
+**Tag:** `v1.0.2` · **Release branch:** `release/v1.0.0` · **Status:** App Store submission candidate
+
+Critical patch on top of v1.0.1.
+
+## Changes since v1.0.1
+
+- **Dictation microphone now works on the deployed site / iOS Safari** — the
+  hardening `Permissions-Policy` response header disabled the microphone for
+  the whole page (`microphone=()`), so iOS Safari rejected `getUserMedia` with
+  `NotAllowedError` and never prompted, dropping straight into "Recording
+  failed — Microphone access was denied." Changed to `microphone=(self)`;
+  camera and geolocation remain denied.
+
+> This bug was invisible in the v0 preview, which strips these response headers,
+> and only reproduced on the deployed domain / real device.
+
+> iOS shell requirement (unchanged): the native wrapper must declare
+> `NSMicrophoneUsageDescription` and allow WKWebView microphone access.
+
+---
+
 # VOXYFI v1.0.1
 
-**Tag:** `v1.0.1` · **Release branch:** `release/v1.0.0` · **Status:** App Store submission candidate
+**Tag:** `v1.0.1` · **Release branch:** `release/v1.0.0` · **Status:** superseded by v1.0.2
 
 Patch release on top of v1.0.0 delivering a fixed and redesigned dictation and
 Add Content experience.
