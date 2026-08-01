@@ -1,3 +1,38 @@
+# VOXYFI v1.0.1
+
+**Tag:** `v1.0.1` · **Release branch:** `release/v1.0.0` · **Status:** App Store submission candidate
+
+Patch release on top of v1.0.0 delivering a fixed and redesigned dictation and
+Add Content experience.
+
+## Changes since v1.0.0
+
+- **Dictation now activates the microphone** — replaced the unreliable
+  `webkitSpeechRecognition` implementation (which never activated the mic in
+  iOS Safari or the App Store WKWebView) with a cross-browser `getUserMedia` +
+  `MediaRecorder` capture pipeline, transcribed server-side via ElevenLabs
+  Scribe (`POST /api/transcribe`).
+- **Redesigned Add Content experience** — a single Dictate entry point that
+  opens a dedicated full-screen recorder with a live waveform, timer, large
+  one-handed controls, and clear ready → recording → processing → review →
+  error/retry states, plus an editable transcript before insertion.
+- **Polished editor** — consistent action cards with a clear selected state, an
+  auto-growing text editor with live word/character/listening-time stats, a
+  prominent CTA with a busy state that blocks duplicate submits, and a
+  route-level loading skeleton.
+- **Accessibility & motion** — ARIA roles/labels on the recorder, focus
+  management, `prefers-reduced-motion` handling for all new animations, haptic
+  feedback where supported, and safe-area insets.
+
+> Note: the Add Content redesign is broader than the v1.0.0 freeze scope; it was
+> included in this patch by explicit release direction to ship the improved
+> recording experience to users.
+
+> iOS shell requirement: the native wrapper must declare
+> `NSMicrophoneUsageDescription` and allow WKWebView microphone access.
+
+---
+
 # VOXYFI v1.0.0 — First Production Release
 
 **Tag:** `v1.0.0` · **Release branch:** `release/v1.0.0` · **Status:** UI & branding frozen for App Store submission
