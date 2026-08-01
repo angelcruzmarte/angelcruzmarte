@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { acquireStream, releaseStream } from "@/lib/media-streams"
 
 /**
  * Cross-browser microphone recording built on getUserMedia + MediaRecorder.
@@ -100,6 +101,8 @@ export interface UseAudioRecorder {
   stop: () => void
   /** Abort and discard the recording without emitting a clip. */
   cancel: () => void
+  /** Stop recording (if any) and fully release the mic hardware. */
+  release: () => void
 }
 
 export function useAudioRecorder(
@@ -134,12 +137,15 @@ export function useAudioRecorder(
     !!navigator.mediaDevices?.getUserMedia &&
     typeof MediaRecorder !== "undefined"
 
+  // Light teardown between recordings: stop the timer and audio graph but KEEP
+  // the mic stream cached (see lib/media-streams) so an immediate "start over"
+  // reuses it instantly without another getUserMedia call. The stream is fully
+  // released when the recorder is closed or unmounts (see the effect below).
   const teardown = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
     if (audioCtxRef.current) {
       void audioCtxRef.current.close().catch(() => {})
@@ -172,7 +178,10 @@ export function useAudioRecorder(
 
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Reuse the session's live mic stream when one exists (e.g. "start over"
+      // after a recording); otherwise acquire it once. Never re-prompts once
+      // permission is granted, and shows no custom dialog.
+      stream = await acquireStream("mic")
     } catch (err) {
       setStatus("idle")
       const name = err instanceof DOMException ? err.name : ""
@@ -272,7 +281,24 @@ export function useAudioRecorder(
     }
   }, [teardown])
 
-  // Release the mic if the consumer unmounts mid-recording.
+  // Fully release the mic (stops the OS capture indicator) and reset to idle.
+  // Called when the recorder UI is closed — the cached stream should not outlive
+  // an explicit close.
+  const release = useCallback(() => {
+    if (recorderRef.current?.state === "recording") {
+      cancelledRef.current = true
+      try {
+        recorderRef.current.stop()
+      } catch {
+        // Recorder may already be inactive; ignore.
+      }
+    }
+    teardown()
+    releaseStream("mic")
+    setStatus("idle")
+  }, [teardown])
+
+  // Release the mic if the consumer unmounts (leaving the Add Content screen).
   useEffect(() => {
     return () => {
       try {
@@ -284,8 +310,9 @@ export function useAudioRecorder(
         // Recorder may already be inactive; ignore.
       }
       teardown()
+      releaseStream("mic")
     }
   }, [teardown])
 
-  return { status, elapsedMs, analyser, supported, start, stop, cancel }
+  return { status, elapsedMs, analyser, supported, start, stop, cancel, release }
 }
