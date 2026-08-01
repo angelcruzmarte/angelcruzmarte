@@ -8,46 +8,78 @@ import {
   Loader2,
   Mic,
   ScanLine,
-  Square,
   Type,
 } from "lucide-react"
 import { createDocument, importFromUrl } from "@/app/actions/documents"
 import { DocumentScanner } from "@/components/document-scanner"
+import { DictationRecorder } from "@/components/dictation-recorder"
 import { generateUploadThumbnail } from "@/lib/document-artwork"
+import { estimateReadingStats, formatMinutes } from "@/lib/reading-time"
+import { haptic } from "@/lib/haptics"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-type Mode = "text" | "link" | "file" | "dictate" | "scan"
+type Mode = "text" | "link" | "file" | "scan"
 
-const modes: { id: Mode; label: string; icon: React.ElementType }[] = [
-  { id: "text", label: "Type or Paste", icon: Type },
-  { id: "scan", label: "Scan", icon: ScanLine },
-  { id: "link", label: "Link", icon: LinkIcon },
-  { id: "file", label: "File", icon: FolderOpen },
-  { id: "dictate", label: "Dictate", icon: Mic },
+// The five import actions. Four switch the editor mode; "dictate" is an action
+// that launches the full-screen recorder (not a persistent mode).
+type ActionId = Mode | "dictate"
+
+const actions: {
+  id: ActionId
+  label: string
+  hint: string
+  icon: React.ElementType
+}[] = [
+  { id: "text", label: "Type or Paste", hint: "Write or paste text", icon: Type },
+  { id: "dictate", label: "Dictate", hint: "Speak it out loud", icon: Mic },
+  { id: "scan", label: "Scan", hint: "Capture a document", icon: ScanLine },
+  { id: "link", label: "Link", hint: "Import a web page", icon: LinkIcon },
+  { id: "file", label: "File", hint: "PDF, DOCX, EPUB…", icon: FolderOpen },
 ]
 
-export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
+export function AddContent({
+  initialMode = "text",
+  autoDictate = false,
+}: {
+  initialMode?: Mode
+  autoDictate?: boolean
+}) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>(initialMode)
+  const [recorderOpen, setRecorderOpen] = useState(autoDictate)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-grow the editor to fit its content (bounded) so long dictations don't
+  // hide behind a scrollbar.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 520)}px`
+  }, [content, mode])
+
   async function save(promise: Promise<{ id: number }>) {
     setLoading(true)
     setError(null)
+    haptic("light")
     try {
       const doc = await promise
+      haptic("success")
       router.push(`/app/listen/${doc.id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.")
       setLoading(false)
+      haptic("error")
     }
   }
 
@@ -73,46 +105,97 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
     save(importFromUrl(url))
   }
 
-  return (
-    <div className="px-4 py-6 sm:px-6">
-      <h1 className="mb-1 text-2xl font-bold tracking-tight">Add content</h1>
-      <p className="mb-5 text-sm text-muted-foreground">
-        Turn anything into audio you can listen to.
-      </p>
+  function selectAction(id: ActionId) {
+    setError(null)
+    haptic("light")
+    if (id === "dictate") {
+      setRecorderOpen(true)
+      return
+    }
+    setMode(id)
+  }
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {modes.map((m) => {
-          const Icon = m.icon
+  const stats = estimateReadingStats(content)
+  const listenLabel = formatMinutes(stats.listenMinutes)
+
+  return (
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+          Add content
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground text-pretty">
+          Turn anything into audio you can listen to.
+        </p>
+      </header>
+
+      {/* Import action cards */}
+      <div
+        className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3"
+        role="tablist"
+        aria-label="Choose how to add content"
+      >
+        {actions.map((a) => {
+          const Icon = a.icon
+          const selected = a.id === mode
+          const isDictate = a.id === "dictate"
           return (
             <button
-              key={m.id}
+              key={a.id}
               type="button"
-              onClick={() => {
-                setMode(m.id)
-                setError(null)
-              }}
+              role="tab"
+              aria-selected={selected}
+              onClick={() => selectAction(a.id)}
               className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-                mode === m.id
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-secondary text-foreground hover:bg-accent",
+                "group flex min-h-[92px] flex-col items-start justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]",
+                selected
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : isDictate
+                    ? "border-primary/30 bg-primary/5 text-foreground hover:border-primary/50 hover:bg-primary/10"
+                    : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent",
               )}
             >
-              <Icon className="h-4 w-4" />
-              {m.label}
+              <span
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
+                  selected
+                    ? "bg-primary-foreground/15 text-primary-foreground"
+                    : "bg-primary/10 text-primary",
+                )}
+              >
+                <Icon className="h-[18px] w-[18px]" />
+              </span>
+              <span className="mt-2">
+                <span className="block text-sm font-semibold leading-tight">
+                  {a.label}
+                </span>
+                <span
+                  className={cn(
+                    "block text-xs leading-tight",
+                    selected
+                      ? "text-primary-foreground/80"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {a.hint}
+                </span>
+              </span>
             </button>
           )
         })}
       </div>
 
       {error && (
-        <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="mb-4 rounded-xl bg-destructive/10 px-3.5 py-2.5 text-sm font-medium text-destructive"
+        >
           {error}
         </p>
       )}
 
-      {(mode === "text" || mode === "dictate") && (
-        <div className="space-y-4">
+      {mode === "text" && (
+        <div className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="title">Title (optional)</Label>
             <Input
@@ -120,52 +203,48 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Give it a name"
+              className="h-12 rounded-xl"
             />
           </div>
+
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="content">Text</Label>
-              {mode === "dictate" && (
-                <DictateButton
-                  onText={(t) =>
-                    setContent((prev) => (prev ? prev + " " + t : t))
-                  }
-                  onError={setError}
-                />
-              )}
+            <Label htmlFor="content">Text</Label>
+            <div className="relative">
+              <Textarea
+                id="content"
+                ref={textareaRef}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Paste an article, notes, a chapter — anything you'd rather listen to."
+                className="min-h-48 resize-none rounded-2xl pb-11 text-base leading-relaxed"
+              />
+              {/* Floating live stats */}
+              <div className="pointer-events-none absolute inset-x-3 bottom-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground/70">
+                  {stats.words} {stats.words === 1 ? "word" : "words"}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>{content.length} characters</span>
+                {listenLabel && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>~{listenLabel} listen</span>
+                  </>
+                )}
+              </div>
             </div>
-            <Textarea
-              id="content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder={
-                mode === "dictate"
-                  ? "Tap the mic and start speaking, or type here…"
-                  : "Paste or type the text you want to listen to…"
-              }
-              rows={10}
-            />
-            <p className="text-xs text-muted-foreground">
-              {content.trim() ? content.trim().split(/\s+/).length : 0} words
-            </p>
           </div>
-          <Button
+
+          <CreateButton
+            label="Create & listen"
+            loading={loading}
             onClick={handleTextSubmit}
-            disabled={loading}
-            className="w-full"
-            size="lg"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Create & listen"
-            )}
-          </Button>
+          />
         </div>
       )}
 
       {mode === "link" && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="url">Article or page URL</Label>
             <Input
@@ -174,28 +253,26 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com/article"
               type="url"
+              inputMode="url"
+              className="h-12 rounded-xl"
             />
             <p className="text-xs text-muted-foreground">
               We&apos;ll fetch the page and extract the readable text.
             </p>
           </div>
-          <Button
+          <CreateButton
+            label="Import & listen"
+            loading={loading}
             onClick={handleLinkSubmit}
-            disabled={loading}
-            className="w-full"
-            size="lg"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Import & listen"
-            )}
-          </Button>
+          />
         </div>
       )}
 
       {mode === "file" && (
-        <FileImport onError={setError} onDone={(id) => router.push(`/app/listen/${id}`)} />
+        <FileImport
+          onError={setError}
+          onDone={(id) => router.push(`/app/listen/${id}`)}
+        />
       )}
 
       {mode === "scan" && (
@@ -203,6 +280,69 @@ export function AddContent({ initialMode = "text" }: { initialMode?: Mode }) {
           onError={setError}
           onDone={(id) => router.push(`/app/listen/${id}`)}
         />
+      )}
+
+      <DictationRecorder
+        open={recorderOpen}
+        onClose={() => setRecorderOpen(false)}
+        onInsert={(text) => {
+          setContent((prev) => (prev ? prev.trim() + " " + text : text))
+          setMode("text")
+          setError(null)
+          // Let the textarea mount, then move focus to the end for quick edits.
+          requestAnimationFrame(() => {
+            const el = textareaRef.current
+            if (el) {
+              el.focus()
+              el.setSelectionRange(el.value.length, el.value.length)
+            }
+          })
+        }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Primary call-to-action with a built-in busy state. Disabling while loading
+ * prevents duplicate submissions, and the indeterminate bar communicates
+ * progress while the document is created server-side.
+ */
+function CreateButton({
+  label,
+  loading,
+  onClick,
+}: {
+  label: string
+  loading: boolean
+  onClick: () => void
+}) {
+  return (
+    <div className="space-y-2">
+      <Button
+        onClick={onClick}
+        disabled={loading}
+        aria-busy={loading}
+        className="h-14 w-full rounded-2xl text-base font-semibold shadow-sm transition-transform active:scale-[0.99]"
+        size="lg"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            Creating…
+          </>
+        ) : (
+          label
+        )}
+      </Button>
+      {loading && (
+        <div
+          className="h-1 w-full overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="Creating your audio"
+        >
+          <div className="voxyfi-indeterminate h-full w-1/3 rounded-full bg-primary" />
+        </div>
       )}
     </div>
   )
@@ -227,6 +367,7 @@ function FileImport({
     setFileName(file.name)
     setUploading(true)
     onError("")
+    haptic("light")
     try {
       // Binary formats (PDF/DOCX/EPUB) must be parsed server-side, so we send
       // the raw file to the upload endpoint which extracts the text.
@@ -246,6 +387,7 @@ function FileImport({
       // the user just uploaded, so the library grid and OG share card have a
       // real preview immediately. Best-effort and bounded (no-op for non-PDFs).
       await generateUploadThumbnail(data.id, file)
+      haptic("success")
       onDone(data.id)
     } catch {
       onError("Upload failed. Please try again.")
@@ -259,19 +401,21 @@ function FileImport({
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-secondary/50 px-6 py-12 text-center transition-colors hover:bg-secondary"
+        className="flex w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-card px-6 py-14 text-center transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-70"
       >
-        {uploading ? (
-          <Loader2 className="h-7 w-7 animate-spin text-primary" />
-        ) : (
-          <FolderOpen className="h-7 w-7 text-muted-foreground" />
-        )}
-        <span className="font-medium">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          {uploading ? (
+            <Loader2 className="h-7 w-7 animate-spin" />
+          ) : (
+            <FolderOpen className="h-7 w-7" />
+          )}
+        </span>
+        <span className="font-semibold">
           {uploading
             ? `Processing ${fileName ?? "file"}…`
             : (fileName ?? "Choose a document")}
         </span>
-        <span className="text-xs text-muted-foreground">
+        <span className="max-w-xs text-xs text-muted-foreground text-pretty">
           Supports PDF, DOCX, EPUB, TXT, MD, and image scans (up to 15MB)
         </span>
       </button>
@@ -286,190 +430,5 @@ function FileImport({
         }}
       />
     </div>
-  )
-}
-
-/** Pick an audio container MediaRecorder actually supports on this browser. */
-function pickAudioMimeType(): string | undefined {
-  if (
-    typeof MediaRecorder === "undefined" ||
-    typeof MediaRecorder.isTypeSupported !== "function"
-  ) {
-    return undefined
-  }
-  // Chrome/Firefox/Android prefer webm/opus; iOS Safari records mp4/aac. Try
-  // them in order and let the browser fall back to its default if none match.
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",
-    "audio/aac",
-  ]
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type))
-}
-
-/** Map a MediaRecorder mime type to a file extension for the upload. */
-function extForMime(mime: string): string {
-  if (mime.includes("mp4")) return "mp4"
-  if (mime.includes("aac")) return "aac"
-  return "webm"
-}
-
-type DictateState = "idle" | "recording" | "transcribing"
-
-/**
- * Records a short mic clip with MediaRecorder and transcribes it server-side
- * via ElevenLabs Scribe (see /api/transcribe). This replaces the old
- * `webkitSpeechRecognition` implementation, which never activated the mic in
- * iOS Safari or the App Store WKWebView. getUserMedia + MediaRecorder are
- * supported across those targets and trigger the native mic-permission prompt.
- */
-function DictateButton({
-  onText,
-  onError,
-}: {
-  onText: (text: string) => void
-  onError: (msg: string) => void
-}) {
-  const [state, setState] = useState<DictateState>("idle")
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
-  const mimeRef = useRef<string>("audio/webm")
-
-  function stopStream() {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-  }
-
-  // Release the mic if the component unmounts while recording.
-  useEffect(() => {
-    return () => {
-      try {
-        if (recorderRef.current?.state === "recording") {
-          recorderRef.current.stop()
-        }
-      } catch {
-        // Recorder may already be inactive; ignore.
-      }
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
-  }, [])
-
-  async function transcribe(blob: Blob) {
-    setState("transcribing")
-    try {
-      const body = new FormData()
-      const ext = extForMime(mimeRef.current)
-      body.append("audio", blob, `dictation.${ext}`)
-      const res = await fetch("/api/transcribe", { method: "POST", body })
-      const data = (await res.json()) as { text?: string; error?: string }
-      if (!res.ok || !data.text) {
-        onError(data.error ?? "Couldn't transcribe that audio. Please try again.")
-      } else {
-        onText(data.text)
-      }
-    } catch {
-      onError("Couldn't transcribe that audio. Please check your connection.")
-    } finally {
-      setState("idle")
-    }
-  }
-
-  async function start() {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia ||
-      typeof MediaRecorder === "undefined"
-    ) {
-      onError("Dictation isn't supported in this browser. Try typing instead.")
-      return
-    }
-    onError("")
-    let stream: MediaStream
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch (err) {
-      // NotAllowedError = permission denied; NotFoundError = no mic.
-      const name = err instanceof DOMException ? err.name : ""
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        onError("Microphone access was denied. Enable it in your browser settings.")
-      } else if (name === "NotFoundError") {
-        onError("No microphone was found on this device.")
-      } else {
-        onError("Couldn't start the microphone. Please try again.")
-      }
-      return
-    }
-
-    streamRef.current = stream
-    const mimeType = pickAudioMimeType()
-    mimeRef.current = mimeType ?? "audio/webm"
-    chunksRef.current = []
-    const recorder = new MediaRecorder(
-      stream,
-      mimeType ? { mimeType } : undefined,
-    )
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data)
-    }
-    recorder.onstop = () => {
-      stopStream()
-      const blob = new Blob(chunksRef.current, { type: mimeRef.current })
-      if (blob.size === 0) {
-        setState("idle")
-        onError("No audio was recorded. Please try again.")
-        return
-      }
-      void transcribe(blob)
-    }
-    recorderRef.current = recorder
-    recorder.start()
-    setState("recording")
-  }
-
-  function stop() {
-    recorderRef.current?.stop()
-  }
-
-  function toggle() {
-    if (state === "recording") stop()
-    else if (state === "idle") void start()
-  }
-
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={state === "recording" ? "destructive" : "secondary"}
-      onClick={toggle}
-      disabled={state === "transcribing"}
-      className="gap-1.5"
-      aria-label={
-        state === "recording"
-          ? "Stop dictation"
-          : state === "transcribing"
-            ? "Transcribing dictation"
-            : "Start dictation"
-      }
-    >
-      {state === "recording" ? (
-        <>
-          <Square className="h-3.5 w-3.5" />
-          Stop
-        </>
-      ) : state === "transcribing" ? (
-        <>
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Transcribing…
-        </>
-      ) : (
-        <>
-          <Mic className="h-3.5 w-3.5" />
-          Dictate
-        </>
-      )}
-    </Button>
   )
 }
