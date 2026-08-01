@@ -1,6 +1,6 @@
 import { AddContent } from "@/components/add-content"
 
-type Mode = "text" | "link" | "file" | "dictate" | "scan"
+type Mode = "text" | "link" | "file" | "scan"
 
 export default async function NewPage({
   searchParams,
@@ -8,13 +8,13 @@ export default async function NewPage({
   searchParams: Promise<{ mode?: string }>
 }) {
   const { mode } = await searchParams
-  const normalized: Mode =
-    mode === "link" ||
-    mode === "file" ||
-    mode === "dictate" ||
-    mode === "scan"
-      ? mode
-      : "text"
 
-  return <AddContent initialMode={normalized} />
+  // Dictation is now a full-screen action rather than an editor mode, so a
+  // `?mode=dictate` deep link opens the text editor and auto-launches the
+  // recorder. Everything else maps to its editor mode.
+  const autoDictate = mode === "dictate"
+  const normalized: Mode =
+    mode === "link" || mode === "file" || mode === "scan" ? mode : "text"
+
+  return <AddContent initialMode={normalized} autoDictate={autoDictate} />
 }
