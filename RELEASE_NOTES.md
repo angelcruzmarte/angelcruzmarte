@@ -51,16 +51,49 @@ If v1.0.3 regresses, roll back to the previous stable tag:
 - Redeploy the desired tag, e.g. `git checkout v1.0.2 && <deploy>`. All tags are
   immutable and were cut from `release/v1.0.0`.
 
-## On-device checklist (must pass before App Store submission)
+## QA verification matrix (must pass before App Store submission)
 
-Runs only on a real iPhone build (cannot be verified in the CI sandbox):
-tap Dictate → iOS mic permission prompt appears → record → stop → upload →
-transcription succeeds → transcript inserts → word count updates → Create &
-Listen works. Confirm File, Scan, Link, and Paste are unaffected.
+Sign in, open **Add content → Dictate**, and run the full flow in each
+environment below. Record Pass/Fail and any notes. These require real
+devices/browsers — they cannot be verified in the CI sandbox.
 
-> iOS shell requirement: the native wrapper must declare
-> `NSMicrophoneUsageDescription` and grant the WKWebView microphone access.
-> The web-layer `Permissions-Policy` fix does not replace this native config.
+**Dictate flow to verify per environment:**
+1. Tap **Dictate** → microphone permission prompt appears (or the correct
+   *blocked* message if permission was previously denied).
+2. **Record** → live timer/waveform animates.
+3. **Stop** → enters processing.
+4. **Upload → transcription** succeeds (`/api/transcribe`).
+5. **Transcript inserts** into the editor.
+6. **Word count updates** to reflect the inserted text.
+7. **Create & Listen** works from the composed text.
+8. **Other inputs unaffected:** File, Scan, Link, and Paste still work.
+
+| # | Environment | Expected permission behavior | Record→Stop→Upload→Transcribe | Insert + word count | Create & Listen | File/Scan/Link/Paste OK | Pass/Fail | Notes |
+|---|-------------|------------------------------|-------------------------------|---------------------|-----------------|--------------------------|-----------|-------|
+| 1 | **Safari — iPhone** | Native per-site prompt on first tap; if denied, "aA" menu › Website Settings › Microphone | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 2 | **Chrome — iPhone** (CriOS) | Uses per-**app** iOS permission (Settings › Chrome › Microphone). If off, blocked message points there; **cannot** re-prompt from page | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 3 | **Safari — iPad** (if supported) | Same as iPhone Safari (per-site prompt / "aA" menu) | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 4 | **Chrome — Android** | Standard per-site prompt; if denied, site settings via lock icon | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 5 | **Chrome — desktop** | Per-site prompt; if denied, address-bar site settings | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 6 | **Edge — desktop** | Per-site prompt; if denied, address-bar site settings | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 7 | **Firefox — desktop** | Per-site prompt; if denied, address-bar permissions | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 8 | **iOS App Store wrapper** (WKWebView) | Native prompt driven by `NSMicrophoneUsageDescription`; requires WKWebView capture granted | ☐ | ☐ | ☐ | ☐ | ☐ | |
+
+**Critical reminders:**
+
+> **Chrome on iOS cannot bypass iOS app-level microphone permissions.** If
+> Settings › Chrome › Microphone is off, dictation cannot record and no web code
+> can force the prompt — the user must enable it in iOS Settings or use Safari.
+> The app now shows the correct guidance for this case.
+
+> **The native App Store wrapper (WKWebView) requires
+> `NSMicrophoneUsageDescription`** in the app's Info.plist **and** the WKWebView
+> configured to allow microphone capture. The web-layer `Permissions-Policy`
+> (`microphone=(self)`) fix does not replace this native configuration.
+
+> **Note:** this matrix was added after the `v1.0.3` tag was cut, so it lives on
+> `release/v1.0.0` as a working verification record and is not part of the tagged
+> `v1.0.3` artifact.
 
 ---
 
