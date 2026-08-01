@@ -68,6 +68,53 @@ export function AddContent({
     el.style.height = `${Math.min(el.scrollHeight, 520)}px`
   }, [content, mode])
 
+  // --- System Back handling -------------------------------------------------
+  // A launched action (the dictation recorder, or the scan / link / file
+  // sub-screens) should behave like a screen you can back out of: pressing the
+  // device or browser Back button — including the iOS Safari swipe — collapses
+  // it to the base "Add content" screen instead of leaving /app/new entirely.
+  // We push a lightweight history entry whenever an action opens and intercept
+  // its popstate, so Back returns here rather than to the previous page.
+  const inAction = recorderOpen || mode !== "text"
+  const guardActiveRef = useRef(false)
+  const wasInActionRef = useRef(false)
+  // Mirror the latest values so the popstate listener (registered once) always
+  // reads current state without re-subscribing.
+  const stateRef = useRef({ mode, recorderOpen })
+  stateRef.current = { mode, recorderOpen }
+
+  useEffect(() => {
+    const was = wasInActionRef.current
+    wasInActionRef.current = inAction
+    if (inAction && !was && !guardActiveRef.current) {
+      // Entered an action from the base screen — add a Back target.
+      guardActiveRef.current = true
+      window.history.pushState({ voxyfiAddAction: true }, "")
+    } else if (!inAction && was && guardActiveRef.current) {
+      // Left the action via the UI (e.g. closed the recorder or tapped the
+      // "Type or Paste" card): consume the guard entry we pushed so there's no
+      // dead Back press left in the stack.
+      guardActiveRef.current = false
+      window.history.back()
+    }
+  }, [inAction])
+
+  useEffect(() => {
+    function onPopState() {
+      // Ignore pops that aren't ours (e.g. the guard was already consumed).
+      if (!guardActiveRef.current) return
+      guardActiveRef.current = false
+      const { mode: m, recorderOpen: r } = stateRef.current
+      if (r || m !== "text") {
+        setRecorderOpen(false)
+        setMode("text")
+        setError(null)
+      }
+    }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
+
   async function save(promise: Promise<{ id: number }>) {
     setLoading(true)
     setError(null)
