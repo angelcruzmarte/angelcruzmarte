@@ -1,10 +1,9 @@
 import Link from "next/link"
-import { Sparkles } from "lucide-react"
 import { getCurrentUser, hasActiveSubscription, isAdmin } from "@/lib/session"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
 import { BrandLogo } from "@/components/brand-logo"
+import { PremiumBadge } from "@/components/premium-badge"
 
 export async function SiteHeader() {
   const user = await getCurrentUser()
@@ -28,10 +27,7 @@ export async function SiteHeader() {
                 Open app
               </Link>
               {subscribed ? (
-                <Badge className="hidden gap-1 bg-primary text-primary-foreground hover:bg-primary sm:inline-flex">
-                  <Sparkles className="h-3 w-3" aria-hidden="true" />
-                  Premium
-                </Badge>
+                <PremiumBadge className="hidden sm:inline-flex" />
               ) : (
                 <Link
                   href="/subscribe"

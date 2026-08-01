@@ -6,6 +6,7 @@ import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { Sparkles, X, ArrowUp, BookOpen, RefreshCw, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { LogoMark } from "@/components/logo-mark"
 
 type CatalogPick = {
   id: number
@@ -146,12 +147,14 @@ export function ReadingAssistant() {
           className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[70svh] max-w-2xl flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:inset-x-auto sm:bottom-24 sm:right-[calc(50%-20rem)] sm:h-[32rem] sm:w-96 sm:rounded-2xl"
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Sparkles className="h-4 w-4" />
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-[0.7rem] bg-brand-gradient text-white shadow-[0_1px_3px_rgba(18,63,46,0.4)] ring-1 ring-inset ring-white/20">
+                <LogoMark className="h-[18px] w-[18px]" />
               </span>
               <div className="leading-tight">
-                <p className="text-sm font-semibold">VOXYFI Assistant</p>
+                <p className="voxyfi-wordmark text-sm text-foreground">
+                  VOXYFI Assistant
+                </p>
                 <p className="text-xs text-muted-foreground">
                   Finds books from our catalog
                 </p>

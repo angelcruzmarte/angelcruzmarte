@@ -10,7 +10,8 @@ import { ReadingAssistant } from "@/components/reading-assistant"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
 import { BrandLogo } from "@/components/brand-logo"
-import { Sparkles, ArrowUp } from "lucide-react"
+import { PremiumBadge } from "@/components/premium-badge"
+import { ArrowUp } from "lucide-react"
 
 export default async function AppLayout({
   children,
@@ -38,21 +39,22 @@ export default async function AppLayout({
     >
     <PlayerProvider>
     <div className="mx-auto flex min-h-svh max-w-2xl flex-col bg-background">
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur">
-        <Link href="/app">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
+        <Link
+          href="/app"
+          className="-mx-1 rounded-xl px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          aria-label="VOXYFI home"
+        >
           <BrandLogo size="sm" />
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           {subscribed ? (
-            <Badge className="gap-1 bg-primary text-primary-foreground hover:bg-primary">
-              <Sparkles className="h-3 w-3" aria-hidden="true" />
-              Premium
-            </Badge>
+            <PremiumBadge />
           ) : (
-            <Link href="/subscribe">
+            <Link href="/subscribe" aria-label="Upgrade to Premium">
               <Badge
                 variant="outline"
-                className="cursor-pointer gap-1 border-primary/40 text-primary"
+                className="cursor-pointer gap-1 border-primary/40 text-primary transition-colors hover:bg-primary/10"
               >
                 <ArrowUp className="h-3 w-3" aria-hidden="true" />
                 Upgrade
