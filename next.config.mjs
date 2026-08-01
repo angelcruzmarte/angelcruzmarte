@@ -55,8 +55,12 @@ const nextConfig = {
             value: "max-age=63072000; includeSubDomains",
           },
           {
+            // Dictation records audio via getUserMedia, so the microphone must
+            // be allowed for our own origin. Denying it here (microphone=())
+            // makes iOS Safari reject getUserMedia with NotAllowedError and no
+            // permission prompt. Camera and geolocation stay disabled.
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+            value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()",
           },
           { key: "Content-Security-Policy-Report-Only", value: csp },
         ],
