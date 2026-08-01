@@ -333,6 +333,49 @@
   }
 }
 
+/* Dictation: the recording button emits a soft expanding pulse so it reads as
+   "live". Purely decorative — disabled under reduced motion. */
+.voxyfi-mic-pulse {
+  animation: voxyfi-mic-pulse 1.6s ease-out infinite;
+}
+@keyframes voxyfi-mic-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voxyfi-mic-pulse {
+    animation: none !important;
+    opacity: 0;
+  }
+}
+
+/* Indeterminate progress bar for the "Create & listen" busy state. */
+.voxyfi-indeterminate {
+  animation: voxyfi-indeterminate 1.1s ease-in-out infinite;
+}
+@keyframes voxyfi-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voxyfi-indeterminate {
+    animation: none !important;
+    width: 100% !important;
+    transform: none !important;
+    opacity: 0.6;
+  }
+}
+
 /* Follow-along highlighting drawn over the real PDF pages (Speechify-style). */
 .pdf-word {
   transition: background-color 120ms ease;
