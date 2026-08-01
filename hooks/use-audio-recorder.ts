@@ -110,6 +110,18 @@ export function useAudioRecorder(
   }, [])
 
   const start = useCallback(async () => {
+    // getUserMedia only exists in a secure context (HTTPS or localhost). When a
+    // page is served over plain HTTP, `navigator.mediaDevices` is undefined —
+    // surface that precise reason instead of a vague "not supported".
+    if (
+      typeof window !== "undefined" &&
+      window.isSecureContext === false
+    ) {
+      onErrorRef.current?.(
+        "Recording needs a secure (HTTPS) connection. Please reload over HTTPS and try again.",
+      )
+      return
+    }
     if (!supported) {
       onErrorRef.current?.(
         "Recording isn't supported in this browser. Try typing instead.",
@@ -126,11 +138,19 @@ export function useAudioRecorder(
       setStatus("idle")
       const name = err instanceof DOMException ? err.name : ""
       if (name === "NotAllowedError" || name === "SecurityError") {
+        // Either the user denied the prompt, or a Permissions-Policy /
+        // WKWebView capability is blocking the mic before any prompt appears.
         onErrorRef.current?.(
-          "Microphone access was denied. Enable it in your settings and try again.",
+          "Microphone access is blocked. Allow the microphone for this site in your settings, then try again.",
         )
-      } else if (name === "NotFoundError") {
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
         onErrorRef.current?.("No microphone was found on this device.")
+      } else if (name === "NotReadableError" || name === "AbortError") {
+        // The OS handed back the device but couldn't start it — typically
+        // because another app (or tab) is already holding the microphone.
+        onErrorRef.current?.(
+          "Your microphone is in use by another app. Close it and try again.",
+        )
       } else {
         onErrorRef.current?.("Couldn't start the microphone. Please try again.")
       }
@@ -149,6 +169,9 @@ export function useAudioRecorder(
       if (Ctx) {
         const ctx = new Ctx()
         audioCtxRef.current = ctx
+        // iOS creates AudioContexts in a "suspended" state; resume so the live
+        // waveform actually animates. Best-effort — recording is unaffected.
+        if (ctx.state === "suspended") void ctx.resume().catch(() => {})
         const source = ctx.createMediaStreamSource(stream)
         const node = ctx.createAnalyser()
         node.fftSize = 256

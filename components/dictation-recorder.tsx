@@ -53,11 +53,18 @@ export function DictationRecorder({
       const body = new FormData()
       body.append("audio", blob, `dictation.${extForMime(mime)}`)
       const res = await fetch("/api/transcribe", { method: "POST", body })
-      const data = (await res.json()) as { text?: string; error?: string }
+      const data = (await res
+        .json()
+        .catch(() => ({}))) as { text?: string; error?: string }
       if (!res.ok || !data.text) {
-        setErrorMsg(
-          data.error ?? "Couldn't transcribe that audio. Please try again.",
-        )
+        // Give the accurate reason rather than a blanket "transcription failed":
+        // an expired session (401) is an auth problem, not an audio problem.
+        const message =
+          res.status === 401
+            ? "Your session expired. Please sign in again, then retry."
+            : (data.error ??
+              "Couldn't transcribe that audio. Please try again.")
+        setErrorMsg(message)
         setPhase("error")
         haptic("error")
         return
