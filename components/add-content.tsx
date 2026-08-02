@@ -14,6 +14,7 @@ import { createDocument, importFromUrl } from "@/app/actions/documents"
 import { DocumentScanner } from "@/components/document-scanner"
 import { DictationRecorder } from "@/components/dictation-recorder"
 import { generateUploadThumbnail } from "@/lib/document-artwork"
+import { releaseStream } from "@/lib/media-streams"
 import { estimateReadingStats, formatMinutes } from "@/lib/reading-time"
 import { haptic } from "@/lib/haptics"
 import { Button } from "@/components/ui/button"
@@ -58,6 +59,19 @@ export function AddContent({
   const [error, setError] = useState<string | null>(null)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Streams are kept "warm" across recorder/scanner reopens and scan↔text mode
+  // switches within this screen. But when the user actually LEAVES the Add
+  // Content screen, force a full release of both devices so the OS mic/camera
+  // indicator never stays lit while they browse elsewhere. (The mic is also
+  // released by the recorder hook's own unmount; releasing here is harmless and
+  // covers the camera, whose scanner unmounts on every mode switch.)
+  useEffect(() => {
+    return () => {
+      releaseStream("mic")
+      releaseStream("camera")
+    }
+  }, [])
 
   // Auto-grow the editor to fit its content (bounded) so long dictations don't
   // hide behind a scrollbar.

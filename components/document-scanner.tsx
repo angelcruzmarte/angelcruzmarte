@@ -15,7 +15,8 @@ import {
   acquireStream,
   hasLiveStream,
   isPermissionGranted,
-  releaseStream,
+  markKindUsed,
+  releaseUnlessWarm,
 } from "@/lib/media-streams"
 import { cn } from "@/lib/utils"
 
@@ -47,15 +48,20 @@ export function DocumentScanner({
   const [pages, setPages] = useState<Page[]>([])
   const [processing, setProcessing] = useState(false)
 
-  // Detach and fully release the camera (turns the OS indicator off). Kept pure
-  // so it is safe to use as an unmount cleanup.
+  // Detach the video element and release the camera UNLESS it has been used this
+  // session (a page was captured) — once used we keep the stream warm so
+  // reopening the scanner is instant and doesn't re-show the native iOS banner.
+  // ("Warm only after first use.") Pure, so it is safe as an unmount cleanup;
+  // the camera is still fully released when leaving the Add Content screen and
+  // on page hide.
   const stopCamera = useCallback(() => {
-    releaseStream("camera")
+    releaseUnlessWarm("camera")
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
   }, [])
 
-  // Explicit user close (the X button): release, then return to the idle screen.
+  // Explicit user close (the X button): apply the warm-aware release, then
+  // return to the idle screen.
   const closeCamera = useCallback(() => {
     stopCamera()
     setCameraState("idle")
@@ -147,7 +153,12 @@ export function DocumentScanner({
     ctx.drawImage(video, 0, 0, w, h)
     canvas.toBlob(
       (blob) => {
-        if (blob) addBlob(blob)
+        if (blob) {
+          addBlob(blob)
+          // A real capture happened: keep the camera warm for the rest of the
+          // session so reopening the scanner won't re-trigger the native banner.
+          markKindUsed("camera")
+        }
       },
       "image/jpeg",
       0.92,

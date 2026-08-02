@@ -290,9 +290,11 @@ export function useAudioRecorder(
     }
   }, [teardown])
 
-  // Fully release the mic (stops the OS capture indicator) and reset to idle.
-  // Called when the recorder UI is closed — the cached stream should not outlive
-  // an explicit close.
+  // Called when the recorder UI is closed. Stops any active recording and resets
+  // to idle, then releases the mic UNLESS it has been used this session — once a
+  // clip has been recorded we keep the stream warm so reopening never re-shows
+  // the native iOS access banner. ("Warm only after first use.") The mic is
+  // still fully released on unmount (leaving the screen) and on page hide.
   const release = useCallback(() => {
     if (recorderRef.current?.state === "recording") {
       cancelledRef.current = true
@@ -303,7 +305,7 @@ export function useAudioRecorder(
       }
     }
     teardown()
-    releaseStream("mic")
+    releaseUnlessWarm("mic")
     setStatus("idle")
   }, [teardown])
 
