@@ -647,6 +647,94 @@ export async function extractTextFromImage(
   return text.trim()
 }
 
+export interface IdentifiedBook {
+  /** True when the image actually shows a book cover we can identify. */
+  isBook: boolean
+  title: string
+  author: string
+  /** 13- or 10-digit ISBN when legible on the cover/back, else null. */
+  isbn: string | null
+  confidence: "high" | "medium" | "low"
+  error?: string
+}
+
+/**
+ * Identifies a book from a photo of its cover using the multimodal model.
+ * Reuses the same free-tier quota bucket as the other AI content tools
+ * (subscribers/admins are unlimited), so a scan spends one token for free
+ * users. Returns a structured best-guess of title/author/ISBN, or an `error`
+ * message when the user is out of quota or no book could be recognized.
+ */
+export async function identifyBookFromCover(
+  dataUrl: string,
+): Promise<IdentifiedBook> {
+  const empty = { isBook: false, title: "", author: "", isbn: null, confidence: "low" as const }
+  try {
+    const guard = await contentToolGuard()
+    if (guard.message) return { ...empty, error: guard.message }
+    if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+      return { ...empty, error: "We couldn't read that photo. Please try again." }
+    }
+    const { object } = await generateObject({
+      model: MODEL,
+      schema: z.object({
+        isBook: z
+          .boolean()
+          .describe("True only if the image clearly shows a book cover."),
+        title: z.string().describe("The book's exact title, or empty if unknown."),
+        author: z
+          .string()
+          .describe("The primary author's full name, or empty if unknown."),
+        isbn: z
+          .string()
+          .nullable()
+          .describe("The ISBN-13 or ISBN-10 if visible, otherwise null."),
+        confidence: z
+          .enum(["high", "medium", "low"])
+          .describe("How confident you are in this identification."),
+      }),
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "You are identifying a book from a photo of its cover. Read the " +
+                "title and author printed on the cover. If a barcode/ISBN is " +
+                "legible, include it. If the photo is not a book cover or is too " +
+                "blurry to read, set isBook to false. Do not guess a title that " +
+                "isn't shown.",
+            },
+            { type: "image", image: dataUrl },
+          ],
+        },
+      ],
+    })
+
+    if (!object.isBook || !object.title.trim()) {
+      return {
+        ...empty,
+        error:
+          "We couldn't recognize a book cover in that photo. Try again with the " +
+          "front cover filling the frame in good light.",
+      }
+    }
+    // Spend a token only on a successful identification for free users.
+    if (!guard.subscribed && guard.userId) await consumeAiToken(guard.userId)
+    const isbn = (object.isbn || "").replace(/[^0-9Xx]/g, "") || null
+    return {
+      isBook: true,
+      title: object.title.trim(),
+      author: object.author.trim(),
+      isbn,
+      confidence: object.confidence,
+    }
+  } catch (e) {
+    return { ...empty, error: friendlyAiError(e, "identifyBookFromCover") }
+  }
+}
+
 /**
  * Answers a reader's question grounded in the document they are listening to.
  * Used by the in-reader "Chat" tool. Keeps answers concise and faithful to the
