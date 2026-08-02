@@ -1,7 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { acquireStream, releaseStream } from "@/lib/media-streams"
+import {
+  acquireStream,
+  markKindUsed,
+  releaseStream,
+  releaseUnlessWarm,
+} from "@/lib/media-streams"
 
 /**
  * Cross-browser microphone recording built on getUserMedia + MediaRecorder.
@@ -251,6 +256,10 @@ export function useAudioRecorder(
         onErrorRef.current?.("No audio was recorded. Please try again.")
         return
       }
+      // A real recording happened: mark the mic "used" so it stays warm for the
+      // rest of the session and reopening the recorder won't re-trigger the
+      // native iOS access banner. ("Warm only after first use.")
+      markKindUsed("mic")
       onCompleteRef.current?.(blob, mimeRef.current)
     }
     recorderRef.current = recorder
