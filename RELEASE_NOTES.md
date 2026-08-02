@@ -71,7 +71,7 @@ devices/browsers — they cannot be verified in the CI sandbox.
 | # | Environment | Expected permission behavior | Record→Stop→Upload→Transcribe | Insert + word count | Create & Listen | File/Scan/Link/Paste OK | Pass/Fail | Notes |
 |---|-------------|------------------------------|-------------------------------|---------------------|-----------------|--------------------------|-----------|-------|
 | 1 | **Safari — iPhone** | Native per-site prompt on first tap; if denied, "aA" menu › Website Settings › Microphone | ☐ | ☐ | ☐ | ☐ | ☐ | |
-| 2 | **Chrome — iPhone** (CriOS) | Uses per-**app** iOS permission (Settings › Chrome › Microphone). If off, blocked message points there; **cannot** re-prompt from page | ☐ | ☐ | ☐ | ☐ | ☐ | |
+| 2 | **Chrome — iPhone** (CriOS) | Two gates: per-**app** iOS toggle (Settings › Chrome › Microphone) **and** Chrome's per-**site** setting. Either off → `NotAllowedError`, no prompt. If a cached site block persists, reset it (see Troubleshooting) | ☐ | ☐ | ☐ | ☐ | ☐ | |
 | 3 | **Safari — iPad** (if supported) | Same as iPhone Safari (per-site prompt / "aA" menu) | ☐ | ☐ | ☐ | ☐ | ☐ | |
 | 4 | **Chrome — Android** | Standard per-site prompt; if denied, site settings via lock icon | ☐ | ☐ | ☐ | ☐ | ☐ | |
 | 5 | **Chrome — desktop** | Per-site prompt; if denied, address-bar site settings | ☐ | ☐ | ☐ | ☐ | ☐ | |
@@ -90,6 +90,12 @@ devices/browsers — they cannot be verified in the CI sandbox.
 > `NSMicrophoneUsageDescription`** in the app's Info.plist **and** the WKWebView
 > configured to allow microphone capture. The web-layer `Permissions-Policy`
 > (`microphone=(self)`) fix does not replace this native configuration.
+
+**Troubleshooting:**
+
+| Symptom | Likely cause | Resolution |
+|---------|--------------|------------|
+| **Chrome on iPhone: "Recording failed", no prompt, even with Settings › Chrome › Microphone ON** | Chrome cached a **per-site block** for the domain (e.g. from an earlier build that shipped `Permissions-Policy: microphone=()`). Chrome will not re-prompt once a site is blocked. | Reset the site permission: open the site in Chrome → tap the page-settings icon by the address bar → **Permissions** → allow **Microphone** (or reset/clear), then reload. Confirm on the **`www`** host — apex `voxyfi.com` 308-redirects to `www.voxyfi.com`, so the cached decision is tied to `www`. Verify with an **Incognito tab** (starts clean). This is user-side only — no app code can clear a cached browser block. |
 
 > **Note:** this matrix was added after the `v1.0.3` tag was cut, so it lives on
 > `release/v1.0.0` as a working verification record and is not part of the tagged

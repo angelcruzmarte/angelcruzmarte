@@ -11,6 +11,13 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  acquireStream,
+  hasLiveStream,
+  isPermissionGranted,
+  markKindUsed,
+  releaseUnlessWarm,
+} from "@/lib/media-streams"
 import { cn } from "@/lib/utils"
 
 type Page = {
@@ -41,11 +48,24 @@ export function DocumentScanner({
   const [pages, setPages] = useState<Page[]>([])
   const [processing, setProcessing] = useState(false)
 
+  // Detach the video element and release the camera UNLESS it has been used this
+  // session (a page was captured) — once used we keep the stream warm so
+  // reopening the scanner is instant and doesn't re-show the native iOS banner.
+  // ("Warm only after first use.") Pure, so it is safe as an unmount cleanup;
+  // the camera is still fully released when leaving the Add Content screen and
+  // on page hide.
   const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
+    releaseUnlessWarm("camera")
     streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
   }, [])
+
+  // Explicit user close (the X button): apply the warm-aware release, then
+  // return to the idle screen.
+  const closeCamera = useCallback(() => {
+    stopCamera()
+    setCameraState("idle")
+  }, [stopCamera])
 
   const startCamera = useCallback(async () => {
     onError("")
@@ -58,10 +78,10 @@ export function DocumentScanner({
     }
     setCameraState("starting")
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      })
+      // Reuse the session's live camera stream when present; otherwise acquire
+      // it once. No custom permission dialog — the browser prompts natively the
+      // first time, and returns instantly once permission is granted.
+      const stream = await acquireStream("camera")
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -82,6 +102,25 @@ export function DocumentScanner({
 
   // Always release the camera when leaving the scanner.
   useEffect(() => stopCamera, [stopCamera])
+
+  // Instant launch: the user already tapped "Scan" to get here, so open the
+  // camera automatically when permission is already granted (or a live stream
+  // is cached from earlier this session) — no extra "Start camera" tap and no
+  // custom dialog. When permission still needs prompting we keep the explicit
+  // button, so the native prompt fires inside a user gesture (Safari requires
+  // this for the first request).
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (hasLiveStream("camera") || (await isPermissionGranted("camera"))) {
+        if (!cancelled) void startCamera()
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Revoke object URLs when pages are removed / on unmount.
   useEffect(() => {
@@ -114,7 +153,12 @@ export function DocumentScanner({
     ctx.drawImage(video, 0, 0, w, h)
     canvas.toBlob(
       (blob) => {
-        if (blob) addBlob(blob)
+        if (blob) {
+          addBlob(blob)
+          // A real capture happened: keep the camera warm for the rest of the
+          // session so reopening the scanner won't re-trigger the native banner.
+          markKindUsed("camera")
+        }
       },
       "image/jpeg",
       0.92,
@@ -242,7 +286,7 @@ export function DocumentScanner({
           <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-6 bg-gradient-to-t from-black/60 to-transparent p-4">
             <button
               type="button"
-              onClick={stopCamera}
+              onClick={closeCamera}
               aria-label="Close camera"
               className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-colors hover:bg-white/25"
             >

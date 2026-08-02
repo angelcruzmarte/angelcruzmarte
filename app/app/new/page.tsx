@@ -16,5 +16,16 @@ export default async function NewPage({
   const normalized: Mode =
     mode === "link" || mode === "file" || mode === "scan" ? mode : "text"
 
-  return <AddContent initialMode={normalized} autoDictate={autoDictate} />
+  // Remount AddContent whenever the launched action changes. Without this,
+  // navigating from the Add sheet to a new `?mode=` while already on /app/new
+  // would not re-initialize the editor, so the tapped action wouldn't open.
+  const launchKey = autoDictate ? "dictate" : normalized
+
+  return (
+    <AddContent
+      key={launchKey}
+      initialMode={normalized}
+      autoDictate={autoDictate}
+    />
+  )
 }

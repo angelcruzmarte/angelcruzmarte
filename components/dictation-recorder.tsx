@@ -6,6 +6,7 @@ import {
   extForMime,
   useAudioRecorder,
 } from "@/hooks/use-audio-recorder"
+import { hasLiveStream, isPermissionGranted } from "@/lib/media-streams"
 import { countWords } from "@/lib/reading-time"
 import { haptic } from "@/lib/haptics"
 import { Button } from "@/components/ui/button"
@@ -89,7 +90,8 @@ export function DictationRecorder({
     onComplete: handleComplete,
     onError: handleError,
   })
-  const { analyser, elapsedMs, start, stop, cancel } = recorder
+  const { analyser, elapsedMs, start, stop, cancel, release } = recorder
+  const autoStartedRef = useRef(false)
 
   analyserRef.current = analyser
 
@@ -101,6 +103,39 @@ export function DictationRecorder({
       setErrorMsg("")
     }
   }, [open])
+
+  // Instant launch: if the mic permission is already granted (or a live stream
+  // is cached from earlier this session), start recording immediately when the
+  // recorder opens — no extra "tap to start" and no custom permission dialog.
+  // When permission still needs prompting we intentionally wait for the user's
+  // tap, so the native prompt fires inside a user gesture (required by Safari).
+  useEffect(() => {
+    if (!open) {
+      autoStartedRef.current = false
+      return
+    }
+    let cancelledEffect = false
+    void (async () => {
+      if (autoStartedRef.current) return
+      const canLaunchInstantly =
+        hasLiveStream("mic") || (await isPermissionGranted("mic"))
+      if (cancelledEffect || autoStartedRef.current) return
+      if (canLaunchInstantly && recorder.status === "idle") {
+        autoStartedRef.current = true
+        handleStart()
+      }
+    })()
+    return () => {
+      cancelledEffect = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // Release the mic hardware whenever the recorder is closed (the cached stream
+  // must not outlive an explicit close).
+  useEffect(() => {
+    if (!open) release()
+  }, [open, release])
 
   // Lock background scroll while the full-screen recorder is open.
   useEffect(() => {

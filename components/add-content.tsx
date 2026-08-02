@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
+  BookImage,
   FolderOpen,
   LinkIcon,
   Loader2,
@@ -14,6 +15,7 @@ import { createDocument, importFromUrl } from "@/app/actions/documents"
 import { DocumentScanner } from "@/components/document-scanner"
 import { DictationRecorder } from "@/components/dictation-recorder"
 import { generateUploadThumbnail } from "@/lib/document-artwork"
+import { releaseStream } from "@/lib/media-streams"
 import { estimateReadingStats, formatMinutes } from "@/lib/reading-time"
 import { haptic } from "@/lib/haptics"
 import { Button } from "@/components/ui/button"
@@ -24,9 +26,10 @@ import { cn } from "@/lib/utils"
 
 type Mode = "text" | "link" | "file" | "scan"
 
-// The five import actions. Four switch the editor mode; "dictate" is an action
-// that launches the full-screen recorder (not a persistent mode).
-type ActionId = Mode | "dictate"
+// The import actions. Most switch the editor mode; "dictate" launches the
+// full-screen recorder, and "book" navigates to the dedicated /app/scan route
+// (neither is a persistent editor mode).
+type ActionId = Mode | "dictate" | "book"
 
 const actions: {
   id: ActionId
@@ -37,6 +40,12 @@ const actions: {
   { id: "text", label: "Type or Paste", hint: "Write or paste text", icon: Type },
   { id: "dictate", label: "Dictate", hint: "Speak it out loud", icon: Mic },
   { id: "scan", label: "Scan", hint: "Capture a document", icon: ScanLine },
+  {
+    id: "book",
+    label: "Scan Book Cover",
+    hint: "Identify a book by its cover",
+    icon: BookImage,
+  },
   { id: "link", label: "Link", hint: "Import a web page", icon: LinkIcon },
   { id: "file", label: "File", hint: "PDF, DOCX, EPUB…", icon: FolderOpen },
 ]
@@ -59,6 +68,19 @@ export function AddContent({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Streams are kept "warm" across recorder/scanner reopens and scan↔text mode
+  // switches within this screen. But when the user actually LEAVES the Add
+  // Content screen, force a full release of both devices so the OS mic/camera
+  // indicator never stays lit while they browse elsewhere. (The mic is also
+  // released by the recorder hook's own unmount; releasing here is harmless and
+  // covers the camera, whose scanner unmounts on every mode switch.)
+  useEffect(() => {
+    return () => {
+      releaseStream("mic")
+      releaseStream("camera")
+    }
+  }, [])
+
   // Auto-grow the editor to fit its content (bounded) so long dictations don't
   // hide behind a scrollbar.
   useEffect(() => {
@@ -67,6 +89,53 @@ export function AddContent({
     el.style.height = "auto"
     el.style.height = `${Math.min(el.scrollHeight, 520)}px`
   }, [content, mode])
+
+  // --- System Back handling -------------------------------------------------
+  // A launched action (the dictation recorder, or the scan / link / file
+  // sub-screens) should behave like a screen you can back out of: pressing the
+  // device or browser Back button — including the iOS Safari swipe — collapses
+  // it to the base "Add content" screen instead of leaving /app/new entirely.
+  // We push a lightweight history entry whenever an action opens and intercept
+  // its popstate, so Back returns here rather than to the previous page.
+  const inAction = recorderOpen || mode !== "text"
+  const guardActiveRef = useRef(false)
+  const wasInActionRef = useRef(false)
+  // Mirror the latest values so the popstate listener (registered once) always
+  // reads current state without re-subscribing.
+  const stateRef = useRef({ mode, recorderOpen })
+  stateRef.current = { mode, recorderOpen }
+
+  useEffect(() => {
+    const was = wasInActionRef.current
+    wasInActionRef.current = inAction
+    if (inAction && !was && !guardActiveRef.current) {
+      // Entered an action from the base screen — add a Back target.
+      guardActiveRef.current = true
+      window.history.pushState({ voxyfiAddAction: true }, "")
+    } else if (!inAction && was && guardActiveRef.current) {
+      // Left the action via the UI (e.g. closed the recorder or tapped the
+      // "Type or Paste" card): consume the guard entry we pushed so there's no
+      // dead Back press left in the stack.
+      guardActiveRef.current = false
+      window.history.back()
+    }
+  }, [inAction])
+
+  useEffect(() => {
+    function onPopState() {
+      // Ignore pops that aren't ours (e.g. the guard was already consumed).
+      if (!guardActiveRef.current) return
+      guardActiveRef.current = false
+      const { mode: m, recorderOpen: r } = stateRef.current
+      if (r || m !== "text") {
+        setRecorderOpen(false)
+        setMode("text")
+        setError(null)
+      }
+    }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
 
   async function save(promise: Promise<{ id: number }>) {
     setLoading(true)
@@ -112,6 +181,12 @@ export function AddContent({
       setRecorderOpen(true)
       return
     }
+    if (id === "book") {
+      // Scan Book Cover is a full-screen experience on its own route rather
+      // than an editor mode, so navigate there instead of switching mode.
+      router.push("/app/scan")
+      return
+    }
     setMode(id)
   }
 
@@ -138,7 +213,9 @@ export function AddContent({
         {actions.map((a) => {
           const Icon = a.icon
           const selected = a.id === mode
-          const isDictate = a.id === "dictate"
+          // Dictate and Scan Book Cover are "featured" launch actions that get a
+          // soft accent so they're easy to discover among the import options.
+          const featured = a.id === "dictate" || a.id === "book"
           return (
             <button
               key={a.id}
@@ -150,7 +227,7 @@ export function AddContent({
                 "group flex min-h-[92px] flex-col items-start justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]",
                 selected
                   ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                  : isDictate
+                  : featured
                     ? "border-primary/30 bg-primary/5 text-foreground hover:border-primary/50 hover:bg-primary/10"
                     : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent",
               )}
