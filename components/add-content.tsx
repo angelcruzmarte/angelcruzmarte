@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
+  BookImage,
   FolderOpen,
   LinkIcon,
   Loader2,
@@ -25,9 +26,10 @@ import { cn } from "@/lib/utils"
 
 type Mode = "text" | "link" | "file" | "scan"
 
-// The five import actions. Four switch the editor mode; "dictate" is an action
-// that launches the full-screen recorder (not a persistent mode).
-type ActionId = Mode | "dictate"
+// The import actions. Most switch the editor mode; "dictate" launches the
+// full-screen recorder, and "book" navigates to the dedicated /app/scan route
+// (neither is a persistent editor mode).
+type ActionId = Mode | "dictate" | "book"
 
 const actions: {
   id: ActionId
@@ -38,6 +40,12 @@ const actions: {
   { id: "text", label: "Type or Paste", hint: "Write or paste text", icon: Type },
   { id: "dictate", label: "Dictate", hint: "Speak it out loud", icon: Mic },
   { id: "scan", label: "Scan", hint: "Capture a document", icon: ScanLine },
+  {
+    id: "book",
+    label: "Scan Book Cover",
+    hint: "Identify a book by its cover",
+    icon: BookImage,
+  },
   { id: "link", label: "Link", hint: "Import a web page", icon: LinkIcon },
   { id: "file", label: "File", hint: "PDF, DOCX, EPUB…", icon: FolderOpen },
 ]
@@ -173,6 +181,12 @@ export function AddContent({
       setRecorderOpen(true)
       return
     }
+    if (id === "book") {
+      // Scan Book Cover is a full-screen experience on its own route rather
+      // than an editor mode, so navigate there instead of switching mode.
+      router.push("/app/scan")
+      return
+    }
     setMode(id)
   }
 
@@ -199,7 +213,9 @@ export function AddContent({
         {actions.map((a) => {
           const Icon = a.icon
           const selected = a.id === mode
-          const isDictate = a.id === "dictate"
+          // Dictate and Scan Book Cover are "featured" launch actions that get a
+          // soft accent so they're easy to discover among the import options.
+          const featured = a.id === "dictate" || a.id === "book"
           return (
             <button
               key={a.id}
@@ -211,7 +227,7 @@ export function AddContent({
                 "group flex min-h-[92px] flex-col items-start justify-between rounded-2xl border p-3.5 text-left transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]",
                 selected
                   ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                  : isDictate
+                  : featured
                     ? "border-primary/30 bg-primary/5 text-foreground hover:border-primary/50 hover:bg-primary/10"
                     : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent",
               )}
