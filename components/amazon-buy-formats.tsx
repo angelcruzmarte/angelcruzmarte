@@ -11,7 +11,11 @@ import {
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { trackAffiliateClick } from "@/lib/affiliate-track"
-import type { AmazonFormatId, AmazonFormatLink } from "@/lib/affiliate"
+import {
+  browserAmazonLink,
+  type AmazonFormatId,
+  type AmazonFormatLink,
+} from "@/lib/affiliate"
 
 const FORMAT_ICON: Record<AmazonFormatId, typeof BookOpen> = {
   kindle: BookOpen,
@@ -64,7 +68,7 @@ export function AmazonBuyFormats({
   return (
     <div className="flex flex-col gap-2">
       <a
-        href={primary.url}
+        href={browserAmazonLink(primary.url)}
         target="_blank"
         rel="noopener noreferrer sponsored nofollow"
         onClick={track}
@@ -110,7 +114,7 @@ export function AmazonBuyFormats({
                 return (
                   <li key={f.id}>
                     <a
-                      href={f.url}
+                      href={browserAmazonLink(f.url)}
                       target="_blank"
                       rel="noopener noreferrer sponsored nofollow"
                       onClick={track}

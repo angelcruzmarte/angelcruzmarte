@@ -13,6 +13,7 @@ import {
   ShoppingCart,
 } from "lucide-react"
 import { BookCover, type CoverBook } from "@/components/book-cover"
+import { browserAmazonLink } from "@/lib/affiliate"
 import { languageLabel } from "@/lib/languages"
 import { formatPrice } from "@/lib/plans"
 import { cn } from "@/lib/utils"
@@ -152,7 +153,7 @@ function ActionButton({ action }: { action: BookCardAction }) {
     case "buy":
       return (
         <a
-          href={action.href}
+          href={browserAmazonLink(action.href)}
           target="_blank"
           rel="noopener noreferrer sponsored nofollow"
           onClick={action.onClick}
