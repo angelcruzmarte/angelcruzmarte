@@ -164,6 +164,53 @@ function amazonDomain(region?: string | null): string {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Browser-forced outbound links (open the Amazon WEBSITE, never the app)
+// ---------------------------------------------------------------------------
+//
+// On iOS/Android an `https://amazon.*` link is a Universal Link / App Link: if
+// the Amazon app is installed, tapping it hands off to the APP instead of the
+// browser. For affiliate purchases we want the tagged Amazon WEBSITE in the
+// user's default browser — a predictable checkout that preserves our commission
+// across every device and the App Store wrapper.
+//
+// The fix is a same-origin redirect hop: the tap targets our OWN domain
+// (`/go/amazon?u=…`), which the Amazon app is never associated with, so it is
+// never intercepted. The route then issues a server 302 to the real Amazon URL,
+// and server-side redirects do NOT trigger Universal Links / App Links — so
+// Amazon opens in the browser. The affiliate `tag` rides along untouched inside
+// the destination URL. We deliberately do NOT emit any amazon:// deep link.
+
+/** Route that performs the same-origin → Amazon website redirect. */
+export const AMAZON_REDIRECT_PATH = "/go/amazon"
+
+/** True when a URL points at a supported Amazon marketplace over HTTPS. */
+export function isAllowedAmazonUrl(rawUrl?: string | null): boolean {
+  const url = (rawUrl || "").trim()
+  if (!url) return false
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === "https:" &&
+      AMAZON_MARKETPLACES.some((m) => m.domain === parsed.hostname)
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Wraps a raw, tagged Amazon URL so a tap opens the Amazon website in the
+ * browser instead of the Amazon mobile app (see the section note above). Any
+ * non-Amazon, relative, or already-wrapped URL is returned unchanged, so this
+ * is safe to call defensively on any href.
+ */
+export function browserAmazonLink(rawUrl?: string | null): string {
+  const url = (rawUrl || "").trim()
+  if (!isAllowedAmazonUrl(url)) return url
+  return `${AMAZON_REDIRECT_PATH}?u=${encodeURIComponent(url)}`
+}
+
 /**
  * Sanitizes an Amazon Associate tag into its bare store-id form (e.g.
  * "voxyfi-20"), tolerating common mistakes:

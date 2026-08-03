@@ -22,7 +22,7 @@ import { ensureScannedBook, type ScanMatch } from "@/app/actions/scan-book"
 import { AffiliateDisclosure } from "@/components/affiliate-disclosure"
 import { Button } from "@/components/ui/button"
 import { trackAffiliateClick } from "@/lib/affiliate-track"
-import type { AmazonFormatLink } from "@/lib/affiliate"
+import { browserAmazonLink, type AmazonFormatLink } from "@/lib/affiliate"
 import { haptic } from "@/lib/haptics"
 import { cn } from "@/lib/utils"
 
@@ -146,7 +146,9 @@ export function ScanResultSheet({
       // Create the row (for attribution) but don't block the click on failure.
       const id = await ensure()
       trackAffiliateClick({ bookId: id, title: match.title, author: match.author })
-      openExternal(format.url)
+      // Route through our same-origin redirect so the Amazon website opens in
+      // the browser instead of handing off to the Amazon app on mobile.
+      openExternal(browserAmazonLink(format.url))
     })
   }
 
