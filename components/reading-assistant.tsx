@@ -97,7 +97,13 @@ export function ReadingAssistant() {
   // floating launcher both live at the bottom-right, so the pill was covering
   // the docked card's Podcast/Quiz tabs. Step aside entirely on that screen
   // (the docked Chat covers document Q&A); the launcher returns everywhere else.
-  const { fullPlayerMounted } = usePlayer()
+  const { fullPlayerMounted, session, status: playerStatus } = usePlayer()
+
+  // The compact mini-player docks at `bottom-24` (same spot as this launcher)
+  // whenever something is playing outside the full reader. When it's showing we
+  // lift the launcher above it so the docked player never covers the pill.
+  const miniPlayerVisible =
+    !!session && playerStatus !== "idle" && !fullPlayerMounted
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -144,7 +150,10 @@ export function ReadingAssistant() {
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Ask VOXYFI for book recommendations"
-          className="fixed bottom-24 right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-[calc(50%-20rem)]"
+          className={cn(
+            "fixed right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-lg transition-[transform,bottom] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-[calc(50%-20rem)]",
+            miniPlayerVisible ? "bottom-44" : "bottom-24",
+          )}
         >
           <Sparkles className="h-4 w-4" />
           Ask VOXYFI
