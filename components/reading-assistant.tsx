@@ -7,6 +7,7 @@ import { DefaultChatTransport } from "ai"
 import { Sparkles, X, ArrowUp, BookOpen, RefreshCw, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LogoMark } from "@/components/logo-mark"
+import { usePlayer } from "@/components/player-provider"
 
 type CatalogPick = {
   id: number
@@ -91,6 +92,13 @@ export function ReadingAssistant() {
 
   const busy = status === "submitted" || status === "streaming"
 
+  // On the immersive reader / full player, a bottom-docked card already provides
+  // a "Chat" tool for questions about the current document. That card and this
+  // floating launcher both live at the bottom-right, so the pill was covering
+  // the docked card's Podcast/Quiz tabs. Step aside entirely on that screen
+  // (the docked Chat covers document Q&A); the launcher returns everywhere else.
+  const { fullPlayerMounted } = usePlayer()
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages, busy])
@@ -123,6 +131,10 @@ export function ReadingAssistant() {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     dispatch(lastTextRef.current, false)
   }
+
+  // Hide the floating assistant while the full reader/player is on screen to
+  // avoid overlapping its docked tool card (Chat/Summary/Podcast/Quiz).
+  if (fullPlayerMounted) return null
 
   return (
     <>
