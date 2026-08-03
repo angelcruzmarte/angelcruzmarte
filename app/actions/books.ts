@@ -221,10 +221,14 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
   }
   if (heroPool.length === 0 && all.length > 0) heroPool.push(all[0])
 
-  // Deterministic hourly bucket keeps the choice stable within the hour while
-  // advancing to the next book each hour.
+  // Rotate the spotlight on every visit so the Featured book actually alternates
+  // (the old hourly bucket kept the same book for a full hour, which read as
+  // "frozen" on repeat visits/refreshes). This page is dynamic — it reads the
+  // signed-in user's cookies — so each request re-runs this and picks fresh.
   const hero =
-    heroPool.length > 0 ? heroPool[bucketOffset(heroPool.length)] : null
+    heroPool.length > 0
+      ? heroPool[Math.floor(Math.random() * heroPool.length)]
+      : null
 
   return { hero, rows }
 }
