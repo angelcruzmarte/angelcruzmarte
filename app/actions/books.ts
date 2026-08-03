@@ -221,10 +221,23 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
   }
   if (heroPool.length === 0 && all.length > 0) heroPool.push(all[0])
 
-  // Deterministic hourly bucket keeps the choice stable within the hour while
-  // advancing to the next book each hour.
+  // Spotlight a different book on each visit so the featured hero visibly
+  // alternates rather than appearing stuck on one title. The page is
+  // dynamically rendered per request, so a random pick is chosen server-side
+  // and passed to the client (no hydration mismatch).
+  //
+  // Scope the rotation to English candidates: the store defaults to the English
+  // view, and the client only renders `storefront.hero` directly when it
+  // matches the active language (otherwise it falls back to a fixed "first
+  // featured" title). Picking a non-English hero would therefore always be
+  // discarded and make the spotlight look stuck. Fall back to the full pool
+  // only if there are no English candidates.
+  const englishPool = heroPool.filter((b) => (b.language || "en") === "en")
+  const rotationPool = englishPool.length > 0 ? englishPool : heroPool
   const hero =
-    heroPool.length > 0 ? heroPool[bucketOffset(heroPool.length)] : null
+    rotationPool.length > 0
+      ? rotationPool[Math.floor(Math.random() * rotationPool.length)]
+      : null
 
   return { hero, rows }
 }

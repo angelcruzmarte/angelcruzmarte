@@ -103,8 +103,8 @@ export default async function BookDetailPage({
         Book Store
       </Link>
 
-      <div className="flex gap-4">
-        <BookCover book={book} className="w-28 shrink-0" />
+      <div className="flex items-start gap-4">
+        <BookCover book={book} className="w-28 shrink-0 self-start" />
         <div className="min-w-0">
           <div className="mb-2 flex items-center justify-between gap-2">
             <Badge variant="secondary">{book.category}</Badge>
