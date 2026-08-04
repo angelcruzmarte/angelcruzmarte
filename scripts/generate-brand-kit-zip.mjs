@@ -87,11 +87,13 @@ CONTENTS
   /icons          App icons & favicons (iOS, Android, watchOS, PWA, .ico).
   /colors         colors.json + colors.css (oklch source of truth + hex).
   /typography     Type guidelines + Geist-Regular.ttf.
-  /social         Open Graph, promo, and store feature graphics (1200x630, 1024x500).
+  /social         Open Graph, promo & store graphics, plus high-res profile
+                  avatar (2048px), transparent marks, and a 2400px share banner.
   /screenshots    App Store / Play Store marketing screenshots (English set).
 
 LOGO USAGE
-  - Keep clear space around the mark equal to the height of one waveform bar.
+  - The mark is the "Voice Chevron": two nested chevrons forming a V.
+  - Keep clear space around the mark equal to the chevron's stroke width.
   - Do not recolor, rotate, stretch, add shadows, or place the mark on a
     low-contrast background.
   - Use the mono mark (voxyfi-mark-mono.svg) for single-color contexts.
@@ -143,6 +145,10 @@ async function main() {
   await addFile(zip, "brand/social/social-card-1200x630.png", "social/social-card-1200x630.png")
   await addFile(zip, "brand/social/promo-light-1200x630.png", "social/promo-light-1200x630.png")
   await addFile(zip, "brand/social/play-store-feature-1024x500.png", "social/play-store-feature-1024x500.png")
+  await addFile(zip, "brand/social/voxyfi-avatar-2048.png", "social/voxyfi-avatar-2048.png")
+  await addFile(zip, "brand/social/voxyfi-mark-white-2048.png", "social/voxyfi-mark-white-2048.png")
+  await addFile(zip, "brand/social/voxyfi-mark-green-2048.png", "social/voxyfi-mark-green-2048.png")
+  await addFile(zip, "brand/social/voxyfi-social-banner-2400x1260.png", "social/voxyfi-social-banner-2400x1260.png")
 
   console.log("Adding screenshots…")
   await addFile(zip, "brand/screenshots/01-listen-ios-6.7.png", "screenshots/01-listen.png")
