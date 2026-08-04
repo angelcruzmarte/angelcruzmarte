@@ -38,11 +38,23 @@ self.addEventListener("activate", (event) => {
   )
 })
 
-function isStaticAsset(url) {
+// Content-hashed build output + fonts are immutable: their URL changes when the
+// content changes, so cache-first is safe and fastest.
+function isImmutableAsset(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
+    /\.woff2?$/.test(url.pathname)
+  )
+}
+
+// Icons, favicons, and images share a stable URL across releases (e.g. the
+// browser always probes the bare /favicon.ico). Cache-first would pin a stale
+// logo forever, so these use stale-while-revalidate instead: serve the cached
+// copy instantly, but always refetch in the background so the next load is fresh.
+function isRevalidatingAsset(url) {
+  return (
     url.pathname.startsWith("/screenshots/") ||
-    /\.(?:png|svg|ico|webp|jpg|jpeg|woff2?)$/.test(url.pathname)
+    /\.(?:png|svg|ico|webp|jpg|jpeg)$/.test(url.pathname)
   )
 }
 
@@ -63,8 +75,8 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  // Cache-first for static assets.
-  if (isStaticAsset(url)) {
+  // Cache-first for immutable, content-hashed assets.
+  if (isImmutableAsset(url)) {
     event.respondWith(
       caches.match(request).then(
         (cached) =>
@@ -75,6 +87,25 @@ self.addEventListener("fetch", (event) => {
             return response
           }),
       ),
+    )
+    return
+  }
+
+  // Stale-while-revalidate for icons/images so updated logos self-heal.
+  if (isRevalidatingAsset(url)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const network = fetch(request)
+          .then((response) => {
+            const copy = response.clone()
+            caches
+              .open(STATIC_CACHE)
+              .then((cache) => cache.put(request, copy))
+            return response
+          })
+          .catch(() => cached)
+        return cached || network
+      }),
     )
     return
   }
