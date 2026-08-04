@@ -122,9 +122,10 @@ export default function BrandPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
             A calm, premium system built around a single idea: turning reading
-            into listening. A voice-waveform that dips into a{" "}
-            <span className="font-medium text-foreground">V</span>, a signature
-            deep-green-to-emerald gradient, and clean Geist typography.
+            into listening. Two nested chevrons that form a{" "}
+            <span className="font-medium text-foreground">V</span> with forward
+            motion, a signature deep-green-to-emerald gradient, and clean Geist
+            typography.
           </p>
           <div className="mt-8">
             <span
@@ -161,8 +162,8 @@ export default function BrandPage() {
       <section className="mx-auto max-w-5xl px-4 py-16 sm:px-6">
         <SectionHeading eyebrow="Logo" title="The mark & lockup">
           The lockup is the primary signature. The mark can stand alone in tight
-          spaces. Always keep clear space around it equal to the height of one
-          waveform bar, and never recolor or distort the glyph.
+          spaces. Always keep clear space around it equal to the chevron&apos;s
+          stroke width, and never recolor or distort the glyph.
         </SectionHeading>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -216,7 +217,7 @@ export default function BrandPage() {
         <div className="mt-12">
           <h3 className="text-lg font-semibold tracking-tight">Animated mark</h3>
           <p className="mt-2 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
-            The waveform bars pulse like an equalizer for loading and playback
+            The nested chevrons bob in a staggered wave for loading and playback
             states, then settle into the resting mark. Motion is pure CSS and
             automatically stops for visitors who prefer reduced motion.
           </p>
@@ -367,6 +368,59 @@ export default function BrandPage() {
                   </div>
                 </Card>
               ))}
+            </div>
+          </div>
+
+          {/* High-quality social media downloads */}
+          <div className="mt-10">
+            <p className="text-sm font-semibold">Social media downloads</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Highest-quality Voice Chevron assets for profiles and posts — a
+              2048&thinsp;px rounded avatar, transparent marks for light and dark
+              backgrounds, and a 2400&thinsp;px share banner.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {[
+                { src: "/brand/social/voxyfi-avatar-2048.png", title: "Profile avatar", meta: "2048×2048 PNG", checkered: false },
+                { src: "/brand/social/voxyfi-mark-white-2048.png", title: "Mark (white)", meta: "2048² · transparent", checkered: true },
+                { src: "/brand/social/voxyfi-mark-green-2048.png", title: "Mark (green)", meta: "2048² · transparent", checkered: true },
+                { src: "/icon-1024.png", title: "App icon", meta: "1024×1024 PNG", checkered: false },
+              ].map((g) => (
+                <AssetCard
+                  key={g.src}
+                  src={g.src}
+                  title={g.title}
+                  meta={g.meta}
+                  href={g.src}
+                  checkered={g.checkered}
+                />
+              ))}
+            </div>
+            <div className="mt-4">
+              <Card className="flex flex-col overflow-hidden p-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/brand/social/voxyfi-social-banner-2400x1260.png"
+                  alt="VOXYFI social share banner"
+                  className="aspect-[2400/1260] w-full object-cover"
+                />
+                <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Share banner</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      2400×1260 PNG
+                    </p>
+                  </div>
+                  <a
+                    href="/brand/social/voxyfi-social-banner-2400x1260.png"
+                    download
+                    className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+                    aria-label="Download social share banner"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  </a>
+                </div>
+              </Card>
             </div>
           </div>
 
