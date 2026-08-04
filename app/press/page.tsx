@@ -137,7 +137,7 @@ export default function PressPage() {
             editorial coverage of VOXYFI.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <a href="/brand/voxyfi-brand-kit.zip" download className={cn(buttonVariants({ size: "lg" }), "gap-2")}>
+            <a href="/api/brand-kit" download="voxyfi-brand-kit.zip" className={cn(buttonVariants({ size: "lg" }), "gap-2")}>
               <Download className="h-4 w-4" aria-hidden="true" />
               Download brand kit
             </a>
@@ -307,7 +307,7 @@ export default function PressPage() {
               <Mail className="h-4 w-4" aria-hidden="true" />
               {PRESS_EMAIL}
             </a>
-            <a href="/brand/voxyfi-brand-kit.zip" download className={cn(buttonVariants({ variant: "outline", size: "lg" }), "gap-2")}>
+            <a href="/api/brand-kit" download="voxyfi-brand-kit.zip" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "gap-2")}>
               <Download className="h-4 w-4" aria-hidden="true" />
               Download brand kit
             </a>
