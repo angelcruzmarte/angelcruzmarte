@@ -188,26 +188,33 @@
   background-image: var(--brand-gradient);
 }
 
-/* Animated VOXYFI mark: the five waveform bars pulse like an equalizer while
-   "playing", then settle into the resting waveform+V shape. Each bar scales
-   about its own vertical center (transform-box: fill-box) so the dip stays
-   centered. Per-bar delay/duration is set inline for a lively, organic motion. */
-@keyframes voxyfi-eq {
+/* Animated VOXYFI "Voice Chevron" mark: the two nested chevrons gently bob up
+   and down in a staggered wave while "playing" (evoking voice / playback
+   motion), then settle into the resting chevron shape. Each chevron transforms
+   about its own center (transform-box: fill-box) and the front chevron trails
+   the back one for a lively, organic ripple. */
+@keyframes voxyfi-chev-bob {
   0%,
   100% {
-    transform: scaleY(0.42);
+    transform: translateY(-7%);
   }
   50% {
-    transform: scaleY(1);
+    transform: translateY(7%);
   }
 }
-.voxyfi-anim rect {
+.voxyfi-anim .voxyfi-chv {
   transform-box: fill-box;
   transform-origin: center;
-  animation: voxyfi-eq 1100ms ease-in-out infinite;
+}
+.voxyfi-anim .voxyfi-chv-back {
+  animation: voxyfi-chev-bob 1300ms ease-in-out infinite;
+}
+.voxyfi-anim .voxyfi-chv-front {
+  animation: voxyfi-chev-bob 1300ms ease-in-out infinite;
+  animation-delay: 170ms;
 }
 @media (prefers-reduced-motion: reduce) {
-  .voxyfi-anim rect {
+  .voxyfi-anim .voxyfi-chv {
     animation: none !important;
     transform: none !important;
   }

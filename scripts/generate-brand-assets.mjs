@@ -1,5 +1,5 @@
-// Regenerates the entire VOXYFI raster icon set from the single vector master
-// (public/brand/voxyfi-icon.svg). Run: node scripts/generate-brand-assets.mjs
+// Regenerates the entire VOXYFI raster icon + social asset set from the single
+// "Voice Chevron" vector master. Run: node scripts/generate-brand-assets.mjs
 // Uses sharp for SVG->PNG rasterization and a tiny inline ICO encoder.
 import sharp from "sharp"
 import { promises as fs } from "node:fs"
@@ -14,60 +14,130 @@ const DEEP = "#123f2e"
 const EMERALD = "#12b981"
 const CREAM = "#f5f2ea"
 
-// The five waveform bars (shared geometry, viewBox 512).
-const BARS = `
-  <rect x="76" y="101" width="56" height="310" rx="28"/>
-  <rect x="152" y="148" width="56" height="215" rx="28"/>
-  <rect x="228" y="188" width="56" height="135" rx="28"/>
-  <rect x="304" y="148" width="56" height="215" rx="28"/>
-  <rect x="380" y="101" width="56" height="310" rx="28"/>`
+// The Voice Chevron: two nested rounded chevrons (viewBox 512). `stroke`,
+// `inset`, `top` and `gap` let each composition tune reach / vertical centering.
+function chevron({ stroke = "#ffffff", inset = 120, top = 152, gap = 72, width = 48 } = {}) {
+  const right = 512 - inset
+  const midTop = top + 136
+  const bTop = top + gap
+  const bMid = bTop + 136
+  return `<g fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M${inset} ${top} L256 ${midTop} L${right} ${top}" opacity="0.55"/>
+    <path d="M${inset} ${bTop} L256 ${bMid} L${right} ${bTop}"/>
+  </g>`
+}
+
+const GRAD = `<defs><linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="${DEEP}"/><stop offset="1" stop-color="${EMERALD}"/></linearGradient></defs>`
 
 // Full rounded-square app icon (iOS/PWA style squircle).
 function iconSquircle(radius = 115) {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="${DEEP}"/><stop offset="1" stop-color="${EMERALD}"/>
-    </linearGradient></defs>
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <rect width="512" height="512" rx="${radius}" fill="url(#g)"/>
-    <g fill="#ffffff">${BARS}</g>
+    ${chevron()}
   </svg>`
 }
 
 // Maskable: full-bleed gradient (no corner radius — the OS applies its own
-// mask) with the glyph scaled into the ~64% safe zone so it never gets clipped.
+// mask) with the glyph pulled into the safe zone so it never gets clipped.
 function iconMaskable() {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="${DEEP}"/><stop offset="1" stop-color="${EMERALD}"/>
-    </linearGradient></defs>
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <rect width="512" height="512" fill="url(#g)"/>
-    <g fill="#ffffff" transform="translate(256 256) scale(0.62) translate(-256 -256)">${BARS}</g>
+    ${chevron({ inset: 156, top: 182, gap: 60, width: 42 })}
   </svg>`
 }
 
 // Circular watchOS-style icon.
 function iconCircle() {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="${DEEP}"/><stop offset="1" stop-color="${EMERALD}"/>
-    </linearGradient></defs>
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <circle cx="256" cy="256" r="256" fill="url(#g)"/>
-    <g fill="#ffffff" transform="translate(256 256) scale(0.82) translate(-256 -256)">${BARS}</g>
+    ${chevron({ inset: 140, top: 168, gap: 66, width: 46 })}
   </svg>`
 }
 
-// Android adaptive foreground (transparent, glyph in safe zone) — green tint so
-// it reads on any launcher background layer.
+// Android adaptive foreground (transparent, glyph in safe zone).
 function androidForeground() {
   return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    <g fill="#ffffff" transform="translate(256 256) scale(0.58) translate(-256 -256)">${BARS}</g>
+    ${chevron({ inset: 156, top: 182, gap: 60, width: 42 })}
+  </svg>`
+}
+
+// Bare chevron on transparent bg (overlays / downloadable mark).
+function markOnly(stroke) {
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    ${chevron({ stroke, inset: 96, top: 128, gap: 82 })}
+  </svg>`
+}
+
+// Vectorized "VOXYFI" wordmark (monoline, round caps/joins to echo the
+// chevron). Drawn in a 496x100 cap-height box so it renders with NO font
+// dependency (this environment has no fontconfig/pango, so <text> would tofu).
+const WORD_W = 496
+function wordmark(color) {
+  const t = 18 // stroke thickness
+  // Each letter is placed at an x offset; paths use a shared 0..100 cap height.
+  const letters = [
+    // V
+    `<path d="M9 0 L35 100 L61 0"/>`,
+    // O
+    `<ellipse cx="35" cy="50" rx="26" ry="41"/>`,
+    // X
+    `<path d="M9 0 L61 100 M61 0 L9 100"/>`,
+    // Y
+    `<path d="M9 0 L35 52 L61 0 M35 52 L35 100"/>`,
+    // F
+    `<path d="M9 100 L9 0 L58 0 M9 50 L48 50"/>`,
+    // I
+    `<path d="M20 0 L20 100"/>`,
+  ]
+  const widths = [70, 70, 70, 70, 66, 40]
+  const gap = 22
+  let x = 0
+  const placed = letters.map((l, i) => {
+    const g = `<g transform="translate(${x} 0)">${l}</g>`
+    x += widths[i] + gap
+    return g
+  })
+  return `<g fill="none" stroke="${color}" stroke-width="${t}" stroke-linecap="round" stroke-linejoin="round">${placed.join("")}</g>`
+}
+
+// Centered lockup (tile + vectorized wordmark) for social / share graphics.
+function lockup(w, h, { bg = "gradient", fg = "#ffffff" } = {}) {
+  const tile = Math.round(h * 0.26)
+  const capH = Math.round(tile * 0.52)
+  const scale = capH / 100
+  const wordW = WORD_W * scale
+  const gap = Math.round(tile * 0.34)
+  const groupW = tile + gap + wordW
+  const gx = (w - groupW) / 2
+  const tileY = (h - tile) / 2
+  const wordY = (h - capH) / 2
+  const background =
+    bg === "gradient"
+      ? `<rect width="${w}" height="${h}" fill="url(#g)"/>`
+      : `<rect width="${w}" height="${h}" fill="${CREAM}"/>`
+  const tileFill = bg === "gradient" ? "rgba(255,255,255,0.14)" : "url(#g)"
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">${GRAD}
+    ${background}
+    <g transform="translate(${gx} ${tileY})">
+      <g transform="scale(${tile / 512})">
+        <rect width="512" height="512" rx="115" fill="${tileFill}"/>
+        ${chevron({ stroke: "#ffffff" })}
+      </g>
+    </g>
+    <g transform="translate(${gx + tile + gap} ${wordY}) scale(${scale})">
+      ${wordmark(fg)}
+    </g>
   </svg>`
 }
 
 const buf = (svg) => Buffer.from(svg)
 
 async function png(svg, size, outPath, background) {
-  let img = sharp(buf(svg), { density: 512 }).resize(size, size)
+  await fs.mkdir(path.dirname(outPath), { recursive: true })
+  let img = sharp(buf(svg), { density: 512 })
+  if (Array.isArray(size)) img = img.resize(size[0], size[1])
+  else img = img.resize(size, size)
   if (background) img = img.flatten({ background })
   await img.png().toFile(outPath)
   return outPath
@@ -103,10 +173,6 @@ async function writeIco(sizes, svg, outPath) {
 }
 
 async function main() {
-  await fs.mkdir(path.join(BRAND, "watch"), { recursive: true })
-  await fs.mkdir(path.join(BRAND, "android"), { recursive: true })
-  await fs.mkdir(path.join(BRAND, "favicon"), { recursive: true })
-
   const squircle = iconSquircle()
   const maskable = iconMaskable()
   const circle = iconCircle()
@@ -127,7 +193,7 @@ async function main() {
   written.push(await png(squircle, 16, path.join(BRAND, "favicon", "favicon-16.png")))
   written.push(await png(squircle, 32, path.join(BRAND, "favicon", "favicon-32.png")))
   written.push(await png(squircle, 48, path.join(BRAND, "favicon", "favicon-48.png")))
-  written.push(await png(squircle, 180, path.join(BRAND, "favicon", "apple-touch-180.png")))
+  written.push(await png(iconSquircle(0), 180, path.join(BRAND, "favicon", "apple-touch-180.png")))
 
   // Favicon .ico (16/32/48)
   written.push(await writeIco([16, 32, 48], squircle, path.join(PUB, "favicon.ico")))
@@ -138,14 +204,25 @@ async function main() {
   }
 
   // Android adaptive icon layers
-  written.push(
-    await png(androidForeground(), 432, path.join(BRAND, "android", "ic_launcher_foreground.png")),
-  )
-  written.push(
-    await png(iconSquircle(0), 512, path.join(BRAND, "android", "ic_launcher_512.png")),
-  )
-  // Play Store listing icon (512, opaque)
+  written.push(await png(androidForeground(), 432, path.join(BRAND, "android", "ic_launcher_foreground.png")))
+  written.push(await png(iconSquircle(0), 512, path.join(BRAND, "android", "ic_launcher_512.png")))
   written.push(await png(iconSquircle(0), 512, path.join(BRAND, "android", "play-store-512.png")))
+
+  // Social / store graphics (existing references on the brand page)
+  written.push(await png(lockup(1200, 630, { bg: "gradient" }), [1200, 630], path.join(BRAND, "social", "social-card-1200x630.png")))
+  written.push(await png(lockup(1200, 630, { bg: "light", fg: DEEP }), [1200, 630], path.join(BRAND, "social", "promo-light-1200x630.png")))
+  written.push(await png(lockup(1024, 500, { bg: "gradient" }), [1024, 500], path.join(BRAND, "social", "play-store-feature-1024x500.png")))
+
+  // High-quality downloadable social assets
+  written.push(await png(iconSquircle(460), 2048, path.join(BRAND, "social", "voxyfi-avatar-2048.png"))) // rounded profile pic
+  written.push(await png(markOnly("#ffffff"), 2048, path.join(BRAND, "social", "voxyfi-mark-white-2048.png")))
+  written.push(await png(markOnly(DEEP), 2048, path.join(BRAND, "social", "voxyfi-mark-green-2048.png")))
+  written.push(await png(lockup(2400, 1260, { bg: "gradient" }), [2400, 1260], path.join(BRAND, "social", "voxyfi-social-banner-2400x1260.png")))
+
+  // App-level Open Graph / Twitter images
+  const og = lockup(1200, 630, { bg: "gradient" })
+  written.push(await png(og, [1200, 630], path.join(APP, "opengraph-image.png")))
+  written.push(await png(og, [1200, 630], path.join(APP, "twitter-image.png")))
 
   console.log("Generated:\n" + written.map((w) => "  " + path.relative(ROOT, w)).join("\n"))
 }
