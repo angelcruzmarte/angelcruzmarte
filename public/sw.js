@@ -3,7 +3,7 @@
 //  - Navigations: network-first, fall back to cache, then to /offline.
 //  - Static assets (icons, screenshots, _next/static): cache-first.
 //  - API / auth / dynamic data: always network, never cached.
-const VERSION = "voxyfi-v1"
+const VERSION = "voxyfi-v2"
 const STATIC_CACHE = `${VERSION}-static`
 const PAGE_CACHE = `${VERSION}-pages`
 
