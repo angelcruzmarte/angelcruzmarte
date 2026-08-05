@@ -10,8 +10,12 @@ const PUB = path.join(ROOT, "public")
 const APP = path.join(ROOT, "app")
 const BRAND = path.join(PUB, "brand")
 
-const DEEP = "#123f2e"
-const EMERALD = "#12b981"
+// Richer, more vibrant emerald ramp: deep rich forest → vivid emerald → bright
+// spring emerald. More saturated than the previous two-tone so the mark pops,
+// especially at favicon sizes.
+const DEEP = "#083b26"
+const MID = "#0ea55e"
+const EMERALD = "#19e084"
 const CREAM = "#f5f2ea"
 
 // The Voice Chevron: two nested rounded chevrons (viewBox 512). `stroke`,
@@ -27,13 +31,23 @@ function chevron({ stroke = "#ffffff", inset = 120, top = 152, gap = 72, width =
   </g>`
 }
 
-const GRAD = `<defs><linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-  <stop offset="0" stop-color="${DEEP}"/><stop offset="1" stop-color="${EMERALD}"/></linearGradient></defs>`
+const GRAD = `<defs>
+  <linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="${DEEP}"/>
+    <stop offset="0.52" stop-color="${MID}"/>
+    <stop offset="1" stop-color="${EMERALD}"/>
+  </linearGradient>
+  <linearGradient id="sheen" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>
+    <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+</defs>`
 
 // Full rounded-square app icon (iOS/PWA style squircle).
 function iconSquircle(radius = 115) {
   return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <rect width="512" height="512" rx="${radius}" fill="url(#g)"/>
+    <rect width="512" height="512" rx="${radius}" fill="url(#sheen)"/>
     ${chevron()}
   </svg>`
 }
@@ -43,6 +57,7 @@ function iconSquircle(radius = 115) {
 function iconMaskable() {
   return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <rect width="512" height="512" fill="url(#g)"/>
+    <rect width="512" height="512" fill="url(#sheen)"/>
     ${chevron({ inset: 156, top: 182, gap: 60, width: 42 })}
   </svg>`
 }
@@ -51,6 +66,7 @@ function iconMaskable() {
 function iconCircle() {
   return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
     <circle cx="256" cy="256" r="256" fill="url(#g)"/>
+    <circle cx="256" cy="256" r="256" fill="url(#sheen)"/>
     ${chevron({ inset: 140, top: 168, gap: 66, width: 46 })}
   </svg>`
 }
