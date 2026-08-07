@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Check, Headphones, Loader2, Plus, ShoppingCart } from "lucide-react"
 import { createBookCheckout } from "@/app/actions/books"
 import { useCart, type CartItem } from "@/components/cart-provider"
+import { usePlatform } from "@/hooks/use-platform"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/plans"
 
@@ -29,6 +30,7 @@ export function BuyBookButton({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const { has, add, setOpen } = useCart()
+  const { isIOS } = usePlatform()
   const inCart = has(bookId)
 
   function handleBuy() {
@@ -50,6 +52,19 @@ export function BuyBookButton({
         <Headphones className="h-4 w-4" />
         Listen now
       </Button>
+    )
+  }
+
+  // Apple Guideline 3.1.1: inside the iOS app we cannot present an external
+  // (non-IAP) purchase flow for this digital title. Show a neutral note instead
+  // of the Buy / Add-to-cart controls. On web and Android the full flow renders.
+  if (isIOS) {
+    return (
+      <p className={"text-sm text-muted-foreground " + (className ?? "")}>
+        Get this book on{" "}
+        <span className="font-medium text-foreground">voxyfi.com</span>. Once you
+        own it, it&apos;s ready to listen here.
+      </p>
     )
   }
 

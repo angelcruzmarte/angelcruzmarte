@@ -11,6 +11,7 @@ import {
   CreditCard,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
+import { usePlatform } from "@/hooks/use-platform"
 import { buttonVariants } from "@/components/ui/button"
 import { PremiumBadge } from "@/components/premium-badge"
 import { cn } from "@/lib/utils"
@@ -34,6 +35,7 @@ type Props = {
 
 export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
   const router = useRouter()
+  const { isIOS } = usePlatform()
 
   async function handleSignOut() {
     await authClient.signOut()
@@ -89,7 +91,7 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {!isSubscribed && (
+        {!isSubscribed && !isIOS && (
           <>
             <DropdownMenuItem
               render={<Link href="/subscribe" />}
