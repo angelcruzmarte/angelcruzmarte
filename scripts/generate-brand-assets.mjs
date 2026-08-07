@@ -9,6 +9,9 @@ const ROOT = process.cwd()
 const PUB = path.join(ROOT, "public")
 const APP = path.join(ROOT, "app")
 const BRAND = path.join(PUB, "brand")
+// Source images consumed by @capacitor/assets to generate native iOS/Android
+// icons and splash screens (run `npx @capacitor/assets generate` in the wrapper).
+const ASSETS = path.join(ROOT, "assets")
 
 // Richer, more vibrant emerald ramp: deep rich forest → vivid emerald → bright
 // spring emerald. More saturated than the previous two-tone so the mark pops,
@@ -147,6 +150,54 @@ function lockup(w, h, { bg = "gradient", fg = "#ffffff" } = {}) {
   </svg>`
 }
 
+// Full-bleed App Store / store marketing icon (no transparency, no rounding —
+// Apple applies the mask itself and REJECTS icons with an alpha channel). The
+// gradient fills the entire square and the glyph sits in the center.
+function iconFullBleed() {
+  return `<svg width="1024" height="1024" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
+    <rect width="512" height="512" fill="url(#g)"/>
+    <rect width="512" height="512" fill="url(#sheen)"/>
+    ${chevron()}
+  </svg>`
+}
+
+// Plain gradient square (no glyph) — Android adaptive-icon background layer.
+function iconBackground() {
+  return `<svg width="1024" height="1024" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
+    <rect width="512" height="512" fill="url(#g)"/>
+  </svg>`
+}
+
+// Launch splash (square canvas so @capacitor/assets can crop to every device).
+// Gradient background with a centered chevron mark and wordmark beneath.
+function splash({ dark = false } = {}) {
+  const S = 2732
+  const c = S / 2
+  const tile = 620
+  const bg = dark
+    ? `<rect width="${S}" height="${S}" fill="#06231a"/>`
+    : `<rect width="${S}" height="${S}" fill="url(#gs)"/>`
+  const capH = 150
+  const scale = capH / 100
+  const wordW = WORD_W * scale
+  return `<svg width="${S}" height="${S}" viewBox="0 0 ${S} ${S}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="gs" x1="0" y1="0" x2="${S}" y2="${S}" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="${DEEP}"/>
+        <stop offset="0.52" stop-color="${MID}"/>
+        <stop offset="1" stop-color="${EMERALD}"/>
+      </linearGradient>
+    </defs>
+    ${bg}
+    <g transform="translate(${c - tile / 2} ${c - tile / 2 - 120})">
+      <g transform="scale(${tile / 512})">${chevron({ stroke: "#ffffff" })}</g>
+    </g>
+    <g transform="translate(${c - wordW / 2} ${c + tile / 2 - 40}) scale(${scale})">
+      ${wordmark("#ffffff")}
+    </g>
+  </svg>`
+}
+
 const buf = (svg) => Buffer.from(svg)
 
 async function png(svg, size, outPath, background) {
@@ -239,6 +290,18 @@ async function main() {
   const og = lockup(1200, 630, { bg: "gradient" })
   written.push(await png(og, [1200, 630], path.join(APP, "opengraph-image.png")))
   written.push(await png(og, [1200, 630], path.join(APP, "twitter-image.png")))
+
+  // ---- Native / App Store assets ----
+  // App Store marketing icon: 1024, opaque (flattened), no rounding.
+  written.push(await png(iconFullBleed(), 1024, path.join(BRAND, "app-store", "app-store-icon-1024.png"), DEEP))
+
+  // @capacitor/assets sources (root /assets). It generates every iOS/Android
+  // icon + splash size from these five files.
+  written.push(await png(iconFullBleed(), 1024, path.join(ASSETS, "icon-only.png"), DEEP))
+  written.push(await png(androidForeground(), 1024, path.join(ASSETS, "icon-foreground.png")))
+  written.push(await png(iconFullBleed(), 1024, path.join(ASSETS, "icon-background.png"), DEEP))
+  written.push(await png(splash(), 2732, path.join(ASSETS, "splash.png"), DEEP))
+  written.push(await png(splash({ dark: true }), 2732, path.join(ASSETS, "splash-dark.png"), "#06231a"))
 
   console.log("Generated:\n" + written.map((w) => "  " + path.relative(ROOT, w)).join("\n"))
 }
