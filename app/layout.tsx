@@ -35,30 +35,34 @@ export const metadata: Metadata = {
     title: 'VOXYFI — Listen to anything',
     description:
       'Turn any text into natural-sounding speech. Paste an article, document, or note and listen with word-by-word highlighting, adjustable speed, and multiple voices.',
+    locale: 'en_US',
+    // Social preview image is provided by the file-based convention
+    // (app/opengraph-image.png), which Next.js renders automatically.
   },
   twitter: {
     card: 'summary_large_image',
     title: 'VOXYFI — Listen to anything',
     description:
       'Turn any text into natural-sounding speech with word-by-word highlighting, adjustable speed, and multiple voices.',
+    // Preview image is provided by app/twitter-image.png (file convention).
   },
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png?v=7',
+        url: '/icon-light-32x32.png?v=8',
         media: '(prefers-color-scheme: light)',
       },
       {
-        url: '/icon-dark-32x32.png?v=7',
+        url: '/icon-dark-32x32.png?v=8',
         media: '(prefers-color-scheme: dark)',
       },
       {
-        url: '/icon.svg?v=7',
+        url: '/icon.svg?v=8',
         type: 'image/svg+xml',
       },
     ],
-    shortcut: '/favicon.ico?v=7',
-    apple: '/apple-icon.png?v=7',
+    shortcut: '/favicon.ico?v=8',
+    apple: '/apple-icon.png?v=8',
   },
   manifest: '/manifest.webmanifest',
 }
