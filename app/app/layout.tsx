@@ -8,6 +8,7 @@ import { CartProvider } from "@/components/cart-provider"
 import { CartDrawer } from "@/components/cart-drawer"
 import { ReadingAssistant } from "@/components/reading-assistant"
 import { UserMenu } from "@/components/user-menu"
+import { WebOnly } from "@/components/web-only"
 import { Badge } from "@/components/ui/badge"
 import { BrandLogo } from "@/components/brand-logo"
 import { PremiumBadge } from "@/components/premium-badge"
@@ -51,15 +52,17 @@ export default async function AppLayout({
           {subscribed ? (
             <PremiumBadge />
           ) : (
-            <Link href="/subscribe" aria-label="Upgrade to Premium">
-              <Badge
-                variant="outline"
-                className="cursor-pointer gap-1 border-primary/40 text-primary transition-colors hover:bg-primary/10"
-              >
-                <ArrowUp className="h-3 w-3" aria-hidden="true" />
-                Upgrade
-              </Badge>
-            </Link>
+            <WebOnly>
+              <Link href="/subscribe" aria-label="Upgrade to Premium">
+                <Badge
+                  variant="outline"
+                  className="cursor-pointer gap-1 border-primary/40 text-primary transition-colors hover:bg-primary/10"
+                >
+                  <ArrowUp className="h-3 w-3" aria-hidden="true" />
+                  Upgrade
+                </Badge>
+              </Link>
+            </WebOnly>
           )}
           <UserMenu
             name={user.name}

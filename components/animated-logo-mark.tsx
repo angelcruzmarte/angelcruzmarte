@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils"
 
 /**
- * Animated version of the VOXYFI glyph — the two nested "Voice Chevron" strokes
- * gently bob up and down in a staggered wave while `playing`, evoking voice /
- * playback motion, then rest in the static chevron shape. Geometry matches
- * {@link LogoMark} and the favicon (/public/icon.svg) exactly, so the static
- * and animated marks are interchangeable.
+ * Animated version of the VOXYFI glyph — the two downward chevrons gently bob
+ * up and down in a staggered wave while `playing`, evoking playback motion,
+ * then rest in the static shape. Geometry and colors match {@link LogoMark} and
+ * the favicon (/public/icon.svg) exactly, so the static and animated marks are
+ * interchangeable.
  *
  * Motion is pure CSS (see `.voxyfi-anim` / `@keyframes voxyfi-chev-bob` in
  * globals.css) and automatically disables under `prefers-reduced-motion`.
@@ -21,24 +21,39 @@ export function AnimatedLogoMark({
   return (
     <svg
       viewBox="0 0 512 512"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={48}
-      strokeLinecap="round"
-      strokeLinejoin="round"
       className={cn("h-5 w-5", playing && "voxyfi-anim", className)}
       role="img"
       aria-label="VOXYFI"
     >
-      <path
-        d="M96 128 L256 288 L416 128"
-        opacity={0.55}
-        className={playing ? "voxyfi-chv voxyfi-chv-back" : undefined}
+      {/* Black disc */}
+      <circle cx="256" cy="256" r="256" fill="#050807" />
+      {/* Glowing emerald ring */}
+      <circle
+        cx="256"
+        cy="256"
+        r="230"
+        fill="none"
+        stroke="#13d18e"
+        strokeWidth="26"
       />
-      <path
-        d="M96 210 L256 370 L416 210"
-        className={playing ? "voxyfi-chv voxyfi-chv-front" : undefined}
-      />
+      {/* Two downward chevrons: emerald over white */}
+      <g
+        fill="none"
+        strokeWidth="46"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path
+          d="M150 190 L256 276 L362 190"
+          stroke="#13d18e"
+          className={playing ? "voxyfi-chv voxyfi-chv-back" : undefined}
+        />
+        <path
+          d="M150 270 L256 356 L362 270"
+          stroke="#ffffff"
+          className={playing ? "voxyfi-chv voxyfi-chv-front" : undefined}
+        />
+      </g>
     </svg>
   )
 }

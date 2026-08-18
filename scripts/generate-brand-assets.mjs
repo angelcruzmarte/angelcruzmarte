@@ -1,5 +1,7 @@
 // Regenerates the entire VOXYFI raster icon + social asset set from the single
-// "Voice Chevron" vector master. Run: node scripts/generate-brand-assets.mjs
+// vector master: a black disc ringed by a glowing emerald circle, holding two
+// downward "double chevron" strokes (emerald over white).
+// Run: node scripts/generate-brand-assets.mjs
 // Uses sharp for SVG->PNG rasterization and a tiny inline ICO encoder.
 import sharp from "sharp"
 import { promises as fs } from "node:fs"
@@ -9,102 +11,89 @@ const ROOT = process.cwd()
 const PUB = path.join(ROOT, "public")
 const APP = path.join(ROOT, "app")
 const BRAND = path.join(PUB, "brand")
+// Source images consumed by @capacitor/assets to generate native iOS/Android
+// icons and splash screens (run `npx @capacitor/assets generate` in the wrapper).
+const ASSETS = path.join(ROOT, "assets")
 
-// Richer, more vibrant emerald ramp: deep rich forest → vivid emerald → bright
-// spring emerald. More saturated than the previous two-tone so the mark pops,
-// especially at favicon sizes.
-const DEEP = "#083b26"
-const MID = "#0ea55e"
-const EMERALD = "#19e084"
+const BLACK = "#000000"
+const EMERALD = "#13d18e"
+const WHITE = "#ffffff"
 const CREAM = "#f5f2ea"
 
-// The Voice Chevron: two nested rounded chevrons (viewBox 512). `stroke`,
-// `inset`, `top` and `gap` let each composition tune reach / vertical centering.
-function chevron({ stroke = "#ffffff", inset = 120, top = 152, gap = 72, width = 48 } = {}) {
-  const right = 512 - inset
-  const midTop = top + 136
-  const bTop = top + gap
-  const bMid = bTop + 136
-  return `<g fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M${inset} ${top} L256 ${midTop} L${right} ${top}" opacity="0.55"/>
-    <path d="M${inset} ${bTop} L256 ${bMid} L${right} ${bTop}"/>
+// Glow filter (soft emerald bloom behind the ring). std tunes the spread.
+function glowDefs(std = 12) {
+  return `<filter id="glow" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="${std}"/></filter>`
+}
+
+// The mark: glowing emerald ring + two downward chevrons (emerald over white).
+// `scale` shrinks it about the center so it can be pulled into a safe zone for
+// maskable / adaptive icons. Assumes a 512 viewBox and a `glow` filter in defs.
+function mark({ scale = 1 } = {}) {
+  const inner = `
+    <circle cx="256" cy="256" r="230" fill="none" stroke="${EMERALD}" stroke-width="26" opacity="0.7" filter="url(#glow)"/>
+    <circle cx="256" cy="256" r="230" fill="none" stroke="${EMERALD}" stroke-width="26"/>
+    <g fill="none" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M150 190 L256 276 L362 190" stroke="${EMERALD}"/>
+      <path d="M150 270 L256 356 L362 270" stroke="${WHITE}"/>
+    </g>`
+  if (scale === 1) return inner
+  return `<g transform="translate(256 256) scale(${scale}) translate(-256 -256)">${inner}</g>`
+}
+
+// Bare double-chevron in a single color, on transparent (overlays / downloads).
+function chevronOnly(stroke) {
+  return `<g fill="none" stroke="${stroke}" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M120 176 L256 300 L392 176"/>
+    <path d="M120 268 L256 392 L392 268"/>
   </g>`
 }
 
-const GRAD = `<defs>
-  <linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-    <stop offset="0" stop-color="${DEEP}"/>
-    <stop offset="0.52" stop-color="${MID}"/>
-    <stop offset="1" stop-color="${EMERALD}"/>
-  </linearGradient>
-  <linearGradient id="sheen" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-    <stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>
-    <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
-  </linearGradient>
-</defs>`
-
-// Full rounded-square app icon (iOS/PWA style squircle).
-function iconSquircle(radius = 115) {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
-    <rect width="512" height="512" rx="${radius}" fill="url(#g)"/>
-    <rect width="512" height="512" rx="${radius}" fill="url(#sheen)"/>
-    ${chevron()}
+// Full square app icon — black canvas with the glowing ring mark centered
+// (matches the master artwork). `radius` rounds the corners (0 = full square).
+function iconSquare(radius = 0) {
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
+    <rect width="512" height="512" rx="${radius}" fill="${BLACK}"/>
+    ${mark()}
   </svg>`
 }
 
-// Maskable: full-bleed gradient (no corner radius — the OS applies its own
-// mask) with the glyph pulled into the safe zone so it never gets clipped.
+// Maskable: full-bleed black with the mark pulled into the safe zone so the OS
+// circular/rounded mask never clips the ring.
 function iconMaskable() {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
-    <rect width="512" height="512" fill="url(#g)"/>
-    <rect width="512" height="512" fill="url(#sheen)"/>
-    ${chevron({ inset: 156, top: 182, gap: 60, width: 42 })}
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
+    <rect width="512" height="512" fill="${BLACK}"/>
+    ${mark({ scale: 0.72 })}
   </svg>`
 }
 
-// Circular watchOS-style icon.
+// Circular watchOS-style icon (black disc + mark).
 function iconCircle() {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${GRAD}
-    <circle cx="256" cy="256" r="256" fill="url(#g)"/>
-    <circle cx="256" cy="256" r="256" fill="url(#sheen)"/>
-    ${chevron({ inset: 140, top: 168, gap: 66, width: 46 })}
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
+    <circle cx="256" cy="256" r="256" fill="${BLACK}"/>
+    ${mark()}
   </svg>`
 }
 
-// Android adaptive foreground (transparent, glyph in safe zone).
+// Android adaptive foreground (transparent; mark in the safe zone).
 function androidForeground() {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    ${chevron({ inset: 156, top: 182, gap: 60, width: 42 })}
+  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
+    ${mark({ scale: 0.66 })}
   </svg>`
 }
 
-// Bare chevron on transparent bg (overlays / downloadable mark).
-function markOnly(stroke) {
-  return `<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-    ${chevron({ stroke, inset: 96, top: 128, gap: 82 })}
-  </svg>`
-}
-
-// Vectorized "VOXYFI" wordmark (monoline, round caps/joins to echo the
-// chevron). Drawn in a 496x100 cap-height box so it renders with NO font
-// dependency (this environment has no fontconfig/pango, so <text> would tofu).
+// Vectorized "VOXYFI" wordmark (monoline, round caps/joins to echo the mark).
+// Drawn in a 496x100 cap-height box so it renders with NO font dependency
+// (this environment has no fontconfig/pango, so <text> would tofu).
 const WORD_W = 496
 function wordmark(color) {
-  const t = 18 // stroke thickness
-  // Each letter is placed at an x offset; paths use a shared 0..100 cap height.
+  const t = 18
   const letters = [
-    // V
-    `<path d="M9 0 L35 100 L61 0"/>`,
-    // O
-    `<ellipse cx="35" cy="50" rx="26" ry="41"/>`,
-    // X
-    `<path d="M9 0 L61 100 M61 0 L9 100"/>`,
-    // Y
-    `<path d="M9 0 L35 52 L61 0 M35 52 L35 100"/>`,
-    // F
-    `<path d="M9 100 L9 0 L58 0 M9 50 L48 50"/>`,
-    // I
-    `<path d="M20 0 L20 100"/>`,
+    `<path d="M9 0 L35 100 L61 0"/>`, // V
+    `<ellipse cx="35" cy="50" rx="26" ry="41"/>`, // O
+    `<path d="M9 0 L61 100 M61 0 L9 100"/>`, // X
+    `<path d="M9 0 L35 52 L61 0 M35 52 L35 100"/>`, // Y
+    `<path d="M9 100 L9 0 L58 0 M9 50 L48 50"/>`, // F
+    `<path d="M20 0 L20 100"/>`, // I
   ]
   const widths = [70, 70, 70, 70, 66, 40]
   const gap = 22
@@ -117,28 +106,30 @@ function wordmark(color) {
   return `<g fill="none" stroke="${color}" stroke-width="${t}" stroke-linecap="round" stroke-linejoin="round">${placed.join("")}</g>`
 }
 
-// Centered lockup (tile + vectorized wordmark) for social / share graphics.
-function lockup(w, h, { bg = "gradient", fg = "#ffffff" } = {}) {
-  const tile = Math.round(h * 0.26)
-  const capH = Math.round(tile * 0.52)
+// Centered lockup (mark badge + vectorized wordmark) for social / share
+// graphics. Defaults to the dark brand style (black bg, glowing mark, white
+// wordmark); `bg: "light"` uses a cream card with a dark wordmark.
+function lockup(w, h, { bg = "dark", fg = "#ffffff" } = {}) {
+  const tile = Math.round(h * 0.3)
+  const capH = Math.round(tile * 0.5)
   const scale = capH / 100
   const wordW = WORD_W * scale
-  const gap = Math.round(tile * 0.34)
+  const gap = Math.round(tile * 0.3)
   const groupW = tile + gap + wordW
   const gx = (w - groupW) / 2
   const tileY = (h - tile) / 2
   const wordY = (h - capH) / 2
   const background =
-    bg === "gradient"
-      ? `<rect width="${w}" height="${h}" fill="url(#g)"/>`
-      : `<rect width="${w}" height="${h}" fill="${CREAM}"/>`
-  const tileFill = bg === "gradient" ? "rgba(255,255,255,0.14)" : "url(#g)"
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">${GRAD}
+    bg === "light"
+      ? `<rect width="${w}" height="${h}" fill="${CREAM}"/>`
+      : `<rect width="${w}" height="${h}" fill="${BLACK}"/>`
+  const discFill = bg === "light" ? BLACK : "none"
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
     ${background}
     <g transform="translate(${gx} ${tileY})">
       <g transform="scale(${tile / 512})">
-        <rect width="512" height="512" rx="115" fill="${tileFill}"/>
-        ${chevron({ stroke: "#ffffff" })}
+        <circle cx="256" cy="256" r="256" fill="${discFill}"/>
+        ${mark()}
       </g>
     </g>
     <g transform="translate(${gx + tile + gap} ${wordY}) scale(${scale})">
@@ -147,11 +138,60 @@ function lockup(w, h, { bg = "gradient", fg = "#ffffff" } = {}) {
   </svg>`
 }
 
+// Full-bleed App Store marketing icon (1024, opaque, no rounding, no alpha —
+// Apple REJECTS icons with an alpha channel).
+function iconFullBleed() {
+  return `<svg width="1024" height="1024" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs()}</defs>
+    <rect width="512" height="512" fill="${BLACK}"/>
+    ${mark()}
+  </svg>`
+}
+
+// Plain black square (no mark) — Android adaptive-icon background layer.
+function iconBackground() {
+  return `<svg width="1024" height="1024" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <rect width="512" height="512" fill="${BLACK}"/>
+  </svg>`
+}
+
+// Launch splash (square canvas so @capacitor/assets can crop to every device).
+// Black background with a centered mark and the wordmark beneath.
+function splash() {
+  const S = 2732
+  const c = S / 2
+  const tile = 660
+  const capH = 150
+  const scale = capH / 100
+  const wordW = WORD_W * scale
+  return `<svg width="${S}" height="${S}" viewBox="0 0 ${S} ${S}" xmlns="http://www.w3.org/2000/svg"><defs>${glowDefs(20)}</defs>
+    <rect width="${S}" height="${S}" fill="${BLACK}"/>
+    <g transform="translate(${c - tile / 2} ${c - tile / 2 - 120})">
+      <g transform="scale(${tile / 512})">${mark()}</g>
+    </g>
+    <g transform="translate(${c - wordW / 2} ${c + tile / 2 - 40}) scale(${scale})">
+      ${wordmark(WHITE)}
+    </g>
+  </svg>`
+}
+
 const buf = (svg) => Buffer.from(svg)
+
+// Intrinsic px width declared on the <svg>, used to pick a rasterization
+// density that renders a crisp base without exceeding sharp's pixel limit.
+function svgWidth(svg) {
+  const m = svg.match(/width="(\d+)"/)
+  return m ? Number(m[1]) : 512
+}
+function densityFor(svg, target) {
+  const iw = svgWidth(svg)
+  // Aim for a base render ~1.3x the target longest edge.
+  return Math.max(72, Math.min(600, Math.round((96 * target * 1.3) / iw)))
+}
 
 async function png(svg, size, outPath, background) {
   await fs.mkdir(path.dirname(outPath), { recursive: true })
-  let img = sharp(buf(svg), { density: 512 })
+  const target = Array.isArray(size) ? Math.max(size[0], size[1]) : size
+  let img = sharp(buf(svg), { density: densityFor(svg, target) })
   if (Array.isArray(size)) img = img.resize(size[0], size[1])
   else img = img.resize(size, size)
   if (background) img = img.flatten({ background })
@@ -189,30 +229,30 @@ async function writeIco(sizes, svg, outPath) {
 }
 
 async function main() {
-  const squircle = iconSquircle()
+  const square = iconSquare()
   const maskable = iconMaskable()
   const circle = iconCircle()
   const written = []
 
   // PWA / general app icons
-  written.push(await png(squircle, 192, path.join(PUB, "icon-192.png")))
-  written.push(await png(squircle, 512, path.join(PUB, "icon-512.png")))
-  written.push(await png(squircle, 1024, path.join(PUB, "icon-1024.png")))
+  written.push(await png(square, 192, path.join(PUB, "icon-192.png")))
+  written.push(await png(square, 512, path.join(PUB, "icon-512.png")))
+  written.push(await png(square, 1024, path.join(PUB, "icon-1024.png")))
   written.push(await png(maskable, 512, path.join(PUB, "icon-maskable-512.png")))
 
-  // Apple touch icon (opaque, Apple adds rounding) — 180
-  written.push(await png(iconSquircle(0), 180, path.join(PUB, "apple-icon.png")))
+  // Apple touch icon (opaque, Apple adds rounding)
+  written.push(await png(iconSquare(0), 180, path.join(PUB, "apple-icon.png"), BLACK))
 
-  // Browser tab PNGs (light/dark identical — gradient reads on both)
-  written.push(await png(squircle, 32, path.join(PUB, "icon-light-32x32.png")))
-  written.push(await png(squircle, 32, path.join(PUB, "icon-dark-32x32.png")))
-  written.push(await png(squircle, 16, path.join(BRAND, "favicon", "favicon-16.png")))
-  written.push(await png(squircle, 32, path.join(BRAND, "favicon", "favicon-32.png")))
-  written.push(await png(squircle, 48, path.join(BRAND, "favicon", "favicon-48.png")))
-  written.push(await png(iconSquircle(0), 180, path.join(BRAND, "favicon", "apple-touch-180.png")))
+  // Browser tab PNGs (light/dark identical — the mark reads on both)
+  written.push(await png(square, 32, path.join(PUB, "icon-light-32x32.png")))
+  written.push(await png(square, 32, path.join(PUB, "icon-dark-32x32.png")))
+  written.push(await png(square, 16, path.join(BRAND, "favicon", "favicon-16.png")))
+  written.push(await png(square, 32, path.join(BRAND, "favicon", "favicon-32.png")))
+  written.push(await png(square, 48, path.join(BRAND, "favicon", "favicon-48.png")))
+  written.push(await png(iconSquare(0), 180, path.join(BRAND, "favicon", "apple-touch-180.png"), BLACK))
 
   // Favicon .ico (16/32/48)
-  written.push(await writeIco([16, 32, 48], squircle, path.join(PUB, "favicon.ico")))
+  written.push(await writeIco([16, 32, 48], square, path.join(PUB, "favicon.ico")))
 
   // Apple Watch icon set (circular)
   for (const s of [1024, 216, 172, 100, 87, 55]) {
@@ -221,24 +261,36 @@ async function main() {
 
   // Android adaptive icon layers
   written.push(await png(androidForeground(), 432, path.join(BRAND, "android", "ic_launcher_foreground.png")))
-  written.push(await png(iconSquircle(0), 512, path.join(BRAND, "android", "ic_launcher_512.png")))
-  written.push(await png(iconSquircle(0), 512, path.join(BRAND, "android", "play-store-512.png")))
+  written.push(await png(iconSquare(0), 512, path.join(BRAND, "android", "ic_launcher_512.png"), BLACK))
+  written.push(await png(iconSquare(0), 512, path.join(BRAND, "android", "play-store-512.png"), BLACK))
 
   // Social / store graphics (existing references on the brand page)
-  written.push(await png(lockup(1200, 630, { bg: "gradient" }), [1200, 630], path.join(BRAND, "social", "social-card-1200x630.png")))
-  written.push(await png(lockup(1200, 630, { bg: "light", fg: DEEP }), [1200, 630], path.join(BRAND, "social", "promo-light-1200x630.png")))
-  written.push(await png(lockup(1024, 500, { bg: "gradient" }), [1024, 500], path.join(BRAND, "social", "play-store-feature-1024x500.png")))
+  written.push(await png(lockup(1200, 630, { bg: "dark" }), [1200, 630], path.join(BRAND, "social", "social-card-1200x630.png")))
+  written.push(await png(lockup(1200, 630, { bg: "light", fg: "#083b26" }), [1200, 630], path.join(BRAND, "social", "promo-light-1200x630.png")))
+  written.push(await png(lockup(1024, 500, { bg: "dark" }), [1024, 500], path.join(BRAND, "social", "play-store-feature-1024x500.png")))
 
   // High-quality downloadable social assets
-  written.push(await png(iconSquircle(460), 2048, path.join(BRAND, "social", "voxyfi-avatar-2048.png"))) // rounded profile pic
-  written.push(await png(markOnly("#ffffff"), 2048, path.join(BRAND, "social", "voxyfi-mark-white-2048.png")))
-  written.push(await png(markOnly(DEEP), 2048, path.join(BRAND, "social", "voxyfi-mark-green-2048.png")))
-  written.push(await png(lockup(2400, 1260, { bg: "gradient" }), [2400, 1260], path.join(BRAND, "social", "voxyfi-social-banner-2400x1260.png")))
+  written.push(await png(iconCircle(), 2048, path.join(BRAND, "social", "voxyfi-avatar-2048.png"))) // round profile pic
+  written.push(await png(`<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${chevronOnly(WHITE)}</svg>`, 2048, path.join(BRAND, "social", "voxyfi-mark-white-2048.png")))
+  written.push(await png(`<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">${chevronOnly(EMERALD)}</svg>`, 2048, path.join(BRAND, "social", "voxyfi-mark-green-2048.png")))
+  written.push(await png(lockup(2400, 1260, { bg: "dark" }), [2400, 1260], path.join(BRAND, "social", "voxyfi-social-banner-2400x1260.png")))
 
   // App-level Open Graph / Twitter images
-  const og = lockup(1200, 630, { bg: "gradient" })
+  const og = lockup(1200, 630, { bg: "dark" })
   written.push(await png(og, [1200, 630], path.join(APP, "opengraph-image.png")))
   written.push(await png(og, [1200, 630], path.join(APP, "twitter-image.png")))
+
+  // ---- Native / App Store assets ----
+  // App Store marketing icon: 1024, opaque (flattened), no rounding.
+  written.push(await png(iconFullBleed(), 1024, path.join(BRAND, "app-store", "app-store-icon-1024.png"), BLACK))
+
+  // @capacitor/assets sources (root /assets). It generates every iOS/Android
+  // icon + splash size from these five files.
+  written.push(await png(iconFullBleed(), 1024, path.join(ASSETS, "icon-only.png"), BLACK))
+  written.push(await png(androidForeground(), 1024, path.join(ASSETS, "icon-foreground.png")))
+  written.push(await png(iconBackground(), 1024, path.join(ASSETS, "icon-background.png"), BLACK))
+  written.push(await png(splash(), 2732, path.join(ASSETS, "splash.png"), BLACK))
+  written.push(await png(splash(), 2732, path.join(ASSETS, "splash-dark.png"), BLACK))
 
   console.log("Generated:\n" + written.map((w) => "  " + path.relative(ROOT, w)).join("\n"))
 }

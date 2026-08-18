@@ -5,12 +5,14 @@ import { createPortal } from "react-dom"
 import { Loader2, ShoppingBag, Trash2, X } from "lucide-react"
 import { createCartCheckout } from "@/app/actions/books"
 import { useCart } from "@/components/cart-provider"
+import { usePlatform } from "@/hooks/use-platform"
 import { BookCover } from "@/components/book-cover"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/plans"
 
 export function CartDrawer() {
   const { items, totalCents, remove, open, setOpen } = useCart()
+  const { isIOS } = usePlatform()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -27,6 +29,9 @@ export function CartDrawer() {
     }
   }, [open])
 
+  // Apple Guideline 3.1.1: the cart is a native purchase surface, never shown
+  // inside the iOS app.
+  if (isIOS) return null
   if (!mounted || !open) return null
 
   function checkout() {

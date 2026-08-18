@@ -9,6 +9,7 @@ import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { SubscribePlans } from "@/components/subscribe-plans"
 import { PricingViewTracker } from "@/components/pricing-view-tracker"
+import { WebOnly } from "@/components/web-only"
 
 export default async function SubscribePage({
   searchParams,
@@ -51,29 +52,33 @@ export default async function SubscribePage({
             word-by-word highlighting.
           </p>
           {trialEligible && (
-            <p className="mx-auto mt-5 inline-flex items-center rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-              Start with a 7-day free trial &mdash; cancel anytime
-            </p>
+            <WebOnly>
+              <p className="mx-auto mt-5 inline-flex items-center rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+                Start with a 7-day free trial &mdash; cancel anytime
+              </p>
+            </WebOnly>
           )}
         </div>
 
         {promo && promo.showBanner && (
-          <div className="mx-auto mt-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Limited-time offer
-            </p>
-            <p className="mt-1 text-balance text-xl font-semibold">
-              {promo.name} &mdash; {promo.percentOff}% off
-            </p>
-            {promo.description && (
-              <p className="mt-1 text-sm text-muted-foreground">
-                {promo.description}
+          <WebOnly>
+            <div className="mx-auto mt-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Limited-time offer
               </p>
-            )}
-            <p className="mt-2 text-sm font-medium text-primary">
-              Discount applied automatically at checkout
-            </p>
-          </div>
+              <p className="mt-1 text-balance text-xl font-semibold">
+                {promo.name} &mdash; {promo.percentOff}% off
+              </p>
+              {promo.description && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {promo.description}
+                </p>
+              )}
+              <p className="mt-2 text-sm font-medium text-primary">
+                Discount applied automatically at checkout
+              </p>
+            </div>
+          </WebOnly>
         )}
 
         {canceled && (
@@ -103,22 +108,24 @@ export default async function SubscribePage({
           </Link>
         </p>
 
-        <p className="mx-auto mt-6 max-w-md text-balance text-center text-xs leading-relaxed text-muted-foreground">
-          Subscriptions renew automatically until canceled. By subscribing you
-          agree to our{" "}
-          <Link href="/legal/terms" className="underline hover:text-foreground">
-            Terms
-          </Link>
-          ,{" "}
-          <Link href="/legal/privacy" className="underline hover:text-foreground">
-            Privacy Policy
-          </Link>
-          , and{" "}
-          <Link href="/legal/refund" className="underline hover:text-foreground">
-            Refund Policy
-          </Link>
-          .
-        </p>
+        <WebOnly>
+          <p className="mx-auto mt-6 max-w-md text-balance text-center text-xs leading-relaxed text-muted-foreground">
+            Subscriptions renew automatically until canceled. By subscribing you
+            agree to our{" "}
+            <Link href="/legal/terms" className="underline hover:text-foreground">
+              Terms
+            </Link>
+            ,{" "}
+            <Link href="/legal/privacy" className="underline hover:text-foreground">
+              Privacy Policy
+            </Link>
+            , and{" "}
+            <Link href="/legal/refund" className="underline hover:text-foreground">
+              Refund Policy
+            </Link>
+            .
+          </p>
+        </WebOnly>
       </main>
     </div>
   )

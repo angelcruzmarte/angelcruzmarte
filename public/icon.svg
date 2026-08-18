@@ -1,19 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="VOXYFI">
   <defs>
-    <linearGradient id="voxyfiTile" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#083b26"/>
-      <stop offset="0.52" stop-color="#0ea55e"/>
-      <stop offset="1" stop-color="#19e084"/>
-    </linearGradient>
-    <linearGradient id="voxyfiSheen" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.26"/>
-      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
+    <filter id="voxyfiGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="115" fill="url(#voxyfiTile)"/>
-  <rect width="512" height="512" rx="115" fill="url(#voxyfiSheen)"/>
-  <g fill="none" stroke="#ffffff" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M120 152 L256 288 L392 152" opacity="0.55"/>
-    <path d="M120 224 L256 360 L392 224"/>
+  <rect width="512" height="512" fill="#000000"/>
+  <!-- Glowing emerald ring -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#13d18e" stroke-width="26" opacity="0.7" filter="url(#voxyfiGlow)"/>
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#13d18e" stroke-width="26"/>
+  <!-- Two downward chevrons: emerald over white -->
+  <g fill="none" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 190 L256 276 L362 190" stroke="#13d18e"/>
+    <path d="M150 270 L256 356 L362 270" stroke="#ffffff"/>
   </g>
 </svg>

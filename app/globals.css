@@ -198,11 +198,11 @@
     var(--brand-gradient);
 }
 
-/* Animated VOXYFI "Voice Chevron" mark: the two nested chevrons gently bob up
-   and down in a staggered wave while "playing" (evoking voice / playback
-   motion), then settle into the resting chevron shape. Each chevron transforms
-   about its own center (transform-box: fill-box) and the front chevron trails
-   the back one for a lively, organic ripple. */
+/* Animated VOXYFI mark: the two downward chevrons gently bob up and down in a
+   staggered wave while "playing" (evoking playback motion), then settle into
+   the resting shape. Each chevron transforms about its own center
+   (transform-box: fill-box) and the front (white) chevron trails the back
+   (emerald) one for a lively, organic ripple. */
 @keyframes voxyfi-chev-bob {
   0%,
   100% {
@@ -245,13 +245,14 @@
   font-feature-settings: "cv11";
 }
 
-/* The logo lockup: the tile carries a soft two-layer brand shadow and an inset
-   light edge; on hover/focus it lifts a hair and a gentle sheen sweeps across,
-   giving the mark a premium, tactile feel. */
+/* The logo lockup: the black disc carries a soft emerald neon glow that echoes
+   the ring; on hover/focus it lifts a hair, the glow intensifies, and a gentle
+   sheen sweeps across, giving the mark a premium, tactile feel. */
 .voxyfi-logo-tile {
   box-shadow:
-    0 1px 2px rgba(18, 63, 46, 0.28),
-    0 6px 16px -8px rgba(18, 63, 46, 0.55);
+    0 0 0 1px rgba(19, 209, 142, 0.25),
+    0 0 12px -1px rgba(19, 209, 142, 0.45),
+    0 4px 14px -6px rgba(0, 0, 0, 0.6);
   transition:
     transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -260,8 +261,9 @@
 .voxyfi-logo:focus-visible .voxyfi-logo-tile {
   transform: translateY(-1px);
   box-shadow:
-    0 2px 4px rgba(18, 63, 46, 0.32),
-    0 12px 24px -8px rgba(18, 63, 46, 0.6);
+    0 0 0 1px rgba(19, 209, 142, 0.4),
+    0 0 22px 0 rgba(19, 209, 142, 0.6),
+    0 8px 20px -8px rgba(0, 0, 0, 0.7);
 }
 .voxyfi-logo-sheen {
   position: absolute;

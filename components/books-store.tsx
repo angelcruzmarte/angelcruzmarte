@@ -55,6 +55,7 @@ import type { Suggestion } from "@/app/api/store/suggest/route"
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
+import { usePlatform } from "@/hooks/use-platform"
 import {
   Popover,
   PopoverContent,
@@ -151,6 +152,7 @@ export function BooksStore({
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const { count, totalCents, setOpen } = useCart()
+  const { isIOS } = usePlatform()
 
   // Language handling. The store defaults to English; other languages are only
   // surfaced on demand via the language picker (search-on-demand), never as a
@@ -303,20 +305,22 @@ export function BooksStore({
               Search and listen to millions of books.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
-            className="relative flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-semibold shadow-sm transition-colors hover:bg-secondary"
-          >
-            <ShoppingBag className="h-4 w-4 text-primary" />
-            {count > 0 ? formatPrice(totalCents) : "$0"}
-            {count > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
-                {count}
-              </span>
-            )}
-          </button>
+          {!isIOS && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
+              className="relative flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-semibold shadow-sm transition-colors hover:bg-secondary"
+            >
+              <ShoppingBag className="h-4 w-4 text-primary" />
+              {count > 0 ? formatPrice(totalCents) : "$0"}
+              {count > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
+                  {count}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Prominent, always-visible search bar */}
@@ -750,8 +754,11 @@ function BookHero({
   favorited: boolean
 }) {
   const { has, add, remove } = useCart()
+  const { isIOS } = usePlatform()
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
+  // Apple Guideline 3.1.1: no native purchase surface inside the iOS app.
+  const gateNative = isIOS && !owned && !isAffiliate
 
   return (
     <section
@@ -804,6 +811,10 @@ function BookHero({
                 <Headphones className="h-4 w-4" />
                 Listen to sample
               </Link>
+            ) : gateNative ? (
+              <span className="flex h-11 items-center gap-2 rounded-full bg-secondary/60 px-6 text-sm font-semibold text-muted-foreground">
+                Available on voxyfi.com
+              </span>
             ) : inCart ? (
               <button
                 type="button"
@@ -985,26 +996,33 @@ function StoreBookCard({
   favorited: boolean
 }) {
   const { has, add, remove } = useCart()
+  const { isIOS } = usePlatform()
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
+  // Apple Guideline 3.1.1: no price/purchase surface for native titles on iOS.
+  const gateNative = isIOS && !owned && !isAffiliate
 
   const badge: BookCardBadge = owned
     ? { kind: "owned" }
     : isAffiliate
       ? { kind: "sample" }
-      : { kind: "price", priceInCents: book.priceInCents }
+      : gateNative
+        ? null
+        : { kind: "price", priceInCents: book.priceInCents }
 
   const action: BookCardAction = owned
     ? { kind: "listen", href: `/app/listen/book/${book.id}` }
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }
-      : {
-          kind: "add",
-          priceInCents: book.priceInCents,
-          inCart,
-          onAdd: () => add(toCartItem(book)),
-          onRemove: () => remove(book.id),
-        }
+      : gateNative
+        ? { kind: "web-only" }
+        : {
+            kind: "add",
+            priceInCents: book.priceInCents,
+            inCart,
+            onAdd: () => add(toCartItem(book)),
+            onRemove: () => remove(book.id),
+          }
 
   return (
     <StoreCard

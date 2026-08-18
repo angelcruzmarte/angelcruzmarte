@@ -96,6 +96,9 @@ export type BookCardAction =
     }
   // Public-domain (Project Gutenberg) → add to library & listen for free.
   | { kind: "read-free"; onClick: () => void; pending?: boolean }
+  // Native purchasable title viewed inside the iOS app (Apple Guideline 3.1.1):
+  // no external purchase surface, just a note that it's available on the web.
+  | { kind: "web-only" }
   // Commercial title → buy on Amazon (affiliate out-link).
   | {
       kind: "buy"
@@ -174,6 +177,17 @@ function ActionButton({ action }: { action: BookCardAction }) {
           <BookMarked className="h-3.5 w-3.5" />
           Borrow
         </Link>
+      )
+    case "web-only":
+      return (
+        <span
+          className={cn(
+            ACTION_BASE,
+            "cursor-default bg-secondary/60 text-muted-foreground",
+          )}
+        >
+          On voxyfi.com
+        </span>
       )
     case "add":
       return action.inCart ? (
