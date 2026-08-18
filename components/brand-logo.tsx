@@ -16,23 +16,20 @@ type Size = "sm" | "md" | "lg"
  */
 const SIZES: Record<
   Size,
-  { tile: string; glyph: string; word: string; gap: string }
+  { tile: string; word: string; gap: string }
 > = {
   sm: {
-    tile: "h-8 w-8 rounded-[0.7rem]",
-    glyph: "h-[18px] w-[18px]",
+    tile: "h-8 w-8",
     word: "text-[0.95rem]",
     gap: "gap-2",
   },
   md: {
-    tile: "h-9 w-9 rounded-xl",
-    glyph: "h-5 w-5",
+    tile: "h-9 w-9",
     word: "text-lg",
     gap: "gap-2.5",
   },
   lg: {
-    tile: "h-11 w-11 rounded-2xl",
-    glyph: "h-6 w-6",
+    tile: "h-11 w-11",
     word: "text-2xl",
     gap: "gap-3",
   },
@@ -56,11 +53,11 @@ export function BrandLogo({
     >
       <span
         className={cn(
-          "voxyfi-logo-tile relative flex shrink-0 items-center justify-center overflow-hidden bg-brand-gradient text-white ring-1 ring-inset ring-white/20",
+          "voxyfi-logo-tile relative flex shrink-0 items-center justify-center overflow-hidden rounded-full",
           s.tile,
         )}
       >
-        <LogoMark className={cn("relative z-10", s.glyph)} />
+        <LogoMark className="relative z-10 h-full w-full" />
         <span aria-hidden="true" className="voxyfi-logo-sheen" />
       </span>
       {withWordmark && (
