@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { getCurrentUser, hasActiveSubscription, isAdmin } from "@/lib/session"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { buttonVariants } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
 import { WebOnly } from "@/components/web-only"
@@ -9,7 +9,6 @@ import { PremiumBadge } from "@/components/premium-badge"
 export async function SiteHeader() {
   const user = await getCurrentUser()
   const subscribed = hasActiveSubscription(user)
-  const admin = isAdmin(user)
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
@@ -42,7 +41,6 @@ export async function SiteHeader() {
               <UserMenu
                 name={user.name}
                 email={user.email}
-                isAdmin={admin}
                 isSubscribed={subscribed}
               />
             </>

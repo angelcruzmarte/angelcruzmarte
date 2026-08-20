@@ -30,9 +30,27 @@ export async function getUserId(): Promise<string> {
  */
 const ADMIN_EMAILS = new Set<string>(["admin@voxyfi.com"])
 
+/** Roles that grant access to the admin portal. `role` is stored as free text. */
+const ADMIN_ROLES = new Set<string>(["admin", "super_admin"])
+
+/**
+ * True when the account may access the admin portal. Both "admin" and
+ * "super_admin" qualify; a known owner email is always allowed. This is the
+ * single source of truth used by the admin layout guard AND every admin server
+ * action (`requireAdmin`), so access can never be granted by UI alone.
+ */
 export function isAdmin(u: User | null): boolean {
   if (!u) return false
-  return u.role === "admin" || ADMIN_EMAILS.has(u.email.toLowerCase())
+  return ADMIN_ROLES.has(u.role) || ADMIN_EMAILS.has(u.email.toLowerCase())
+}
+
+/**
+ * True only for the highest privilege tier. Reserved for destructive/global
+ * operations (e.g. managing other admins). A plain "admin" returns false.
+ */
+export function isSuperAdmin(u: User | null): boolean {
+  if (!u) return false
+  return u.role === "super_admin" || ADMIN_EMAILS.has(u.email.toLowerCase())
 }
 
 /**

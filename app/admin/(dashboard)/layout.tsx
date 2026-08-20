@@ -18,11 +18,16 @@ export default async function AdminLayout({
   // (a relative redirect would resolve back onto the admin subdomain).
   const host = (await headers()).get("host")
   const onAdminHost = isAdminHost(host)
-  const signInUrl = onAdminHost ? mainSiteUrl("/sign-in") : "/sign-in"
+  // Unauthenticated visitors land on the dedicated admin login. On the admin
+  // subdomain the clean path is "/login" (the proxy rewrites it to
+  // /admin/login); on the primary domain and in dev/preview it's "/admin/login".
+  const loginUrl = onAdminHost ? "/login" : "/admin/login"
+  // Authenticated but non-admin accounts are denied and returned to the normal
+  // user app — never shown any part of the admin portal.
   const appUrl = onAdminHost ? mainSiteUrl("/app") : "/app"
 
   const user = await getCurrentUser()
-  if (!user) redirect(signInUrl)
+  if (!user) redirect(loginUrl)
   if (!isAdmin(user)) redirect(appUrl)
 
   const reviewCount = await getReviewCount()

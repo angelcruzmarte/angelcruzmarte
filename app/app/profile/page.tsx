@@ -30,7 +30,6 @@ export default async function ProfilePage() {
       username={user.username}
       email={user.email}
       image={user.image}
-      isAdmin={user.role === "admin"}
       isSubscribed={hasActiveSubscription(user)}
       planName={user.plan ?? undefined}
       lifetime={lifetime}
