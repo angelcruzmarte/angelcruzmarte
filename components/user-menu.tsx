@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
-  LayoutDashboard,
   LogOut,
   User as UserIcon,
   ArrowUp,
@@ -28,12 +27,11 @@ import {
 type Props = {
   name: string
   email: string
-  isAdmin: boolean
   isSubscribed?: boolean
   image?: string | null
 }
 
-export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
+export function UserMenu({ name, email, isSubscribed, image }: Props) {
   const router = useRouter()
   const { isIOS } = usePlatform()
 
@@ -115,12 +113,6 @@ export function UserMenu({ name, email, isAdmin, isSubscribed, image }: Props) {
           <CreditCard className="mr-2 h-4 w-4" />
           Account &amp; billing
         </DropdownMenuItem>
-        {isAdmin && (
-          <DropdownMenuItem render={<Link href="/admin" />}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            Admin dashboard
-          </DropdownMenuItem>
-        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut}>
           <LogOut className="mr-2 h-4 w-4" />

@@ -11,7 +11,6 @@ import {
   EyeOff,
   Flame,
   HelpCircle,
-  LayoutDashboard,
   LogOut,
   Music2,
   PlayCircle,
@@ -50,7 +49,6 @@ type Props = {
   username: string | null
   email: string
   image?: string | null
-  isAdmin: boolean
   isSubscribed: boolean
   planName?: string
   lifetime: LifetimeStats
@@ -65,7 +63,6 @@ export function ProfileView({
   username,
   email,
   image,
-  isAdmin,
   isSubscribed,
   planName,
   lifetime,
@@ -273,13 +270,6 @@ export function ProfileView({
             icon={<CreditCard className="h-5 w-5" />}
             label="Account & billing"
           />
-          {isAdmin && (
-            <RowLink
-              href="/admin"
-              icon={<LayoutDashboard className="h-5 w-5" />}
-              label="Admin dashboard"
-            />
-          )}
           <RowLink
             href="/legal/privacy"
             icon={<Shield className="h-5 w-5" />}

@@ -71,6 +71,18 @@ async function requireAdmin() {
   return user!
 }
 
+/**
+ * Server-side role check for the current session, used by the admin login
+ * screen after a successful password sign-in. Returns a boolean instead of
+ * throwing so the client can show a friendly "not an administrator" message.
+ * This is a verification helper only — real protection lives in the admin
+ * layout guard and in `requireAdmin()` on every data/mutation action.
+ */
+export async function verifyAdminAccess(): Promise<boolean> {
+  const user = await getCurrentUser()
+  return isAdmin(user)
+}
+
 /** Builds the audit actor snapshot from an admin user row. */
 function actorOf(u: { id: string; name: string; email: string }): AuditActor {
   return { id: u.id, name: u.name, email: u.email }

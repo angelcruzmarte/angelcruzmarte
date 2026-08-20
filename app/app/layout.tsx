@@ -67,7 +67,6 @@ export default async function AppLayout({
           <UserMenu
             name={user.name}
             email={user.email}
-            isAdmin={user.role === "admin"}
             isSubscribed={subscribed}
             image={user.image}
           />
