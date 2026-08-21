@@ -1,7 +1,44 @@
 import "server-only"
 import { Resend } from "resend"
 
-const FROM = process.env.EMAIL_FROM ?? "VOXYFI <onboarding@resend.dev>"
+// Known-good verified sender on the app's Resend domain. Used as the default
+// and as a fallback whenever EMAIL_FROM is missing or malformed, so a bad
+// environment variable can never silently break auth emails (verification,
+// password reset) again.
+const DEFAULT_FROM = "VOXYFI <noreply@voxyfi.com>"
+
+/**
+ * Accepts either `email@example.com` or `Name <email@example.com>`, matching
+ * the formats Resend's `from` field allows.
+ */
+function isValidFrom(value: string): boolean {
+  const bare = /^[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+$/
+  const named = /^.+<[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>$/
+  return bare.test(value) || named.test(value)
+}
+
+/**
+ * Resolves the sender address. Trims whitespace and strips any stray wrapping
+ * quotes or brackets (a common env-var paste mistake, e.g. "[placeholder]"),
+ * then validates the result. Falls back to DEFAULT_FROM with a loud warning if
+ * the configured value is unusable — Resend rejects invalid `from` values with
+ * a 422, which would otherwise block every sign-up verification email.
+ */
+function resolveFrom(): string {
+  const raw = process.env.EMAIL_FROM
+  if (!raw) return DEFAULT_FROM
+  const cleaned = raw.trim().replace(/^["'[]+|["'\]]+$/g, "").trim()
+  if (!isValidFrom(cleaned)) {
+    console.error(
+      `[v0] EMAIL_FROM is not a valid sender ("${raw}"). Falling back to ${DEFAULT_FROM}. ` +
+        `Set EMAIL_FROM to a verified address like "VOXYFI <noreply@voxyfi.com>".`,
+    )
+    return DEFAULT_FROM
+  }
+  return cleaned
+}
+
+const FROM = resolveFrom()
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
