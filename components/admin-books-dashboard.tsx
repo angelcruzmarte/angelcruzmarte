@@ -16,10 +16,15 @@ import {
   Link2,
   Loader2,
   PackageX,
+  Plus,
   RefreshCw,
   ShoppingBag,
 } from "lucide-react"
-import { checkBookLinks, type CatalogStats } from "@/app/actions/admin"
+import {
+  checkBookLinks,
+  importBooksNow,
+  type CatalogStats,
+} from "@/app/actions/admin"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -63,7 +68,10 @@ export function AdminBooksDashboard({
 }) {
   const router = useRouter()
   const [checking, startCheck] = useTransition()
+  const [importing, startImport] = useTransition()
   const [note, setNote] = useState<string | null>(null)
+  const [importNote, setImportNote] = useState<string | null>(null)
+  const [batch, setBatch] = useState(100)
 
   const a = stats.byAvailability
 
@@ -160,6 +168,36 @@ export function AdminBooksDashboard({
     })
   }
 
+  function runImport() {
+    setImportNote(null)
+    startImport(async () => {
+      const res = await importBooksNow(batch)
+      if (!res.ok) {
+        setImportNote(`Import failed: ${res.error}`)
+        return
+      }
+      if (res.added === 0) {
+        setImportNote(
+          res.candidates === 0
+            ? "No new titles available to import right now."
+            : `Reviewed ${res.candidates} candidates, but none passed the quality check.`,
+        )
+      } else {
+        const breakdown = Object.entries(res.byLanguage)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([lang, n]) => `${lang}:${n}`)
+          .join(", ")
+        setImportNote(
+          `Added ${res.added} new title${res.added === 1 ? "" : "s"}${
+            breakdown ? ` (${breakdown})` : ""
+          }.`,
+        )
+      }
+      router.refresh()
+    })
+  }
+
   const toneClasses: Record<StatCard["tone"], string> = {
     default: "text-foreground",
     primary: "text-primary",
@@ -212,10 +250,43 @@ export function AdminBooksDashboard({
             </span>
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {note && (
             <span className="text-xs text-muted-foreground">{note}</span>
           )}
+          {importNote && (
+            <span className="text-xs text-muted-foreground">{importNote}</span>
+          )}
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="import-batch" className="sr-only">
+              Number of books to import
+            </label>
+            <select
+              id="import-batch"
+              value={batch}
+              onChange={(e) => setBatch(Number(e.target.value))}
+              disabled={importing}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <option value={50}>50 books</option>
+              <option value={100}>100 books</option>
+              <option value={150}>150 books</option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              onClick={runImport}
+              disabled={importing}
+              className="gap-1.5"
+            >
+              {importing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden />
+              )}
+              {importing ? "Importing…" : "Import now"}
+            </Button>
+          </div>
           <Button
             type="button"
             variant="outline"
