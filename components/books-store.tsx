@@ -52,6 +52,10 @@ import {
 import { FavoriteButton } from "@/components/favorite-button"
 import { LiveBookResults } from "@/components/live-book-results"
 import type { Suggestion } from "@/app/api/store/suggest/route"
+
+// A search suggestion tagged with whether it comes from our own catalog
+// (native) or an external source (Open Library / Amazon).
+type MergedSuggestion = Suggestion & { native?: boolean }
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
@@ -242,6 +246,19 @@ export function BooksStore({
     return result
   }, [visibleBooks])
 
+  // Total published books per category across the ENTIRE catalog (every
+  // language), independent of the active language filter. The Genres nav shows
+  // these true catalog totals so the numbers reflect the real store size rather
+  // than just the English (or currently-filtered) subset.
+  const catalogCountByCategory = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const b of books) {
+      if (!b.category) continue
+      counts.set(b.category, (counts.get(b.category) ?? 0) + 1)
+    }
+    return counts
+  }, [books])
+
   const favoriteBooks = useMemo(
     () => books.filter((b) => favorites.has(b.id)),
     [books, favorites],
@@ -257,6 +274,34 @@ export function BooksStore({
     return () => clearTimeout(id)
   }, [query])
   const searching = debounced.length > 0
+
+  // Native-store search: match the query against our own catalog (all
+  // languages) so books we actually carry surface first, before falling back to
+  // external/Amazon results. Ranked by relevance: title prefix > title match >
+  // author match, with featured titles nudged up. Capped so the section stays
+  // focused.
+  const nativeMatches = useMemo(() => {
+    if (debounced.length < 2) return [] as Book[]
+    const q = debounced.toLowerCase()
+    const tokens = q.split(/\s+/).filter(Boolean)
+    return books
+      .map((b) => {
+        const title = b.title.toLowerCase()
+        const author = (b.author || "").toLowerCase()
+        const hay = `${title} ${author}`
+        if (!tokens.every((t) => hay.includes(t))) return null
+        let score = 0
+        if (title.startsWith(q)) score += 100
+        else if (title.includes(q)) score += 50
+        if (author.includes(q)) score += 10
+        if (b.featured) score += 1
+        return { book: b, score }
+      })
+      .filter((x): x is { book: Book; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 18)
+      .map((x) => x.book)
+  }, [books, debounced])
 
   // Smart autocomplete: fetch title/author suggestions as the user types.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -284,6 +329,54 @@ export function BooksStore({
       clearTimeout(id)
     }
   }, [query])
+
+  // Native-catalog typeahead: match our own books against the live query so
+  // titles we actually carry appear at the TOP of the dropdown, before the
+  // remote (Open Library / Amazon) suggestions.
+  const nativeSuggestions = useMemo<MergedSuggestion[]>(() => {
+    const q = query.trim().toLowerCase()
+    if (q.length < 2) return []
+    const tokens = q.split(/\s+/).filter(Boolean)
+    return books
+      .map((b) => {
+        const title = b.title.toLowerCase()
+        const author = (b.author || "").toLowerCase()
+        const hay = `${title} ${author}`
+        if (!tokens.every((t) => hay.includes(t))) return null
+        let score = 0
+        if (title.startsWith(q)) score += 100
+        else if (title.includes(q)) score += 50
+        if (author.includes(q)) score += 10
+        if (b.featured) score += 1
+        return { b, score }
+      })
+      .filter((x): x is { b: Book; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4)
+      .map(({ b }) => ({
+        title: b.title,
+        author: b.author || "Unknown",
+        coverUrl: b.coverImageUrl ?? null,
+        listenable: true,
+        native: true as const,
+      }))
+  }, [books, query])
+
+  // Native suggestions first, then remote suggestions with any duplicate
+  // title/author pairs removed, capped so the dropdown stays compact.
+  const mergedSuggestions = useMemo<MergedSuggestion[]>(() => {
+    const seen = new Set(
+      nativeSuggestions.map(
+        (s) => `${s.title.toLowerCase()}|${s.author.toLowerCase()}`,
+      ),
+    )
+    const remote = suggestions
+      .filter(
+        (s) => !seen.has(`${s.title.toLowerCase()}|${s.author.toLowerCase()}`),
+      )
+      .map((s) => ({ ...s, native: false }))
+    return [...nativeSuggestions, ...remote].slice(0, 7)
+  }, [nativeSuggestions, suggestions])
 
   function pickSuggestion(s: Suggestion) {
     const value = `${s.title} ${s.author}`.trim()
@@ -341,7 +434,7 @@ export function BooksStore({
             placeholder="Search by title or author…"
             aria-label="Search the book store"
             role="combobox"
-            aria-expanded={suggestOpen && suggestions.length > 0}
+            aria-expanded={suggestOpen && mergedSuggestions.length > 0}
             aria-autocomplete="list"
             className="h-14 w-full rounded-2xl border border-transparent bg-secondary pl-12 pr-11 text-base font-medium outline-none ring-primary/40 transition placeholder:font-normal placeholder:text-muted-foreground focus:border-primary/30 focus:bg-card focus:ring-2"
           />
@@ -359,10 +452,10 @@ export function BooksStore({
             </button>
           )}
 
-          {/* Autocomplete suggestions */}
-          {suggestOpen && suggestions.length > 0 && (
+          {/* Autocomplete suggestions — native catalog titles first */}
+          {suggestOpen && mergedSuggestions.length > 0 && (
             <ul className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-              {suggestions.map((s, i) => (
+              {mergedSuggestions.map((s, i) => (
                 <li key={`${s.title}-${i}`}>
                   <button
                     type="button"
@@ -394,11 +487,18 @@ export function BooksStore({
                         {s.author}
                       </span>
                     </span>
-                    {s.listenable && (
+                    {s.native ? (
                       <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                        <Headphones className="h-3 w-3" />
-                        Listen
+                        <BookOpen className="h-3 w-3" />
+                        In library
                       </span>
+                    ) : (
+                      s.listenable && (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                          <Headphones className="h-3 w-3" />
+                          Listen
+                        </span>
+                      )
                     )}
                   </button>
                 </li>
@@ -460,7 +560,40 @@ export function BooksStore({
               </span>
             )}
           </h2>
-          <LiveBookResults query={debounced} language={languageFilter} />
+
+          {/* Native store matches first — books we actually carry, ready to
+              listen or buy in-app. */}
+          {nativeMatches.length > 0 && (
+            <div className="mb-8">
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
+                <BookOpen className="h-4 w-4 text-primary" />
+                In our library
+                <span className="text-sm font-medium text-muted-foreground">
+                  {nativeMatches.length}
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+                {nativeMatches.map((book) => (
+                  <StoreBookCard
+                    key={book.id}
+                    book={book}
+                    owned={owned.has(book.id)}
+                    favorited={favorites.has(book.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* External results (Amazon / Open Library) as a fallback for
+              anything not in our own catalog. */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
+              <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+              {nativeMatches.length > 0 ? "More from Amazon" : "From Amazon"}
+            </h3>
+            <LiveBookResults query={debounced} language={languageFilter} />
+          </div>
         </section>
       ) : showFavorites ? (
         <FavoritesView
@@ -547,7 +680,10 @@ export function BooksStore({
             <GenreNav
               genres={shelves.map((s) => ({
                 title: s.title,
-                count: s.books.length,
+                // Show the true catalog-wide total for the genre (all
+                // languages), not just the currently-filtered subset, so the
+                // numbers reflect the real store size.
+                count: catalogCountByCategory.get(s.title) ?? s.books.length,
               }))}
             />
           )}

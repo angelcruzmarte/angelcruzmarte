@@ -13,6 +13,7 @@ import { getCurrentUser, isAdmin } from "@/lib/session"
 import { getPlan } from "@/lib/plans"
 import { stripe } from "@/lib/stripe"
 import { runLinkCheck } from "@/lib/book-link-check"
+import { importNewBooks, type ImportResult } from "@/lib/import-books"
 import { getAffiliateAnalytics } from "@/lib/book-analytics"
 import {
   AMAZON_MARKETPLACES,
@@ -1104,6 +1105,68 @@ export async function checkBookLinks(ids?: number[]) {
     },
   ])
   return result
+}
+
+/**
+ * Largest batch an on-demand import may request in a single call. Each title is
+ * downloaded and parsed over the network (concurrency 8) inside a 300s function
+ * budget, so we cap manual runs well under that ceiling. To add more, run the
+ * button again — importing is idempotent (titles already in the catalog are
+ * skipped), so repeat runs simply keep adding what's newly available.
+ *
+ * NOTE: not exported — a "use server" file may only export async functions, so
+ * exporting this const makes Turbopack reject the entire module. It is only
+ * used internally by importBooksNow below.
+ */
+const MAX_IMPORT_BATCH = 150
+
+export type ImportBooksResult =
+  | ({ ok: true } & ImportResult)
+  | { ok: false; error: string }
+
+/**
+ * Admin-triggered native-store import. Runs the same importer as the scheduled
+ * cron, adding up to `limit` new public-domain titles and publishing the ones
+ * that pass the quality check immediately. Safe to run repeatedly.
+ */
+export async function importBooksNow(limit = 100): Promise<ImportBooksResult> {
+  const admin = await requireAdmin()
+  const batch = Math.min(
+    MAX_IMPORT_BATCH,
+    Math.max(1, Math.floor(Number(limit) || 0)),
+  )
+
+  try {
+    const result = await importNewBooks({ limit: batch, autoPublish: true })
+
+    if (result.added > 0) {
+      const breakdown = Object.entries(result.byLanguage)
+        .sort((a, b) => b[1] - a[1])
+        .map(([lang, n]) => `${lang}:${n}`)
+        .join(", ")
+      await logBookAudit(actorOf(admin), [
+        {
+          bookId: null,
+          bookTitle: `Manual import (${result.added} new titles)`,
+          action: "import",
+          field: null,
+          oldValue: null,
+          newValue: breakdown
+            ? `Published ${result.added} public-domain titles — ${breakdown}`
+            : `Published ${result.added} public-domain titles`,
+        },
+      ])
+      revalidatePath("/admin/books")
+      revalidatePath("/app/books")
+    }
+
+    return { ok: true, ...result }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Import failed",
+    }
+  }
 }
 
 // ----- Affiliate (Amazon) configuration -----
