@@ -52,6 +52,10 @@ import {
 import { FavoriteButton } from "@/components/favorite-button"
 import { LiveBookResults } from "@/components/live-book-results"
 import type { Suggestion } from "@/app/api/store/suggest/route"
+
+// A search suggestion tagged with whether it comes from our own catalog
+// (native) or an external source (Open Library / Amazon).
+type MergedSuggestion = Suggestion & { native?: boolean }
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, type CartItem } from "@/components/cart-provider"
@@ -326,6 +330,54 @@ export function BooksStore({
     }
   }, [query])
 
+  // Native-catalog typeahead: match our own books against the live query so
+  // titles we actually carry appear at the TOP of the dropdown, before the
+  // remote (Open Library / Amazon) suggestions.
+  const nativeSuggestions = useMemo<MergedSuggestion[]>(() => {
+    const q = query.trim().toLowerCase()
+    if (q.length < 2) return []
+    const tokens = q.split(/\s+/).filter(Boolean)
+    return books
+      .map((b) => {
+        const title = b.title.toLowerCase()
+        const author = (b.author || "").toLowerCase()
+        const hay = `${title} ${author}`
+        if (!tokens.every((t) => hay.includes(t))) return null
+        let score = 0
+        if (title.startsWith(q)) score += 100
+        else if (title.includes(q)) score += 50
+        if (author.includes(q)) score += 10
+        if (b.featured) score += 1
+        return { b, score }
+      })
+      .filter((x): x is { b: Book; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4)
+      .map(({ b }) => ({
+        title: b.title,
+        author: b.author || "Unknown",
+        coverUrl: b.coverImageUrl ?? null,
+        listenable: true,
+        native: true as const,
+      }))
+  }, [books, query])
+
+  // Native suggestions first, then remote suggestions with any duplicate
+  // title/author pairs removed, capped so the dropdown stays compact.
+  const mergedSuggestions = useMemo<MergedSuggestion[]>(() => {
+    const seen = new Set(
+      nativeSuggestions.map(
+        (s) => `${s.title.toLowerCase()}|${s.author.toLowerCase()}`,
+      ),
+    )
+    const remote = suggestions
+      .filter(
+        (s) => !seen.has(`${s.title.toLowerCase()}|${s.author.toLowerCase()}`),
+      )
+      .map((s) => ({ ...s, native: false }))
+    return [...nativeSuggestions, ...remote].slice(0, 7)
+  }, [nativeSuggestions, suggestions])
+
   function pickSuggestion(s: Suggestion) {
     const value = `${s.title} ${s.author}`.trim()
     setQuery(value)
@@ -382,7 +434,7 @@ export function BooksStore({
             placeholder="Search by title or author…"
             aria-label="Search the book store"
             role="combobox"
-            aria-expanded={suggestOpen && suggestions.length > 0}
+            aria-expanded={suggestOpen && mergedSuggestions.length > 0}
             aria-autocomplete="list"
             className="h-14 w-full rounded-2xl border border-transparent bg-secondary pl-12 pr-11 text-base font-medium outline-none ring-primary/40 transition placeholder:font-normal placeholder:text-muted-foreground focus:border-primary/30 focus:bg-card focus:ring-2"
           />
@@ -400,10 +452,10 @@ export function BooksStore({
             </button>
           )}
 
-          {/* Autocomplete suggestions */}
-          {suggestOpen && suggestions.length > 0 && (
+          {/* Autocomplete suggestions — native catalog titles first */}
+          {suggestOpen && mergedSuggestions.length > 0 && (
             <ul className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-              {suggestions.map((s, i) => (
+              {mergedSuggestions.map((s, i) => (
                 <li key={`${s.title}-${i}`}>
                   <button
                     type="button"
@@ -435,11 +487,18 @@ export function BooksStore({
                         {s.author}
                       </span>
                     </span>
-                    {s.listenable && (
+                    {s.native ? (
                       <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                        <Headphones className="h-3 w-3" />
-                        Listen
+                        <BookOpen className="h-3 w-3" />
+                        In library
                       </span>
+                    ) : (
+                      s.listenable && (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                          <Headphones className="h-3 w-3" />
+                          Listen
+                        </span>
+                      )
                     )}
                   </button>
                 </li>
