@@ -242,6 +242,19 @@ export function BooksStore({
     return result
   }, [visibleBooks])
 
+  // Total published books per category across the ENTIRE catalog (every
+  // language), independent of the active language filter. The Genres nav shows
+  // these true catalog totals so the numbers reflect the real store size rather
+  // than just the English (or currently-filtered) subset.
+  const catalogCountByCategory = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const b of books) {
+      if (!b.category) continue
+      counts.set(b.category, (counts.get(b.category) ?? 0) + 1)
+    }
+    return counts
+  }, [books])
+
   const favoriteBooks = useMemo(
     () => books.filter((b) => favorites.has(b.id)),
     [books, favorites],
@@ -257,6 +270,34 @@ export function BooksStore({
     return () => clearTimeout(id)
   }, [query])
   const searching = debounced.length > 0
+
+  // Native-store search: match the query against our own catalog (all
+  // languages) so books we actually carry surface first, before falling back to
+  // external/Amazon results. Ranked by relevance: title prefix > title match >
+  // author match, with featured titles nudged up. Capped so the section stays
+  // focused.
+  const nativeMatches = useMemo(() => {
+    if (debounced.length < 2) return [] as Book[]
+    const q = debounced.toLowerCase()
+    const tokens = q.split(/\s+/).filter(Boolean)
+    return books
+      .map((b) => {
+        const title = b.title.toLowerCase()
+        const author = (b.author || "").toLowerCase()
+        const hay = `${title} ${author}`
+        if (!tokens.every((t) => hay.includes(t))) return null
+        let score = 0
+        if (title.startsWith(q)) score += 100
+        else if (title.includes(q)) score += 50
+        if (author.includes(q)) score += 10
+        if (b.featured) score += 1
+        return { book: b, score }
+      })
+      .filter((x): x is { book: Book; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 18)
+      .map((x) => x.book)
+  }, [books, debounced])
 
   // Smart autocomplete: fetch title/author suggestions as the user types.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -460,7 +501,40 @@ export function BooksStore({
               </span>
             )}
           </h2>
-          <LiveBookResults query={debounced} language={languageFilter} />
+
+          {/* Native store matches first — books we actually carry, ready to
+              listen or buy in-app. */}
+          {nativeMatches.length > 0 && (
+            <div className="mb-8">
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
+                <BookOpen className="h-4 w-4 text-primary" />
+                In our library
+                <span className="text-sm font-medium text-muted-foreground">
+                  {nativeMatches.length}
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+                {nativeMatches.map((book) => (
+                  <StoreBookCard
+                    key={book.id}
+                    book={book}
+                    owned={owned.has(book.id)}
+                    favorited={favorites.has(book.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* External results (Amazon / Open Library) as a fallback for
+              anything not in our own catalog. */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
+              <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+              {nativeMatches.length > 0 ? "More from Amazon" : "From Amazon"}
+            </h3>
+            <LiveBookResults query={debounced} language={languageFilter} />
+          </div>
         </section>
       ) : showFavorites ? (
         <FavoritesView
@@ -547,7 +621,10 @@ export function BooksStore({
             <GenreNav
               genres={shelves.map((s) => ({
                 title: s.title,
-                count: s.books.length,
+                // Show the true catalog-wide total for the genre (all
+                // languages), not just the currently-filtered subset, so the
+                // numbers reflect the real store size.
+                count: catalogCountByCategory.get(s.title) ?? s.books.length,
               }))}
             />
           )}
