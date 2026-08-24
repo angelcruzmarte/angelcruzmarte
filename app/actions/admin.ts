@@ -1113,8 +1113,12 @@ export async function checkBookLinks(ids?: number[]) {
  * budget, so we cap manual runs well under that ceiling. To add more, run the
  * button again — importing is idempotent (titles already in the catalog are
  * skipped), so repeat runs simply keep adding what's newly available.
+ *
+ * NOTE: not exported — a "use server" file may only export async functions, so
+ * exporting this const makes Turbopack reject the entire module. It is only
+ * used internally by importBooksNow below.
  */
-export const MAX_IMPORT_BATCH = 150
+const MAX_IMPORT_BATCH = 150
 
 export type ImportBooksResult =
   | ({ ok: true } & ImportResult)
