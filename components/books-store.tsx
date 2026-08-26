@@ -668,24 +668,39 @@ export function BooksStore({
               Browse by category
             </h2>
           )}
-          {shelves.map((shelf, i) => (
-            <LazyShelf
-              key={shelf.title}
-              id={genreSlug(shelf.title)}
-              // Render the first couple of shelves immediately; defer the rest
-              // until they scroll near the viewport so the page paints fast.
-              eager={i < 2}
-              placeholderCount={Math.min(shelf.books.length, 6)}
-            >
-              <BookShelf
+          {shelves.map((shelf, i) => {
+            // The shelf shows a capped slice; when the genre has more titles
+            // than are shown, offer a "See all" link into the full paginated
+            // genre page. Use the catalog-wide total so the link appears even
+            // when the current language view is small.
+            const genreTotal =
+              catalogCountByCategory.get(shelf.title) ?? shelf.books.length
+            const hasMore = genreTotal > shelf.books.length
+            return (
+              <LazyShelf
+                key={shelf.title}
                 id={genreSlug(shelf.title)}
-                title={shelf.title}
-                books={shelf.books}
-                owned={owned}
-                favorites={favorites}
-              />
-            </LazyShelf>
-          ))}
+                // Render the first couple of shelves immediately; defer the rest
+                // until they scroll near the viewport so the page paints fast.
+                eager={i < 2}
+                placeholderCount={Math.min(shelf.books.length, 6)}
+              >
+                <BookShelf
+                  id={genreSlug(shelf.title)}
+                  title={shelf.title}
+                  books={shelf.books}
+                  owned={owned}
+                  favorites={favorites}
+                  seeAllHref={
+                    hasMore
+                      ? `/app/books/genre/${genreSlug(shelf.title).replace(/^genre-/, "")}`
+                      : undefined
+                  }
+                  seeAllLabel={`See all ${genreTotal.toLocaleString()}`}
+                />
+              </LazyShelf>
+            )
+          })}
 
           {/* Genre quick-nav for easy jumping between categories */}
           {shelves.length > 0 && (
@@ -752,8 +767,8 @@ function GenreNav({
           const Icon = GENRE_ICONS[g.title] ?? BookOpen
           return (
             <li key={g.title}>
-              <a
-                href={`#${genreSlug(g.title)}`}
+              <Link
+                href={`/app/books/genre/${genreSlug(g.title).replace(/^genre-/, "")}`}
                 className="flex items-center gap-3 rounded-2xl bg-secondary px-4 py-4 transition-colors hover:bg-secondary/70"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -768,7 +783,7 @@ function GenreNav({
                   </span>
                 </span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-              </a>
+              </Link>
             </li>
           )
         })}
@@ -1109,16 +1124,32 @@ function BookShelf({
   books,
   owned,
   favorites,
+  seeAllHref,
+  seeAllLabel,
 }: {
   id?: string
   title: string
   books: Book[]
   owned: Set<number>
   favorites: Set<number>
+  // When set, a "See all" link is shown that opens the full paginated genre.
+  seeAllHref?: string
+  seeAllLabel?: string
 }) {
   return (
     <section id={id} className={id ? "scroll-mt-6" : undefined}>
-      <h2 className="mb-3 text-xl font-bold tracking-tight">{title}</h2>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-tight">{title}</h2>
+        {seeAllHref && (
+          <Link
+            href={seeAllHref}
+            className="inline-flex shrink-0 items-center gap-0.5 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+          >
+            {seeAllLabel ?? "See all"}
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
       <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {books.map((book) => (
           <div key={book.id} className="w-32 shrink-0 sm:w-36">

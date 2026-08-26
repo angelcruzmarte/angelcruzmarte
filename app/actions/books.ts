@@ -78,6 +78,103 @@ export async function getBook(id: number) {
   return row ?? null
 }
 
+// Slug used by the storefront genre nav (mirrors `genreSlug` in books-store).
+function categorySlug(category: string) {
+  return category
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+/**
+ * Resolves a genre slug (e.g. "science-fiction") back to its real category
+ * name by scanning the distinct published categories. Returns null if no
+ * category matches, so the page can 404.
+ */
+export async function resolveGenreBySlug(slug: string): Promise<string | null> {
+  const rows = await db
+    .selectDistinct({ category: book.category })
+    .from(book)
+    .where(and(eq(book.published, true), sql`${book.category} is not null`))
+  for (const r of rows) {
+    if (r.category && categorySlug(r.category) === slug) return r.category
+  }
+  return null
+}
+
+export type GenrePage = {
+  category: string
+  books: BookCard[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  language: string
+}
+
+// Books per page on the dedicated genre page. A grid, so a full page still
+// loads only a small slice of a large genre instead of the whole catalog.
+// Not exported: "use server" files may only export async functions.
+const GENRE_PAGE_SIZE = 40
+
+/**
+ * Server-side paginated fetch of all published books in a single genre,
+ * optionally scoped to a language. Only the requested page's rows leave the
+ * database, so browsing a 3,000-book genre never ships the whole catalog.
+ */
+export async function getBooksByGenre(opts: {
+  category: string
+  page?: number
+  language?: string
+}): Promise<GenrePage> {
+  const page = Math.max(1, opts.page ?? 1)
+  const language = opts.language && opts.language !== "all" ? opts.language : "all"
+  const pageSize = GENRE_PAGE_SIZE
+
+  const filters = [eq(book.published, true), eq(book.category, opts.category)]
+  if (language !== "all") filters.push(eq(book.language, language))
+  const where = and(...filters)
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select(bookCardColumns)
+      .from(book)
+      .where(where)
+      .orderBy(desc(book.featured), desc(book.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ total: count() }).from(book).where(where),
+  ])
+
+  return {
+    category: opts.category,
+    books: rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    language,
+  }
+}
+
+/**
+ * Distinct languages available within a single genre, with per-language counts,
+ * so the genre page can offer a language filter scoped to that genre.
+ */
+export async function getGenreLanguages(
+  category: string,
+): Promise<Array<{ code: string; count: number }>> {
+  const rows = await db
+    .select({ code: book.language, c: count() })
+    .from(book)
+    .where(and(eq(book.published, true), eq(book.category, category)))
+    .groupBy(book.language)
+    .orderBy(desc(count()))
+  return rows
+    .filter((r) => r.code)
+    .map((r) => ({ code: r.code as string, count: Number(r.c) }))
+}
+
 export type StorefrontRow = { key: string; title: string; books: BookCard[] }
 
 export type Storefront = {

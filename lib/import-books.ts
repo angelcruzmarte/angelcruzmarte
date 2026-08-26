@@ -25,11 +25,20 @@ const CATALOG_URL =
   "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz"
 
 // Languages the native store carries. Each run distributes its budget across
-// these round-robin so no single language dominates.
+// these round-robin, weighted so English leads the catalog (see
+// LANGUAGE_WEIGHTS) while the other languages still grow steadily.
 export const IMPORT_LANGUAGES = [
   "en", "es", "fr", "de", "it", "pt", "nl", "ru", "pl", "fi",
   "sv", "hu", "el", "la", "da", "eo", "cs",
 ] as const
+
+// How many picks each language gets per round-robin pass. English is weighted
+// heavily so it becomes and stays the dominant language of the store; every
+// other language defaults to 1 pick per pass. Tune here to reshape the mix.
+const LANGUAGE_WEIGHTS: Partial<Record<(typeof IMPORT_LANGUAGES)[number], number>> = {
+  en: 6,
+}
+const languageWeight = (lang: string) => LANGUAGE_WEIGHTS[lang as keyof typeof LANGUAGE_WEIGHTS] ?? 1
 
 // Subject keyword -> catalog category (specific first). Matched against the
 // book's Subjects + Bookshelves columns, case-insensitively. Kept in sync with
@@ -317,26 +326,33 @@ export async function importNewBooks(opts?: {
   while (selected.length < limit && !exhausted) {
     exhausted = true
     for (const lang of IMPORT_LANGUAGES) {
-      if (selected.length >= limit) break
-      const list = buckets.get(lang) || []
-      let i = cursors.get(lang) || 0
-      while (i < list.length && seen.has(list[i].id)) i++
-      if (i < list.length) {
-        const b = list[i]
-        seen.add(b.id)
-        selected.push({
-          gutenbergId: b.id,
-          title: b.title,
-          author: b.author,
-          category: b.category,
-          language: lang,
-          price: PRICE_TIERS[selected.length % PRICE_TIERS.length],
-        })
-        cursors.set(lang, i + 1)
-        exhausted = false
-      } else {
-        cursors.set(lang, list.length)
+      // Weighted round-robin: take up to `weight` books for this language in a
+      // single pass (English is weighted highest so it leads the catalog).
+      const weight = languageWeight(lang)
+      for (let picks = 0; picks < weight; picks++) {
+        if (selected.length >= limit) break
+        const list = buckets.get(lang) || []
+        let i = cursors.get(lang) || 0
+        while (i < list.length && seen.has(list[i].id)) i++
+        if (i < list.length) {
+          const b = list[i]
+          seen.add(b.id)
+          selected.push({
+            gutenbergId: b.id,
+            title: b.title,
+            author: b.author,
+            category: b.category,
+            language: lang,
+            price: PRICE_TIERS[selected.length % PRICE_TIERS.length],
+          })
+          cursors.set(lang, i + 1)
+          exhausted = false
+        } else {
+          cursors.set(lang, list.length)
+          break
+        }
       }
+      if (selected.length >= limit) break
     }
   }
 
