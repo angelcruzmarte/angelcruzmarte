@@ -23,20 +23,24 @@ import { getMyInterests } from "./interests"
 import { MIN_RATINGS_TO_SHOW, type BookRatingSummary } from "@/lib/ratings"
 import type { BookCard } from "@/lib/db/schema"
 
-// Columns needed to render book cards / the storefront — everything except the
-// heavy full-text `content`, which would bloat the store payload enormously.
+// Columns needed to render book cards / the storefront. The whole published
+// catalog is shipped to the client, so we blank the fields the store never
+// reads on a card — the long `description`/`excerpt` text and the admin-only
+// `isbn`/`buyUrl` — which together are ~65% of the raw payload (13MB -> ~4MB).
+// The book detail page (getBook) still selects the real values, and the
+// storefront hero's real description is re-attached in getStorefrontData.
 const bookCardColumns = {
   id: book.id,
   title: book.title,
   author: book.author,
   category: book.category,
   language: book.language,
-  description: book.description,
-  excerpt: book.excerpt,
+  description: sql<string>`''`.as("description"),
+  excerpt: sql<string>`''`.as("excerpt"),
   priceInCents: book.priceInCents,
   fulfillment: book.fulfillment,
-  isbn: book.isbn,
-  buyUrl: book.buyUrl,
+  isbn: sql<string | null>`null`.as("isbn"),
+  buyUrl: sql<string | null>`null`.as("buyUrl"),
   coverImageUrl: book.coverImageUrl,
   gutenbergId: book.gutenbergId,
   coverColor: book.coverColor,
@@ -668,6 +672,20 @@ export async function getStorefrontData(): Promise<{
     getCurrentUser(),
   ])
   const storefront = await buildStorefront(all)
+
+  // The bulk catalog blanks `description` to keep the payload small, but the
+  // storefront hero renders its description — fetch the real one for just that
+  // single book and re-attach it.
+  if (storefront.hero) {
+    const [row] = await db
+      .select({ description: book.description })
+      .from(book)
+      .where(eq(book.id, storefront.hero.id))
+      .limit(1)
+    if (row?.description) {
+      storefront.hero = { ...storefront.hero, description: row.description }
+    }
+  }
 
   // Prepend the signed-in user's personalized rows so discovery leads with
   // their own reading journey, then the curated rows follow.

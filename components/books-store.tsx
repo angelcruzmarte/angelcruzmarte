@@ -76,6 +76,11 @@ import { cn } from "@/lib/utils"
 // app/actions/books.ts.
 const SHELF_SIZE = 12
 
+// Max books mounted in a single "Browse by category" horizontal shelf. These
+// are scrollable browse rows, not exhaustive lists, so capping keeps the DOM
+// light with a 15K+ catalog. The genre nav still shows the true total.
+const SHELF_BROWSE_CAP = 24
+
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
 const CATEGORY_ORDER = [
@@ -241,7 +246,14 @@ export function BooksStore({
       return a.localeCompare(b)
     })
     for (const category of categories) {
-      result.push({ title: category, books: byCategory.get(category)! })
+      // Cap each browse shelf: it's a horizontal scroller, so mounting every
+      // book in a large category (hundreds of cards, each with images + cart
+      // hooks) is wasted work. The true per-genre total is still shown in the
+      // Genres nav, and the full set stays reachable via search/language.
+      result.push({
+        title: category,
+        books: byCategory.get(category)!.slice(0, SHELF_BROWSE_CAP),
+      })
     }
     return result
   }, [visibleBooks])
