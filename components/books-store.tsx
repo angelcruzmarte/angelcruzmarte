@@ -76,10 +76,12 @@ import { cn } from "@/lib/utils"
 // app/actions/books.ts.
 const SHELF_SIZE = 12
 
-// Max books mounted in a single "Browse by category" horizontal shelf. These
-// are scrollable browse rows, not exhaustive lists, so capping keeps the DOM
-// light with a 15K+ catalog. The genre nav still shows the true total.
-const SHELF_BROWSE_CAP = 24
+// Max cards mounted in a single "Browse by category" horizontal shelf. These
+// are scrollable browse teasers, not exhaustive lists — only ~3 cards are
+// visible at once on a phone — so we keep the mounted count small to bound the
+// DOM/work with a 15K+ catalog. Every shelf has a "See all" link into the full
+// paginated genre page, and the genre nav still shows the true total.
+const SHELF_BROWSE_CAP = 12
 
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
@@ -1112,7 +1114,9 @@ function LazyShelf({
       style={
         {
           contentVisibility: "auto",
-          containIntrinsicSize: "auto 420px",
+          // Close to a real shelf's height (heading + one card row); the `auto`
+          // keyword replaces this with the measured size after first render.
+          containIntrinsicSize: "auto 340px",
         } as React.CSSProperties
       }
     >

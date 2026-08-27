@@ -113,6 +113,10 @@ export function BookCover({
           src={book.coverImageUrl || "/placeholder.svg"}
           alt={`Cover of ${book.title} by ${book.author}`}
           loading="lazy"
+          // Decode off the main thread and de-prioritize network so a shelf's
+          // ~dozen covers arriving mid-scroll don't block scrolling.
+          decoding="async"
+          fetchPriority="low"
           crossOrigin="anonymous"
           onError={() => setFailed(true)}
           className="h-full w-full object-cover"
