@@ -8,6 +8,23 @@ export type CoverBook = Pick<
   "title" | "author" | "coverColor" | "accentColor" | "coverImageUrl"
 >
 
+// Every stored cover is the full-size Open Library "-L" JPEG (often 500-1000px,
+// 50-200KB) — far larger than the ~130px cards that render them. Downloading
+// and decoding hundreds of oversized images is what makes scrolling the catalog
+// freeze. Rewrite the URL to the size the card actually needs:
+//   -S ≈ small thumb, -M ≈ ~180px (perfect for cards), -L ≈ full.
+// Only Open Library URLs follow this scheme; anything else is left untouched.
+function sizedCoverUrl(
+  url: string | null | undefined,
+  size: "S" | "M" | "L",
+): string | null {
+  if (!url) return null
+  return url.replace(
+    /(covers\.openlibrary\.org\/b\/(?:id|olid|isbn)\/[^/]+)-[SML]\.jpg/i,
+    `$1-${size}.jpg`,
+  )
+}
+
 // Pick a readable foreground (dark vs light) for an arbitrary hex background so
 // the branded placeholder always meets contrast, whatever palette a book got.
 function readableInk(hex: string | null | undefined): {
@@ -94,15 +111,21 @@ function BrandedCard({
 export function BookCover({
   book,
   className = "",
+  size = "M",
 }: {
   book: CoverBook
   className?: string
+  // Which Open Library size variant to request. Default "M" (~180px) suits the
+  // small cards/rows that dominate the app; pass "L" only for large views like
+  // the admin lightbox.
+  size?: "S" | "M" | "L"
 }) {
   const [failed, setFailed] = useState(false)
+  const src = sizedCoverUrl(book.coverImageUrl, size)
 
   // Prefer real cover art; if it fails to load, gracefully fall back to the
   // branded card instead of showing a broken image.
-  if (book.coverImageUrl && !failed) {
+  if (src && !failed) {
     return (
       <div
         className={`relative aspect-[2/3] overflow-hidden rounded-lg shadow-md ${className}`}
@@ -110,7 +133,7 @@ export function BookCover({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={book.coverImageUrl || "/placeholder.svg"}
+          src={src}
           alt={`Cover of ${book.title} by ${book.author}`}
           loading="lazy"
           // Decode off the main thread and de-prioritize network so a shelf's
