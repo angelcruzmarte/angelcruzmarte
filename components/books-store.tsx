@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -58,7 +58,7 @@ import type { Suggestion } from "@/app/api/store/suggest/route"
 type MergedSuggestion = Suggestion & { native?: boolean }
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
-import { useCart, type CartItem } from "@/components/cart-provider"
+import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
 import { usePlatform } from "@/hooks/use-platform"
 import {
   Popover,
@@ -173,7 +173,8 @@ export function BooksStore({
 }) {
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
-  const { count, totalCents, setOpen } = useCart()
+  const { count, totalCents } = useCart()
+  const { setOpen } = useCartUI()
   const { isIOS } = usePlatform()
 
   // Language handling. The store defaults to English; other languages are only
@@ -1047,16 +1048,21 @@ function FavoritesView({
 }
 
 /**
- * Renders a heavy shelf (many cover images + cart/favorite hooks) only while it
- * is near the viewport, and UNMOUNTS it again once it scrolls far away. This
- * "windowing" keeps the mounted DOM bounded to a handful of shelves no matter
- * how large the catalog is — without it, every shelf the user scrolled past
- * stayed mounted, so ~700 cards accumulated and eventually froze scrolling.
+ * Renders a heavy shelf (many cover images + cart/favorite hooks) efficiently
+ * for a very large catalog, using two complementary techniques:
  *
- * When a shelf is unmounted its last measured height is reserved with a spacer
- * so the page layout and scroll position never jump. `eager` shelves stay
- * mounted permanently (used for the first couple of shelves). Anchor jumps
- * (#genre-…) always land because the wrapper keeps the id.
+ * 1. Deferred first mount — a shelf's cards aren't mounted until it scrolls
+ *    within ~800px of the viewport, so initial hydration doesn't have to build
+ *    every shelf's ~24 cards at once. Once mounted it STAYS mounted; we never
+ *    unmount, because tearing shelves down and rebuilding them mid-scroll (the
+ *    previous approach) caused its own scroll jank.
+ * 2. `content-visibility: auto` — the browser skips layout/paint for any shelf
+ *    that is off-screen, so keeping shelves mounted stays cheap while
+ *    scrolling. `contain-intrinsic-size` reserves an estimated height (updated
+ *    to the real size after first render) so the scrollbar stays stable and
+ *    anchor jumps (#genre-…) land correctly.
+ *
+ * `eager` shelves mount immediately (used for the first couple of shelves).
  */
 function LazyShelf({
   id,
@@ -1070,81 +1076,49 @@ function LazyShelf({
   children: React.ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(eager)
-  // Last measured content height, reused as a spacer height when unmounted so
-  // scrolling back up doesn't shift the page.
-  const heightRef = useRef<number>(0)
+  const [mounted, setMounted] = useState(eager)
 
   // Mount instantly if the URL already targets this shelf's anchor (e.g. the
   // user tapped a genre link that points here).
   useEffect(() => {
-    if (!visible && id && window.location.hash === `#${id}`) setVisible(true)
-  }, [id, visible])
+    if (!mounted && id && window.location.hash === `#${id}`) setMounted(true)
+  }, [id, mounted])
 
+  // Mount once the shelf nears the viewport, then stop observing.
   useEffect(() => {
-    if (eager) return
+    if (mounted) return
     const el = ref.current
     if (!el) return
     const io = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0]
-        if (!entry) return
-        setVisible((wasVisible) => {
-          // About to unmount: remember the current rendered height first so the
-          // spacer reserves the same space.
-          if (wasVisible && !entry.isIntersecting) {
-            const h = el.getBoundingClientRect().height
-            if (h > 0) heightRef.current = h
-          }
-          return entry.isIntersecting
-        })
+        if (entries.some((e) => e.isIntersecting)) {
+          setMounted(true)
+          io.disconnect()
+        }
       },
-      // Keep a generous band mounted around the viewport so normal scrolling
-      // never reveals an unmounted shelf; only shelves well outside this band
-      // are torn down.
-      { rootMargin: "900px 0px" },
+      { rootMargin: "800px 0px" },
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [eager])
+  }, [mounted])
 
-  // While mounted, keep the measured height fresh (covers image load / resize)
-  // so a later unmount reserves an accurate spacer.
-  useEffect(() => {
-    if (!visible) return
-    const el = ref.current
-    if (!el) return
-    const measure = () => {
-      const h = el.getBoundingClientRect().height
-      if (h > 0 && Math.abs(h - heightRef.current) > 1) {
-        heightRef.current = h
-      }
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [visible])
-
-  if (visible) {
-    return (
-      <div ref={ref} id={id} className={id ? "scroll-mt-6" : undefined}>
-        {children}
-      </div>
-    )
-  }
-
-  // Unmounted: reserve the last known height (or a skeleton before first view)
-  // and keep the anchor id so #genre-… jumps still land here.
   return (
     <div
       ref={ref}
       id={id}
-      aria-hidden
       className={id ? "scroll-mt-6" : undefined}
-      style={heightRef.current ? { height: heightRef.current } : undefined}
+      // `content-visibility: auto` lets the browser skip rendering this shelf
+      // while it's off-screen; the intrinsic size keeps its slot reserved.
+      style={
+        {
+          contentVisibility: "auto",
+          containIntrinsicSize: "auto 420px",
+        } as React.CSSProperties
+      }
     >
-      {heightRef.current ? null : (
+      {mounted ? (
+        children
+      ) : (
         <>
           <div className="mb-3 h-6 w-40 animate-pulse rounded bg-secondary" />
           <div className="-mx-4 flex gap-4 overflow-hidden px-4 pb-2 sm:-mx-6 sm:px-6">
@@ -1207,7 +1181,7 @@ function BookShelf({
   )
 }
 
-function StoreBookCard({
+const StoreBookCard = memo(function StoreBookCard({
   book,
   owned,
   favorited,
@@ -1264,7 +1238,7 @@ function StoreBookCard({
       action={action}
     />
   )
-}
+})
 
 function UploadsShelf({ uploads }: { uploads: Document[] }) {
   return (

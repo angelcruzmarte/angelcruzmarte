@@ -4,7 +4,7 @@ import { useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Check, Headphones, Loader2, Plus, ShoppingCart } from "lucide-react"
 import { createBookCheckout } from "@/app/actions/books"
-import { useCart, type CartItem } from "@/components/cart-provider"
+import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
 import { usePlatform } from "@/hooks/use-platform"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/plans"
@@ -29,7 +29,8 @@ export function BuyBookButton({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const { has, add, setOpen } = useCart()
+  const { has, add } = useCart()
+  const { setOpen } = useCartUI()
   const { isIOS } = usePlatform()
   const inCart = has(bookId)
 

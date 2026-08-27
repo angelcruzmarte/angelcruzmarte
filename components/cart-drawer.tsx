@@ -4,14 +4,15 @@ import { useEffect, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import { Loader2, ShoppingBag, Trash2, X } from "lucide-react"
 import { createCartCheckout } from "@/app/actions/books"
-import { useCart } from "@/components/cart-provider"
+import { useCart, useCartUI } from "@/components/cart-provider"
 import { usePlatform } from "@/hooks/use-platform"
 import { BookCover } from "@/components/book-cover"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/plans"
 
 export function CartDrawer() {
-  const { items, totalCents, remove, open, setOpen } = useCart()
+  const { items, totalCents, remove } = useCart()
+  const { open, setOpen } = useCartUI()
   const { isIOS } = usePlatform()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
