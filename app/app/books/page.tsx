@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import {
   getFavoriteBookIds,
+  getFavoriteBooks,
   getOwnedBookIds,
   getStorefrontData,
 } from "@/app/actions/books"
@@ -8,19 +9,19 @@ import { getDocuments } from "@/app/actions/documents"
 import { BooksStore } from "@/components/books-store"
 
 export default async function BooksPage() {
-  const [{ books, personalized, storefront }, ownedIds, favoriteIds, uploads] =
-    await Promise.all([
-      getStorefrontData(),
-      getOwnedBookIds(),
-      getFavoriteBookIds(),
-      getDocuments(),
-    ])
-
-  // Per-request rotation seed. The books page is dynamically rendered (it reads
-  // the session), so computing this once on the server and passing it down
-  // keeps SSR and client hydration identical while still changing on each visit
-  // — this drives the rotating "Browse by category" shelves in BooksStore.
-  const rotationSeed = Date.now()
+  const [
+    { books, personalized, storefront, languageCounts, categoryCounts },
+    ownedIds,
+    favoriteIds,
+    favoriteBooks,
+    uploads,
+  ] = await Promise.all([
+    getStorefrontData(),
+    getOwnedBookIds(),
+    getFavoriteBookIds(),
+    getFavoriteBooks(),
+    getDocuments(),
+  ])
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -32,8 +33,10 @@ export default async function BooksPage() {
           personalized={personalized}
           ownedIds={Array.from(ownedIds)}
           favoriteIds={Array.from(favoriteIds)}
+          favoriteBooks={favoriteBooks}
+          languageCounts={languageCounts}
+          categoryCounts={categoryCounts}
           uploads={uploads}
-          rotationSeed={rotationSeed}
         />
       </Suspense>
     </div>

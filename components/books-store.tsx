@@ -42,7 +42,7 @@ import {
 // The store only renders card-level fields, so it works on the lightweight
 // BookCard shape (no heavy full-text `content`). Aliased to Book locally.
 import type { BookCard as Book, Document } from "@/lib/db/schema"
-import type { Storefront } from "@/app/actions/books"
+import { searchNativeCatalog, type Storefront } from "@/app/actions/books"
 import { BookCover } from "@/components/book-cover"
 import {
   BookCard as StoreCard,
@@ -80,17 +80,6 @@ const SHELF_SIZE = 12
 // are scrollable browse rows, not exhaustive lists, so capping keeps the DOM
 // light with a 15K+ catalog. The genre nav still shows the true total.
 const SHELF_BROWSE_CAP = 24
-
-// Rotate an array left by `offset` positions (wrapping around). Used to cycle
-// browse shelves through their catalog across visits while preserving each
-// book's local ordering. Returns the input untouched when there's nothing to
-// rotate. Negative/large offsets are normalized into range.
-function rotateBooks<T>(arr: T[], offset: number): T[] {
-  if (arr.length <= 1) return arr
-  const k = ((Math.floor(offset) % arr.length) + arr.length) % arr.length
-  if (k === 0) return arr
-  return [...arr.slice(k), ...arr.slice(0, k)]
-}
 
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
@@ -160,20 +149,27 @@ export function BooksStore({
   personalized,
   ownedIds = [],
   favoriteIds = [],
+  favoriteBooks: favoriteBooksProp = [],
+  languageCounts = {},
+  categoryCounts = {},
   uploads = [],
-  rotationSeed = 0,
 }: {
+  // A capped, server-rotated slice of the catalog (up to ~40 per
+  // language+category). Enough to fill every browse shelf while keeping the
+  // payload small; full-catalog needs (search, genre pages) hit the server.
   books: Book[]
   storefront?: Storefront
   personalized: boolean
   ownedIds?: number[]
   favoriteIds?: number[]
+  // Full favorited book rows, fetched server-side so favorites always render
+  // even when the favorited book isn't in the capped `books` slice.
+  favoriteBooks?: Book[]
+  // Real per-language / per-category totals over the whole catalog, so the
+  // language picker and genre nav show accurate counts despite the capped set.
+  languageCounts?: Record<string, number>
+  categoryCounts?: Record<string, number>
   uploads?: Document[]
-  // Server-computed seed (changes each visit) used to rotate the "Browse by
-  // category" shelves so the store shows different books over time instead of
-  // the same first titles every visit. Passed from the server to keep SSR and
-  // client hydration identical.
-  rotationSeed?: number
 }) {
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
@@ -184,20 +180,17 @@ export function BooksStore({
   // surfaced on demand via the language picker (search-on-demand), never as a
   // long list of chips upfront.
   const [languageFilter, setLanguageFilter] = useState<string>("en")
+  // Language list + counts come from the server's whole-catalog totals so the
+  // picker reflects the real store size, not the capped client slice.
   const languages = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const b of books) {
-      const code = b.language || "en"
-      counts.set(code, (counts.get(code) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
+    return Object.entries(languageCounts)
       .sort((a, b) => {
         if (a[0] === "en") return -1
         if (b[0] === "en") return 1
         return b[1] - a[1]
       })
       .map(([code, count]) => ({ code, count }))
-  }, [books])
+  }, [languageCounts])
 
   // Books matching the active language filter ("all" shows every language).
   const visibleBooks = useMemo(
@@ -262,43 +255,35 @@ export function BooksStore({
       if (ib !== -1) return 1
       return a.localeCompare(b)
     })
-    categories.forEach((category, index) => {
+    categories.forEach((category) => {
       const list = byCategory.get(category)!
-      // Rotate each shelf by a per-category offset derived from the visit's
-      // rotation seed, so a category with more books than the cap surfaces a
-      // different window of its catalog on each visit instead of always the
-      // same first titles. The offset is staggered per category (index * 31) so
-      // shelves don't all rotate in lockstep. Rotation preserves local ordering
-      // and cycles through the whole category over repeated visits.
-      const rotated = rotateBooks(list, rotationSeed + index * 31)
-      // Cap each browse shelf: it's a horizontal scroller, so mounting every
-      // book in a large category (hundreds of cards, each with images + cart
-      // hooks) is wasted work. The true per-genre total is still shown in the
-      // Genres nav, and the full set stays reachable via search/language.
+      // The server already rotated each (language, category) group per visit
+      // and capped it, so different books surface over time. Here we just cap
+      // to the shelf size — it's a horizontal scroller, so mounting every book
+      // is wasted work. The true per-genre total shows in the Genres nav, and
+      // the full set stays reachable via search / the genre page.
       result.push({
         title: category,
-        books: rotated.slice(0, SHELF_BROWSE_CAP),
+        books: list.slice(0, SHELF_BROWSE_CAP),
       })
     })
     return result
-  }, [visibleBooks, rotationSeed])
+  }, [visibleBooks])
 
-  // Total published books per category across the ENTIRE catalog (every
-  // language), independent of the active language filter. The Genres nav shows
-  // these true catalog totals so the numbers reflect the real store size rather
-  // than just the English (or currently-filtered) subset.
-  const catalogCountByCategory = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const b of books) {
-      if (!b.category) continue
-      counts.set(b.category, (counts.get(b.category) ?? 0) + 1)
-    }
-    return counts
-  }, [books])
+  // Total published books per category across the ENTIRE catalog, from the
+  // server's whole-catalog totals. The Genres nav shows these true totals so
+  // the numbers reflect the real store size, not the capped client slice.
+  const catalogCountByCategory = useMemo(
+    () => new Map(Object.entries(categoryCounts)),
+    [categoryCounts],
+  )
 
+  // Favorited books come from the server (full rows) so they always render even
+  // when a favorited title isn't in the capped `books` slice. Kept in sync with
+  // the live `favorites` set so un-favoriting removes it immediately.
   const favoriteBooks = useMemo(
-    () => books.filter((b) => favorites.has(b.id)),
-    [books, favorites],
+    () => favoriteBooksProp.filter((b) => favorites.has(b.id)),
+    [favoriteBooksProp, favorites],
   )
 
   const [showFavorites, setShowFavorites] = useState(false)
@@ -312,33 +297,32 @@ export function BooksStore({
   }, [query])
   const searching = debounced.length > 0
 
-  // Native-store search: match the query against our own catalog (all
-  // languages) so books we actually carry surface first, before falling back to
-  // external/Amazon results. Ranked by relevance: title prefix > title match >
-  // author match, with featured titles nudged up. Capped so the section stays
-  // focused.
-  const nativeMatches = useMemo(() => {
-    if (debounced.length < 2) return [] as Book[]
-    const q = debounced.toLowerCase()
-    const tokens = q.split(/\s+/).filter(Boolean)
-    return books
-      .map((b) => {
-        const title = b.title.toLowerCase()
-        const author = (b.author || "").toLowerCase()
-        const hay = `${title} ${author}`
-        if (!tokens.every((t) => hay.includes(t))) return null
-        let score = 0
-        if (title.startsWith(q)) score += 100
-        else if (title.includes(q)) score += 50
-        if (author.includes(q)) score += 10
-        if (b.featured) score += 1
-        return { book: b, score }
-      })
-      .filter((x): x is { book: Book; score: number } => x !== null)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 18)
-      .map((x) => x.book)
-  }, [books, debounced])
+  // Native-store search results, fetched from the server so they cover the
+  // WHOLE catalog (the client only holds a capped slice). One debounced fetch
+  // on the raw query feeds both the typeahead dropdown and the results grid.
+  // Ranked server-side: title prefix > title match > author, featured nudged up.
+  const [nativeMatches, setNativeMatches] = useState<Book[]>([])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setNativeMatches([])
+      return
+    }
+    let cancelled = false
+    const id = setTimeout(() => {
+      searchNativeCatalog(q)
+        .then((rows) => {
+          if (!cancelled) setNativeMatches(rows)
+        })
+        .catch(() => {
+          if (!cancelled) setNativeMatches([])
+        })
+    }, 220)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [query])
 
   // Smart autocomplete: fetch title/author suggestions as the user types.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -367,37 +351,18 @@ export function BooksStore({
     }
   }, [query])
 
-  // Native-catalog typeahead: match our own books against the live query so
-  // titles we actually carry appear at the TOP of the dropdown, before the
-  // remote (Open Library / Amazon) suggestions.
+  // Native-catalog typeahead: the top few server matches, shown at the TOP of
+  // the dropdown before the remote (Open Library / Amazon) suggestions.
   const nativeSuggestions = useMemo<MergedSuggestion[]>(() => {
-    const q = query.trim().toLowerCase()
-    if (q.length < 2) return []
-    const tokens = q.split(/\s+/).filter(Boolean)
-    return books
-      .map((b) => {
-        const title = b.title.toLowerCase()
-        const author = (b.author || "").toLowerCase()
-        const hay = `${title} ${author}`
-        if (!tokens.every((t) => hay.includes(t))) return null
-        let score = 0
-        if (title.startsWith(q)) score += 100
-        else if (title.includes(q)) score += 50
-        if (author.includes(q)) score += 10
-        if (b.featured) score += 1
-        return { b, score }
-      })
-      .filter((x): x is { b: Book; score: number } => x !== null)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map(({ b }) => ({
-        title: b.title,
-        author: b.author || "Unknown",
-        coverUrl: b.coverImageUrl ?? null,
-        listenable: true,
-        native: true as const,
-      }))
-  }, [books, query])
+    if (query.trim().length < 2) return []
+    return nativeMatches.slice(0, 4).map((b) => ({
+      title: b.title,
+      author: b.author || "Unknown",
+      coverUrl: b.coverImageUrl ?? null,
+      listenable: true,
+      native: true as const,
+    }))
+  }, [nativeMatches, query])
 
   // Native suggestions first, then remote suggestions with any duplicate
   // title/author pairs removed, capped so the dropdown stays compact.
@@ -668,7 +633,7 @@ export function BooksStore({
               <h2 className="text-xl font-bold tracking-tight">
                 {`Books in ${languageLabel(languageFilter)}`}
                 <span className="ml-2 text-sm font-medium text-muted-foreground">
-                  {visibleBooks.length}
+                  {languageCounts[languageFilter] ?? visibleBooks.length}
                 </span>
               </h2>
             </div>
