@@ -267,8 +267,20 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
 
   const rows: StorefrontRow[] = []
 
-  // Editor's Picks — curated featured titles.
-  const editors = languageAwarePool(all.filter((b) => b.featured))
+  // Editor's Picks — curated featured titles, rotated per request so the row
+  // cycles through the featured pool across visits instead of always leading
+  // with the same titles. (New Releases stays newest-first, Trending/Best
+  // Sellers follow real sales, and Classics rotates hourly.)
+  const featuredAll = all.filter((b) => b.featured)
+  const editorsStart =
+    featuredAll.length > 1
+      ? Math.floor(Math.random() * featuredAll.length)
+      : 0
+  const featuredRotated = [
+    ...featuredAll.slice(editorsStart),
+    ...featuredAll.slice(0, editorsStart),
+  ]
+  const editors = languageAwarePool(featuredRotated)
   if (editors.length > 0) {
     rows.push({ key: "editors", title: "Editor's Picks", books: editors })
   }

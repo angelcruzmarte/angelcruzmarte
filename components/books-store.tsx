@@ -81,6 +81,17 @@ const SHELF_SIZE = 12
 // light with a 15K+ catalog. The genre nav still shows the true total.
 const SHELF_BROWSE_CAP = 24
 
+// Rotate an array left by `offset` positions (wrapping around). Used to cycle
+// browse shelves through their catalog across visits while preserving each
+// book's local ordering. Returns the input untouched when there's nothing to
+// rotate. Negative/large offsets are normalized into range.
+function rotateBooks<T>(arr: T[], offset: number): T[] {
+  if (arr.length <= 1) return arr
+  const k = ((Math.floor(offset) % arr.length) + arr.length) % arr.length
+  if (k === 0) return arr
+  return [...arr.slice(k), ...arr.slice(0, k)]
+}
+
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
 const CATEGORY_ORDER = [
@@ -150,6 +161,7 @@ export function BooksStore({
   ownedIds = [],
   favoriteIds = [],
   uploads = [],
+  rotationSeed = 0,
 }: {
   books: Book[]
   storefront?: Storefront
@@ -157,6 +169,11 @@ export function BooksStore({
   ownedIds?: number[]
   favoriteIds?: number[]
   uploads?: Document[]
+  // Server-computed seed (changes each visit) used to rotate the "Browse by
+  // category" shelves so the store shows different books over time instead of
+  // the same first titles every visit. Passed from the server to keep SSR and
+  // client hydration identical.
+  rotationSeed?: number
 }) {
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
@@ -245,18 +262,26 @@ export function BooksStore({
       if (ib !== -1) return 1
       return a.localeCompare(b)
     })
-    for (const category of categories) {
+    categories.forEach((category, index) => {
+      const list = byCategory.get(category)!
+      // Rotate each shelf by a per-category offset derived from the visit's
+      // rotation seed, so a category with more books than the cap surfaces a
+      // different window of its catalog on each visit instead of always the
+      // same first titles. The offset is staggered per category (index * 31) so
+      // shelves don't all rotate in lockstep. Rotation preserves local ordering
+      // and cycles through the whole category over repeated visits.
+      const rotated = rotateBooks(list, rotationSeed + index * 31)
       // Cap each browse shelf: it's a horizontal scroller, so mounting every
       // book in a large category (hundreds of cards, each with images + cart
       // hooks) is wasted work. The true per-genre total is still shown in the
       // Genres nav, and the full set stays reachable via search/language.
       result.push({
         title: category,
-        books: byCategory.get(category)!.slice(0, SHELF_BROWSE_CAP),
+        books: rotated.slice(0, SHELF_BROWSE_CAP),
       })
-    }
+    })
     return result
-  }, [visibleBooks])
+  }, [visibleBooks, rotationSeed])
 
   // Total published books per category across the ENTIRE catalog (every
   // language), independent of the active language filter. The Genres nav shows

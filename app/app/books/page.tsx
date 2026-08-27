@@ -16,6 +16,12 @@ export default async function BooksPage() {
       getDocuments(),
     ])
 
+  // Per-request rotation seed. The books page is dynamically rendered (it reads
+  // the session), so computing this once on the server and passing it down
+  // keeps SSR and client hydration identical while still changing on each visit
+  // — this drives the rotating "Browse by category" shelves in BooksStore.
+  const rotationSeed = Date.now()
+
   return (
     <div className="px-4 py-6 sm:px-6">
       {/* Suspense boundary so useSearchParams (in CartReturnHandler) works. */}
@@ -27,6 +33,7 @@ export default async function BooksPage() {
           ownedIds={Array.from(ownedIds)}
           favoriteIds={Array.from(favoriteIds)}
           uploads={uploads}
+          rotationSeed={rotationSeed}
         />
       </Suspense>
     </div>
