@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { head, put } from "@vercel/blob"
 import { createElevenLabs } from "@ai-sdk/elevenlabs"
 import { chunkText } from "@/lib/chunk-text"
+import { normalizeLang } from "@/lib/languages"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { experimental_generateSpeech as generateSpeech } from "ai"
 import {
@@ -88,12 +89,28 @@ function elevenVoiceIdFor(persona: PremiumVoice): string {
 }
 
 /**
- * Ordered model fallback chain for the given persona. Every persona now falls
- * back across providers so a rate limit on one never surfaces a "high demand"
- * error: ElevenLabs personas try ElevenLabs first then OpenAI; OpenAI personas
- * try OpenAI (HD then standard) then ElevenLabs.
+ * True when the text being spoken is English (or its language is unknown). The
+ * OpenAI tts-1 / tts-1-hd voices are English-native and read any OTHER language
+ * with a heavy English accent, so we only prefer them for English.
  */
-function modelsForVoice(persona: PremiumVoice): string[] {
+function isEnglishText(lang?: string): boolean {
+  const c = normalizeLang(lang)
+  return !c || c === "en"
+}
+
+/**
+ * Ordered model fallback chain for the given persona AND spoken language. Every
+ * persona falls back across providers so a rate limit on one never surfaces a
+ * "high demand" error.
+ *
+ * Language matters for quality: ElevenLabs' `eleven_multilingual_v2` speaks
+ * non-English text NATIVELY, while OpenAI's tts-1 voices apply a heavy English
+ * accent to it. So for any non-English text we put ElevenLabs first regardless
+ * of the persona's default provider; for English we keep OpenAI first (fast,
+ * cheap, and already widely cached), with ElevenLabs as the safety net.
+ */
+function modelsForVoice(persona: PremiumVoice, lang?: string): string[] {
+  if (!isEnglishText(lang)) return [ELEVEN_SENTINEL, ...OPENAI_MODELS]
   if (persona.provider === "elevenlabs") return [ELEVEN_SENTINEL, ...OPENAI_MODELS]
   return [...OPENAI_MODELS, ELEVEN_SENTINEL]
 }
@@ -147,9 +164,10 @@ async function synthOnce(model: string, text: string, persona: PremiumVoice) {
 async function synthWithRetry(
   text: string,
   persona: PremiumVoice,
+  lang?: string,
 ): Promise<Awaited<ReturnType<typeof generateSpeech>>> {
   let lastErr: unknown
-  const models = modelsForVoice(persona)
+  const models = modelsForVoice(persona, lang)
   for (let m = 0; m < models.length; m++) {
     const model = models[m]
     const isLastModel = m === models.length - 1
@@ -188,9 +206,15 @@ async function synthWithRetry(
 // call the rate-limited TTS API again, so the "high demand" error disappears
 // for anything that has been played before.
 
-function cacheKey(text: string, voice: string): string {
+function cacheKey(text: string, voice: string, lang?: string): string {
   const hash = createHash("sha256").update(`${voice}\u0000${text}`).digest("hex")
-  return `voxyfi-audio/${voice}/${hash}.mp3`
+  // English (or unknown) keeps the original key so the large existing cache of
+  // English clips stays valid. Non-English gets a language-scoped key so it is
+  // (re)generated with the native multilingual voice instead of serving any
+  // previously cached English-accented rendering of the same text.
+  const c = normalizeLang(lang)
+  const prefix = !c || c === "en" ? voice : `${voice}-${c}`
+  return `voxyfi-audio/${prefix}/${hash}.mp3`
 }
 
 /** Returns the public URL of a cached clip, or null if it isn't cached yet. */
@@ -215,10 +239,12 @@ const inflightUrl = new Map<string, Promise<string>>()
 async function getOrCreateAudioUrl(
   text: string,
   persona: PremiumVoice,
+  lang?: string,
 ): Promise<string> {
-  // Key by persona id so two personas sharing an engine but differing in style
-  // instructions never collide in the cache.
-  const pathname = cacheKey(text, persona.id)
+  // Key by persona id (+ language for non-English) so two personas sharing an
+  // engine but differing in style instructions never collide, and so English
+  // and translated renderings of the same text are cached separately.
+  const pathname = cacheKey(text, persona.id, lang)
   const cached = await getCachedUrl(pathname)
   if (cached) return cached
 
@@ -226,7 +252,7 @@ async function getOrCreateAudioUrl(
   if (running) return running
 
   const task = (async () => {
-    const result = await synthWithRetry(text, persona)
+    const result = await synthWithRetry(text, persona, lang)
     const bytes = Buffer.from(result.audio.base64, "base64")
     const blob = await put(pathname, bytes, {
       access: "public",
@@ -254,8 +280,9 @@ async function getOrCreateAudioUrl(
 async function getOrCreateAudioBytes(
   text: string,
   persona: PremiumVoice,
+  lang?: string,
 ): Promise<Uint8Array> {
-  const pathname = cacheKey(text, persona.id)
+  const pathname = cacheKey(text, persona.id, lang)
   const cached = await getCachedUrl(pathname)
   if (cached) {
     try {
@@ -265,7 +292,7 @@ async function getOrCreateAudioBytes(
       // Fall through to regeneration if the cached object can't be fetched.
     }
   }
-  const result = await synthWithRetry(text, persona)
+  const result = await synthWithRetry(text, persona, lang)
   const buffer = Buffer.from(result.audio.base64, "base64")
   await put(pathname, buffer, {
     access: "public",
@@ -282,6 +309,13 @@ type SpeechResponse = { url: string } | { error: string }
 export async function generatePremiumSpeech(
   text: string,
   voice: string,
+  /**
+   * BCP-47/ISO code of the language the `text` is written in. Drives provider
+   * selection so non-English text is spoken natively (ElevenLabs multilingual)
+   * instead of with an English accent (OpenAI). Optional and backward
+   * compatible — defaults to English behavior when omitted.
+   */
+  lang?: string,
 ): Promise<SpeechResponse> {
   const user = await getCurrentUser()
   if (!user) return { error: "You must be signed in to use premium narration." }
@@ -304,7 +338,7 @@ export async function generatePremiumSpeech(
     getPremiumVoice("alloy")!
 
   try {
-    const url = await getOrCreateAudioUrl(trimmed, persona)
+    const url = await getOrCreateAudioUrl(trimmed, persona, lang)
     return { url }
   } catch (err) {
     console.log("[v0] premium speech error:", err instanceof Error ? err.message : err)
