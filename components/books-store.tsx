@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -42,7 +42,7 @@ import {
 // The store only renders card-level fields, so it works on the lightweight
 // BookCard shape (no heavy full-text `content`). Aliased to Book locally.
 import type { BookCard as Book, Document } from "@/lib/db/schema"
-import type { Storefront } from "@/app/actions/books"
+import { searchNativeCatalog, type Storefront } from "@/app/actions/books"
 import { BookCover } from "@/components/book-cover"
 import {
   BookCard as StoreCard,
@@ -58,7 +58,7 @@ import type { Suggestion } from "@/app/api/store/suggest/route"
 type MergedSuggestion = Suggestion & { native?: boolean }
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
-import { useCart, type CartItem } from "@/components/cart-provider"
+import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
 import { usePlatform } from "@/hooks/use-platform"
 import {
   Popover,
@@ -75,6 +75,13 @@ import { cn } from "@/lib/utils"
 // this size after applying the active language filter. Mirrors ROW_SIZE in
 // app/actions/books.ts.
 const SHELF_SIZE = 12
+
+// Max cards mounted in a single "Browse by category" horizontal shelf. These
+// are scrollable browse teasers, not exhaustive lists — only ~3 cards are
+// visible at once on a phone — so we keep the mounted count small to bound the
+// DOM/work with a 15K+ catalog. Every shelf has a "See all" link into the full
+// paginated genre page, and the genre nav still shows the true total.
+const SHELF_BROWSE_CAP = 12
 
 // Preferred shelf order, grouped by parent (Fiction -> Nonfiction ->
 // Children's). Categories not listed here are appended alphabetically after.
@@ -144,38 +151,49 @@ export function BooksStore({
   personalized,
   ownedIds = [],
   favoriteIds = [],
+  favoriteBooks: favoriteBooksProp = [],
+  languageCounts = {},
+  categoryCounts = {},
   uploads = [],
 }: {
+  // A capped, server-rotated slice of the catalog (up to ~40 per
+  // language+category). Enough to fill every browse shelf while keeping the
+  // payload small; full-catalog needs (search, genre pages) hit the server.
   books: Book[]
   storefront?: Storefront
   personalized: boolean
   ownedIds?: number[]
   favoriteIds?: number[]
+  // Full favorited book rows, fetched server-side so favorites always render
+  // even when the favorited book isn't in the capped `books` slice.
+  favoriteBooks?: Book[]
+  // Real per-language / per-category totals over the whole catalog, so the
+  // language picker and genre nav show accurate counts despite the capped set.
+  languageCounts?: Record<string, number>
+  categoryCounts?: Record<string, number>
   uploads?: Document[]
 }) {
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
-  const { count, totalCents, setOpen } = useCart()
+  const { count, totalCents } = useCart()
+  const { setOpen } = useCartUI()
   const { isIOS } = usePlatform()
 
   // Language handling. The store defaults to English; other languages are only
   // surfaced on demand via the language picker (search-on-demand), never as a
   // long list of chips upfront.
   const [languageFilter, setLanguageFilter] = useState<string>("en")
+  // Language list + counts come from the server's whole-catalog totals so the
+  // picker reflects the real store size, not the capped client slice.
   const languages = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const b of books) {
-      const code = b.language || "en"
-      counts.set(code, (counts.get(code) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
+    return Object.entries(languageCounts)
       .sort((a, b) => {
         if (a[0] === "en") return -1
         if (b[0] === "en") return 1
         return b[1] - a[1]
       })
       .map(([code, count]) => ({ code, count }))
-  }, [books])
+  }, [languageCounts])
 
   // Books matching the active language filter ("all" shows every language).
   const visibleBooks = useMemo(
@@ -240,28 +258,35 @@ export function BooksStore({
       if (ib !== -1) return 1
       return a.localeCompare(b)
     })
-    for (const category of categories) {
-      result.push({ title: category, books: byCategory.get(category)! })
-    }
+    categories.forEach((category) => {
+      const list = byCategory.get(category)!
+      // The server already rotated each (language, category) group per visit
+      // and capped it, so different books surface over time. Here we just cap
+      // to the shelf size — it's a horizontal scroller, so mounting every book
+      // is wasted work. The true per-genre total shows in the Genres nav, and
+      // the full set stays reachable via search / the genre page.
+      result.push({
+        title: category,
+        books: list.slice(0, SHELF_BROWSE_CAP),
+      })
+    })
     return result
   }, [visibleBooks])
 
-  // Total published books per category across the ENTIRE catalog (every
-  // language), independent of the active language filter. The Genres nav shows
-  // these true catalog totals so the numbers reflect the real store size rather
-  // than just the English (or currently-filtered) subset.
-  const catalogCountByCategory = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const b of books) {
-      if (!b.category) continue
-      counts.set(b.category, (counts.get(b.category) ?? 0) + 1)
-    }
-    return counts
-  }, [books])
+  // Total published books per category across the ENTIRE catalog, from the
+  // server's whole-catalog totals. The Genres nav shows these true totals so
+  // the numbers reflect the real store size, not the capped client slice.
+  const catalogCountByCategory = useMemo(
+    () => new Map(Object.entries(categoryCounts)),
+    [categoryCounts],
+  )
 
+  // Favorited books come from the server (full rows) so they always render even
+  // when a favorited title isn't in the capped `books` slice. Kept in sync with
+  // the live `favorites` set so un-favoriting removes it immediately.
   const favoriteBooks = useMemo(
-    () => books.filter((b) => favorites.has(b.id)),
-    [books, favorites],
+    () => favoriteBooksProp.filter((b) => favorites.has(b.id)),
+    [favoriteBooksProp, favorites],
   )
 
   const [showFavorites, setShowFavorites] = useState(false)
@@ -275,33 +300,32 @@ export function BooksStore({
   }, [query])
   const searching = debounced.length > 0
 
-  // Native-store search: match the query against our own catalog (all
-  // languages) so books we actually carry surface first, before falling back to
-  // external/Amazon results. Ranked by relevance: title prefix > title match >
-  // author match, with featured titles nudged up. Capped so the section stays
-  // focused.
-  const nativeMatches = useMemo(() => {
-    if (debounced.length < 2) return [] as Book[]
-    const q = debounced.toLowerCase()
-    const tokens = q.split(/\s+/).filter(Boolean)
-    return books
-      .map((b) => {
-        const title = b.title.toLowerCase()
-        const author = (b.author || "").toLowerCase()
-        const hay = `${title} ${author}`
-        if (!tokens.every((t) => hay.includes(t))) return null
-        let score = 0
-        if (title.startsWith(q)) score += 100
-        else if (title.includes(q)) score += 50
-        if (author.includes(q)) score += 10
-        if (b.featured) score += 1
-        return { book: b, score }
-      })
-      .filter((x): x is { book: Book; score: number } => x !== null)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 18)
-      .map((x) => x.book)
-  }, [books, debounced])
+  // Native-store search results, fetched from the server so they cover the
+  // WHOLE catalog (the client only holds a capped slice). One debounced fetch
+  // on the raw query feeds both the typeahead dropdown and the results grid.
+  // Ranked server-side: title prefix > title match > author, featured nudged up.
+  const [nativeMatches, setNativeMatches] = useState<Book[]>([])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setNativeMatches([])
+      return
+    }
+    let cancelled = false
+    const id = setTimeout(() => {
+      searchNativeCatalog(q)
+        .then((rows) => {
+          if (!cancelled) setNativeMatches(rows)
+        })
+        .catch(() => {
+          if (!cancelled) setNativeMatches([])
+        })
+    }, 220)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [query])
 
   // Smart autocomplete: fetch title/author suggestions as the user types.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -330,37 +354,18 @@ export function BooksStore({
     }
   }, [query])
 
-  // Native-catalog typeahead: match our own books against the live query so
-  // titles we actually carry appear at the TOP of the dropdown, before the
-  // remote (Open Library / Amazon) suggestions.
+  // Native-catalog typeahead: the top few server matches, shown at the TOP of
+  // the dropdown before the remote (Open Library / Amazon) suggestions.
   const nativeSuggestions = useMemo<MergedSuggestion[]>(() => {
-    const q = query.trim().toLowerCase()
-    if (q.length < 2) return []
-    const tokens = q.split(/\s+/).filter(Boolean)
-    return books
-      .map((b) => {
-        const title = b.title.toLowerCase()
-        const author = (b.author || "").toLowerCase()
-        const hay = `${title} ${author}`
-        if (!tokens.every((t) => hay.includes(t))) return null
-        let score = 0
-        if (title.startsWith(q)) score += 100
-        else if (title.includes(q)) score += 50
-        if (author.includes(q)) score += 10
-        if (b.featured) score += 1
-        return { b, score }
-      })
-      .filter((x): x is { b: Book; score: number } => x !== null)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map(({ b }) => ({
-        title: b.title,
-        author: b.author || "Unknown",
-        coverUrl: b.coverImageUrl ?? null,
-        listenable: true,
-        native: true as const,
-      }))
-  }, [books, query])
+    if (query.trim().length < 2) return []
+    return nativeMatches.slice(0, 4).map((b) => ({
+      title: b.title,
+      author: b.author || "Unknown",
+      coverUrl: b.coverImageUrl ?? null,
+      listenable: true,
+      native: true as const,
+    }))
+  }, [nativeMatches, query])
 
   // Native suggestions first, then remote suggestions with any duplicate
   // title/author pairs removed, capped so the dropdown stays compact.
@@ -631,7 +636,7 @@ export function BooksStore({
               <h2 className="text-xl font-bold tracking-tight">
                 {`Books in ${languageLabel(languageFilter)}`}
                 <span className="ml-2 text-sm font-medium text-muted-foreground">
-                  {visibleBooks.length}
+                  {languageCounts[languageFilter] ?? visibleBooks.length}
                 </span>
               </h2>
             </div>
@@ -656,24 +661,39 @@ export function BooksStore({
               Browse by category
             </h2>
           )}
-          {shelves.map((shelf, i) => (
-            <LazyShelf
-              key={shelf.title}
-              id={genreSlug(shelf.title)}
-              // Render the first couple of shelves immediately; defer the rest
-              // until they scroll near the viewport so the page paints fast.
-              eager={i < 2}
-              placeholderCount={Math.min(shelf.books.length, 6)}
-            >
-              <BookShelf
+          {shelves.map((shelf, i) => {
+            // The shelf shows a capped slice; when the genre has more titles
+            // than are shown, offer a "See all" link into the full paginated
+            // genre page. Use the catalog-wide total so the link appears even
+            // when the current language view is small.
+            const genreTotal =
+              catalogCountByCategory.get(shelf.title) ?? shelf.books.length
+            const hasMore = genreTotal > shelf.books.length
+            return (
+              <LazyShelf
+                key={shelf.title}
                 id={genreSlug(shelf.title)}
-                title={shelf.title}
-                books={shelf.books}
-                owned={owned}
-                favorites={favorites}
-              />
-            </LazyShelf>
-          ))}
+                // Render the first couple of shelves immediately; defer the rest
+                // until they scroll near the viewport so the page paints fast.
+                eager={i < 2}
+                placeholderCount={Math.min(shelf.books.length, 6)}
+              >
+                <BookShelf
+                  id={genreSlug(shelf.title)}
+                  title={shelf.title}
+                  books={shelf.books}
+                  owned={owned}
+                  favorites={favorites}
+                  seeAllHref={
+                    hasMore
+                      ? `/app/books/genre/${genreSlug(shelf.title).replace(/^genre-/, "")}`
+                      : undefined
+                  }
+                  seeAllLabel={`See all ${genreTotal.toLocaleString()}`}
+                />
+              </LazyShelf>
+            )
+          })}
 
           {/* Genre quick-nav for easy jumping between categories */}
           {shelves.length > 0 && (
@@ -740,8 +760,8 @@ function GenreNav({
           const Icon = GENRE_ICONS[g.title] ?? BookOpen
           return (
             <li key={g.title}>
-              <a
-                href={`#${genreSlug(g.title)}`}
+              <Link
+                href={`/app/books/genre/${genreSlug(g.title).replace(/^genre-/, "")}`}
                 className="flex items-center gap-3 rounded-2xl bg-secondary px-4 py-4 transition-colors hover:bg-secondary/70"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -756,7 +776,7 @@ function GenreNav({
                   </span>
                 </span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-              </a>
+              </Link>
             </li>
           )
         })}
@@ -1030,10 +1050,21 @@ function FavoritesView({
 }
 
 /**
- * Defers rendering of a heavy shelf (many cover images) until it scrolls near
- * the viewport. Until then it shows a light skeleton of the same height, so the
- * page paints quickly and anchor jumps (#genre-…) still land in roughly the
- * right place. `eager` shelves render immediately.
+ * Renders a heavy shelf (many cover images + cart/favorite hooks) efficiently
+ * for a very large catalog, using two complementary techniques:
+ *
+ * 1. Deferred first mount — a shelf's cards aren't mounted until it scrolls
+ *    within ~800px of the viewport, so initial hydration doesn't have to build
+ *    every shelf's ~24 cards at once. Once mounted it STAYS mounted; we never
+ *    unmount, because tearing shelves down and rebuilding them mid-scroll (the
+ *    previous approach) caused its own scroll jank.
+ * 2. `content-visibility: auto` — the browser skips layout/paint for any shelf
+ *    that is off-screen, so keeping shelves mounted stays cheap while
+ *    scrolling. `contain-intrinsic-size` reserves an estimated height (updated
+ *    to the real size after first render) so the scrollbar stays stable and
+ *    anchor jumps (#genre-…) land correctly.
+ *
+ * `eager` shelves mount immediately (used for the first couple of shelves).
  */
 function LazyShelf({
   id,
@@ -1047,47 +1078,63 @@ function LazyShelf({
   children: React.ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(eager)
+  const [mounted, setMounted] = useState(eager)
 
   // Mount instantly if the URL already targets this shelf's anchor (e.g. the
   // user tapped a genre link that points here).
   useEffect(() => {
-    if (!visible && id && window.location.hash === `#${id}`) setVisible(true)
-  }, [id, visible])
+    if (!mounted && id && window.location.hash === `#${id}`) setMounted(true)
+  }, [id, mounted])
 
+  // Mount once the shelf nears the viewport, then stop observing.
   useEffect(() => {
-    if (visible) return
+    if (mounted) return
     const el = ref.current
     if (!el) return
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
-          setVisible(true)
+          setMounted(true)
           io.disconnect()
         }
       },
-      // Start loading a good bit before it enters view for a seamless scroll.
-      { rootMargin: "600px 0px" },
+      { rootMargin: "800px 0px" },
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [visible])
+  }, [mounted])
 
-  if (visible) return <>{children}</>
-
-  // Keep the anchor id on the placeholder so #genre-… jumps always land, even
-  // before the real shelf mounts.
   return (
-    <section ref={ref} id={id} aria-hidden className={id ? "scroll-mt-6" : undefined}>
-      <div className="mb-3 h-6 w-40 animate-pulse rounded bg-secondary" />
-      <div className="-mx-4 flex gap-4 overflow-hidden px-4 pb-2 sm:-mx-6 sm:px-6">
-        {Array.from({ length: placeholderCount }).map((_, i) => (
-          <div key={i} className="w-32 shrink-0 sm:w-36">
-            <div className="aspect-[2/3] w-full animate-pulse rounded-lg bg-secondary" />
+    <div
+      ref={ref}
+      id={id}
+      className={id ? "scroll-mt-6" : undefined}
+      // `content-visibility: auto` lets the browser skip rendering this shelf
+      // while it's off-screen; the intrinsic size keeps its slot reserved.
+      style={
+        {
+          contentVisibility: "auto",
+          // Close to a real shelf's height (heading + one card row); the `auto`
+          // keyword replaces this with the measured size after first render.
+          containIntrinsicSize: "auto 340px",
+        } as React.CSSProperties
+      }
+    >
+      {mounted ? (
+        children
+      ) : (
+        <>
+          <div className="mb-3 h-6 w-40 animate-pulse rounded bg-secondary" />
+          <div className="-mx-4 flex gap-4 overflow-hidden px-4 pb-2 sm:-mx-6 sm:px-6">
+            {Array.from({ length: placeholderCount }).map((_, i) => (
+              <div key={i} className="w-32 shrink-0 sm:w-36">
+                <div className="aspect-[2/3] w-full animate-pulse rounded-lg bg-secondary" />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </section>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -1097,16 +1144,32 @@ function BookShelf({
   books,
   owned,
   favorites,
+  seeAllHref,
+  seeAllLabel,
 }: {
   id?: string
   title: string
   books: Book[]
   owned: Set<number>
   favorites: Set<number>
+  // When set, a "See all" link is shown that opens the full paginated genre.
+  seeAllHref?: string
+  seeAllLabel?: string
 }) {
   return (
     <section id={id} className={id ? "scroll-mt-6" : undefined}>
-      <h2 className="mb-3 text-xl font-bold tracking-tight">{title}</h2>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-tight">{title}</h2>
+        {seeAllHref && (
+          <Link
+            href={seeAllHref}
+            className="inline-flex shrink-0 items-center gap-0.5 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+          >
+            {seeAllLabel ?? "See all"}
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
       <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {books.map((book) => (
           <div key={book.id} className="w-32 shrink-0 sm:w-36">
@@ -1122,7 +1185,7 @@ function BookShelf({
   )
 }
 
-function StoreBookCard({
+const StoreBookCard = memo(function StoreBookCard({
   book,
   owned,
   favorited,
@@ -1179,7 +1242,7 @@ function StoreBookCard({
       action={action}
     />
   )
-}
+})
 
 function UploadsShelf({ uploads }: { uploads: Document[] }) {
   return (

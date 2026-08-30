@@ -28,11 +28,20 @@ type CartContextValue = {
   add: (item: CartItem) => void
   remove: (id: number) => void
   clear: () => void
+}
+
+// The drawer open/close state lives in its OWN context, separate from the cart
+// contents. Toggling the drawer is a very common interaction; if it shared the
+// cart value, every `useCart()` consumer (hundreds of memoized book cards)
+// would re-render on each open/close. Keeping it separate means only the drawer
+// and the trigger re-render.
+type CartUIContextValue = {
   open: boolean
   setOpen: (open: boolean) => void
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
+const CartUIContext = createContext<CartUIContextValue | null>(null)
 
 const STORAGE_KEY = "voxyfi.cart.v1"
 
@@ -74,6 +83,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clear = useCallback(() => setItems([]), [])
 
+  // Cart-contents value — intentionally does NOT depend on `open`, so opening
+  // the drawer doesn't re-render card consumers.
   const value = useMemo<CartContextValue>(() => {
     return {
       items,
@@ -83,16 +94,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       add,
       remove,
       clear,
-      open,
-      setOpen,
     }
-  }, [items, add, remove, clear, open])
+  }, [items, add, remove, clear])
 
-  return <CartContext.Provider value={value}>{children}</CartContext.Provider>
+  const uiValue = useMemo<CartUIContextValue>(
+    () => ({ open, setOpen }),
+    [open],
+  )
+
+  return (
+    <CartContext.Provider value={value}>
+      <CartUIContext.Provider value={uiValue}>
+        {children}
+      </CartUIContext.Provider>
+    </CartContext.Provider>
+  )
 }
 
 export function useCart() {
   const ctx = useContext(CartContext)
   if (!ctx) throw new Error("useCart must be used within a CartProvider")
+  return ctx
+}
+
+export function useCartUI() {
+  const ctx = useContext(CartUIContext)
+  if (!ctx) throw new Error("useCartUI must be used within a CartProvider")
   return ctx
 }

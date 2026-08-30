@@ -1075,7 +1075,7 @@ export function AdminBooks({
           </DialogHeader>
           {lightbox && (
             <div className="flex flex-col items-center gap-3">
-              <BookCover book={lightbox} className="w-56" />
+              <BookCover book={lightbox} className="w-56" size="L" />
               <p className="text-sm text-muted-foreground">{lightbox.author}</p>
             </div>
           )}

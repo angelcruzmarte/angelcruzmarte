@@ -17,26 +17,30 @@ import { INTEREST_LABELS } from "@/lib/interests"
 import { getCurrentUser, getUserId } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
-import { and, count, desc, eq, gte, inArray, ne, notInArray, sql } from "drizzle-orm"
+import { and, count, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
 import { MIN_RATINGS_TO_SHOW, type BookRatingSummary } from "@/lib/ratings"
 import type { BookCard } from "@/lib/db/schema"
 
-// Columns needed to render book cards / the storefront — everything except the
-// heavy full-text `content`, which would bloat the store payload enormously.
+// Columns needed to render book cards / the storefront. The whole published
+// catalog is shipped to the client, so we blank the fields the store never
+// reads on a card — the long `description`/`excerpt` text and the admin-only
+// `isbn`/`buyUrl` — which together are ~65% of the raw payload (13MB -> ~4MB).
+// The book detail page (getBook) still selects the real values, and the
+// storefront hero's real description is re-attached in getStorefrontData.
 const bookCardColumns = {
   id: book.id,
   title: book.title,
   author: book.author,
   category: book.category,
   language: book.language,
-  description: book.description,
-  excerpt: book.excerpt,
+  description: sql<string>`''`.as("description"),
+  excerpt: sql<string>`''`.as("excerpt"),
   priceInCents: book.priceInCents,
   fulfillment: book.fulfillment,
-  isbn: book.isbn,
-  buyUrl: book.buyUrl,
+  isbn: sql<string | null>`null`.as("isbn"),
+  buyUrl: sql<string | null>`null`.as("buyUrl"),
   coverImageUrl: book.coverImageUrl,
   gutenbergId: book.gutenbergId,
   coverColor: book.coverColor,
@@ -72,6 +76,103 @@ export async function getBooks(): Promise<BookCard[]> {
 export async function getBook(id: number) {
   const [row] = await db.select().from(book).where(eq(book.id, id)).limit(1)
   return row ?? null
+}
+
+// Slug used by the storefront genre nav (mirrors `genreSlug` in books-store).
+function categorySlug(category: string) {
+  return category
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+/**
+ * Resolves a genre slug (e.g. "science-fiction") back to its real category
+ * name by scanning the distinct published categories. Returns null if no
+ * category matches, so the page can 404.
+ */
+export async function resolveGenreBySlug(slug: string): Promise<string | null> {
+  const rows = await db
+    .selectDistinct({ category: book.category })
+    .from(book)
+    .where(and(eq(book.published, true), sql`${book.category} is not null`))
+  for (const r of rows) {
+    if (r.category && categorySlug(r.category) === slug) return r.category
+  }
+  return null
+}
+
+export type GenrePage = {
+  category: string
+  books: BookCard[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  language: string
+}
+
+// Books per page on the dedicated genre page. A grid, so a full page still
+// loads only a small slice of a large genre instead of the whole catalog.
+// Not exported: "use server" files may only export async functions.
+const GENRE_PAGE_SIZE = 40
+
+/**
+ * Server-side paginated fetch of all published books in a single genre,
+ * optionally scoped to a language. Only the requested page's rows leave the
+ * database, so browsing a 3,000-book genre never ships the whole catalog.
+ */
+export async function getBooksByGenre(opts: {
+  category: string
+  page?: number
+  language?: string
+}): Promise<GenrePage> {
+  const page = Math.max(1, opts.page ?? 1)
+  const language = opts.language && opts.language !== "all" ? opts.language : "all"
+  const pageSize = GENRE_PAGE_SIZE
+
+  const filters = [eq(book.published, true), eq(book.category, opts.category)]
+  if (language !== "all") filters.push(eq(book.language, language))
+  const where = and(...filters)
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select(bookCardColumns)
+      .from(book)
+      .where(where)
+      .orderBy(desc(book.featured), desc(book.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ total: count() }).from(book).where(where),
+  ])
+
+  return {
+    category: opts.category,
+    books: rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    language,
+  }
+}
+
+/**
+ * Distinct languages available within a single genre, with per-language counts,
+ * so the genre page can offer a language filter scoped to that genre.
+ */
+export async function getGenreLanguages(
+  category: string,
+): Promise<Array<{ code: string; count: number }>> {
+  const rows = await db
+    .select({ code: book.language, c: count() })
+    .from(book)
+    .where(and(eq(book.published, true), eq(book.category, category)))
+    .groupBy(book.language)
+    .orderBy(desc(count()))
+  return rows
+    .filter((r) => r.code)
+    .map((r) => ({ code: r.code as string, count: Number(r.c) }))
 }
 
 export type StorefrontRow = { key: string; title: string; books: BookCard[] }
@@ -166,8 +267,20 @@ async function buildStorefront(all: BookCard[]): Promise<Storefront> {
 
   const rows: StorefrontRow[] = []
 
-  // Editor's Picks — curated featured titles.
-  const editors = languageAwarePool(all.filter((b) => b.featured))
+  // Editor's Picks — curated featured titles, rotated per request so the row
+  // cycles through the featured pool across visits instead of always leading
+  // with the same titles. (New Releases stays newest-first, Trending/Best
+  // Sellers follow real sales, and Classics rotates hourly.)
+  const featuredAll = all.filter((b) => b.featured)
+  const editorsStart =
+    featuredAll.length > 1
+      ? Math.floor(Math.random() * featuredAll.length)
+      : 0
+  const featuredRotated = [
+    ...featuredAll.slice(editorsStart),
+    ...featuredAll.slice(0, editorsStart),
+  ]
+  const editors = languageAwarePool(featuredRotated)
   if (editors.length > 0) {
     rows.push({ key: "editors", title: "Editor's Picks", books: editors })
   }
@@ -661,6 +774,11 @@ export async function getStorefrontData(): Promise<{
   books: BookCard[]
   personalized: boolean
   storefront: Storefront
+  // Real per-language and per-category totals over the WHOLE catalog. The
+  // `books` array is capped for payload, so these let the client show accurate
+  // language-picker and genre-nav counts without shipping every row.
+  languageCounts: Record<string, number>
+  categoryCounts: Record<string, number>
 }> {
   const [all, interestIds, user] = await Promise.all([
     getBooks(),
@@ -668,6 +786,29 @@ export async function getStorefrontData(): Promise<{
     getCurrentUser(),
   ])
   const storefront = await buildStorefront(all)
+
+  // Accurate totals over the full catalog (before capping), for the UI counts.
+  const languageCounts: Record<string, number> = {}
+  const categoryCounts: Record<string, number> = {}
+  for (const b of all) {
+    const lang = b.language || "en"
+    languageCounts[lang] = (languageCounts[lang] ?? 0) + 1
+    if (b.category) categoryCounts[b.category] = (categoryCounts[b.category] ?? 0) + 1
+  }
+
+  // The bulk catalog blanks `description` to keep the payload small, but the
+  // storefront hero renders its description — fetch the real one for just that
+  // single book and re-attach it.
+  if (storefront.hero) {
+    const [row] = await db
+      .select({ description: book.description })
+      .from(book)
+      .where(eq(book.id, storefront.hero.id))
+      .limit(1)
+    if (row?.description) {
+      storefront.hero = { ...storefront.hero, description: row.description }
+    }
+  }
 
   // Prepend the signed-in user's personalized rows so discovery leads with
   // their own reading journey, then the curated rows follow.
@@ -683,7 +824,13 @@ export async function getStorefrontData(): Promise<{
     interestIds.map((id) => (INTEREST_LABELS.get(id) ?? id).toLowerCase()),
   )
   if (wanted.size === 0) {
-    return { books: all, personalized: false, storefront }
+    return {
+      books: capBooksForClient(all),
+      personalized: false,
+      storefront,
+      languageCounts,
+      categoryCounts,
+    }
   }
 
   const ranked = [...all].sort((a, b) => {
@@ -692,7 +839,95 @@ export async function getStorefrontData(): Promise<{
     if (aMatch !== bMatch) return bMatch - aMatch
     return Number(b.featured) - Number(a.featured)
   })
-  return { books: ranked, personalized: true, storefront }
+  return {
+    books: capBooksForClient(ranked),
+    personalized: true,
+    storefront,
+    languageCounts,
+    categoryCounts,
+  }
+}
+
+// Max books sent to the client per (language, category). The store only ever
+// displays SHELF_BROWSE_CAP (24) per category shelf; this leaves generous
+// rotation headroom while cutting the client payload roughly in half. Search
+// and genre pages query the DB directly, so they still see the whole catalog.
+const CLIENT_BOOKS_PER_GROUP = 40
+
+/**
+ * Caps the catalog shipped to the client to a manageable slice: for each
+ * (language, category) group it rotates the group by a per-request offset
+ * (so different books surface on each visit) and keeps the first
+ * CLIENT_BOOKS_PER_GROUP. Preserves the incoming order of groups and of books
+ * within a rotated group, so personalized/featured ordering still leads.
+ */
+function capBooksForClient(source: BookCard[]): BookCard[] {
+  const groups = new Map<string, BookCard[]>()
+  const order: string[] = []
+  for (const b of source) {
+    const key = `${b.language || "en"}|${b.category || ""}`
+    let list = groups.get(key)
+    if (!list) {
+      list = []
+      groups.set(key, list)
+      order.push(key)
+    }
+    list.push(b)
+  }
+  // Per-request seed → shelves cycle through their catalog across visits.
+  const seed = Date.now()
+  const result: BookCard[] = []
+  order.forEach((key, i) => {
+    const list = groups.get(key)!
+    if (list.length <= CLIENT_BOOKS_PER_GROUP) {
+      result.push(...list)
+      return
+    }
+    // Stagger the offset per group so groups don't rotate in lockstep.
+    const offset = (((seed + i * 31) % list.length) + list.length) % list.length
+    const rotated = [...list.slice(offset), ...list.slice(0, offset)]
+    result.push(...rotated.slice(0, CLIENT_BOOKS_PER_GROUP))
+  })
+  return result
+}
+
+/**
+ * Full-catalog native search for the store search bar. Runs in the DB (over
+ * every published book, all languages) so results are complete even though the
+ * client only holds a capped slice of the catalog. Ranks title-prefix >
+ * title-substring > author matches, nudging featured titles up, and requires
+ * every whitespace token to appear in "title author". Returns lightweight
+ * BookCard rows, capped so the results section stays focused.
+ */
+export async function searchNativeCatalog(
+  rawQuery: string,
+): Promise<BookCard[]> {
+  const q = rawQuery.trim().toLowerCase()
+  if (q.length < 2) return []
+  const tokens = q.split(/\s+/).filter(Boolean).slice(0, 6)
+  if (tokens.length === 0) return []
+
+  // Each token must appear somewhere in "title author".
+  const haystack = sql`lower(${book.title} || ' ' || coalesce(${book.author}, ''))`
+  const tokenFilters = tokens.map((t) => sql`${haystack} like ${`%${t}%`}`)
+
+  const relevance = sql<number>`(
+    case
+      when lower(${book.title}) like ${`${q}%`} then 100
+      when lower(${book.title}) like ${`%${q}%`} then 50
+      else 0
+    end
+    + case when lower(coalesce(${book.author}, '')) like ${`%${q}%`} then 10 else 0 end
+    + case when ${book.featured} then 1 else 0 end
+  )`
+
+  const rows = await db
+    .select(bookCardColumns)
+    .from(book)
+    .where(and(eq(book.published, true), ...tokenFilters))
+    .orderBy(desc(relevance), desc(book.featured))
+    .limit(18)
+  return rows
 }
 
 // ----- Favorites (wishlist) -----

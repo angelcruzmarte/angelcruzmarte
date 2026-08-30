@@ -409,7 +409,11 @@ export function PremiumNarration({
             sectionText = sourceChunks[i]
           }
         }
-        const res = await generatePremiumSpeech(sectionText, voice)
+        // Language actually being spoken: the target language when translating,
+        // otherwise the document's own detected language. Passed to TTS so
+        // non-English text is voiced natively instead of with an English accent.
+        const spokenLang = lang !== ORIGINAL ? lang : sourceNorm
+        const res = await generatePremiumSpeech(sectionText, voice, spokenLang)
         if ("error" in res) {
           setError(res.error)
           return null
@@ -422,7 +426,7 @@ export function PremiumNarration({
       void work.finally(() => audioInflightRef.current.delete(key))
       return work
     },
-    [sourceChunks, voice, lang, translateSection],
+    [sourceChunks, voice, lang, translateSection, sourceNorm],
   )
 
   const selectedVoice = getPremiumVoice(voice) ?? PREMIUM_VOICES[0]
