@@ -399,7 +399,12 @@ export function PremiumNarration({
 
       const work = (async (): Promise<string | null> => {
         let sectionText = sourceChunks[i]
+        // Latency measurement: translation vs. TTS are timed separately so the
+        // logs pinpoint which stage dominates. A cached translation/audio
+        // returns in a few ms; large values flag the real bottleneck.
+        let translateMs = 0
         if (lang !== ORIGINAL) {
+          const t0 = Date.now()
           try {
             sectionText = await translateSection(lang, i)
           } catch {
@@ -408,12 +413,18 @@ export function PremiumNarration({
             )
             sectionText = sourceChunks[i]
           }
+          translateMs = Date.now() - t0
         }
         // Language actually being spoken: the target language when translating,
         // otherwise the document's own detected language. Passed to TTS so
         // non-English text is voiced natively instead of with an English accent.
         const spokenLang = lang !== ORIGINAL ? lang : sourceNorm
+        const t1 = Date.now()
         const res = await generatePremiumSpeech(sectionText, voice, spokenLang)
+        const ttsMs = Date.now() - t1
+        console.log(
+          `[v0] loadChunk section=${i} lang=${lang} voice=${voice} translateMs=${translateMs} ttsMs=${ttsMs}`,
+        )
         if ("error" in res) {
           setError(res.error)
           return null
@@ -509,18 +520,30 @@ export function PremiumNarration({
     const target = Math.min(Math.max(0, index), sourceChunks.length - 1)
     const key = `${lang}:${voice}:${target}`
     if (prewarmKeyRef.current === key) return
-    prewarmKeyRef.current = key
-    void loadChunk(target)
+    // Debounce: while the user is rapidly flipping through voices/languages we
+    // only want to spend a (paid) TTS generation on the selection they SETTLE
+    // on. The timer is cleared on every change, so intermediate selections
+    // never fire a request — deprioritizing/cancelling obsolete TTS work.
+    const timer = setTimeout(() => {
+      prewarmKeyRef.current = key
+      void loadChunk(target)
+    }, 300)
+    return () => clearTimeout(timer)
   }, [paused, status, sourceChunks.length, lang, voice, index, loadChunk])
 
   // Preload the NEXT page while the user reads/listens: as the position moves,
   // jump the current and next sections to the front of the translation queue so
   // they're ready before the user gets there. translateSection dedupes and hits
-  // the cache, so this is free for already-translated pages.
+  // the cache, so this is free for already-translated pages. Debounced so
+  // rapid language switching doesn't translate intermediate languages that the
+  // user immediately abandons (wasting API credits).
   useEffect(() => {
     if (lang === ORIGINAL || sourceChunks.length === 0) return
-    void translateSection(lang, index)
-    if (index + 1 < sourceChunks.length) void translateSection(lang, index + 1)
+    const timer = setTimeout(() => {
+      void translateSection(lang, index)
+      if (index + 1 < sourceChunks.length) void translateSection(lang, index + 1)
+    }, 300)
+    return () => clearTimeout(timer)
   }, [lang, index, sourceChunks.length, translateSection])
 
   const busy = status === "loading"

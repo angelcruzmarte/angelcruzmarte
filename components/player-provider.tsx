@@ -113,6 +113,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setStatus("loading")
     setIndex(target)
     setFraction(0)
+    // Latency measurement: time from requesting section audio to it being
+    // playable. `resolve` returns instantly for cached sections, so a large
+    // value here points at translation/TTS as the bottleneck.
+    const startedAt = Date.now()
     // Retry a couple of times if the TTS backend is briefly throttled so the
     // user doesn't have to press play again.
     let url = await resolve(target)
@@ -120,6 +124,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
       url = await resolve(target)
     }
+    const resolveMs = Date.now() - startedAt
     if (!url) {
       setStatus("paused")
       return
@@ -129,8 +134,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     try {
       await audio.play()
       setStatus("playing")
-      // Prefetch the next section for seamless playback.
+      console.log(
+        `[v0] playback-start section=${target} resolveMs=${resolveMs} (cached≈<50ms)`,
+      )
+      // Prefetch the NEXT 1–2 sections for seamless playback. The current
+      // section was awaited above (highest priority); these run unawaited in
+      // the background and are deduped/cached by the resolver, so they never
+      // block playback or double-generate.
       if (target + 1 < totalRef.current) void resolve(target + 1)
+      if (target + 2 < totalRef.current) void resolve(target + 2)
     } catch {
       setStatus("paused")
     }
