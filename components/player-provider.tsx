@@ -103,6 +103,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   rateRef.current = rate
   const totalRef = useRef(0)
   totalRef.current = session?.total ?? 0
+  // Narrator label mirrored for the perf log (play() has empty deps and would
+  // otherwise close over a stale/null session).
+  const voiceLabelRef = useRef<string>("")
+  voiceLabelRef.current = session?.voiceName ?? ""
 
   const play = useCallback(async (i?: number) => {
     const audio = audioRef.current
@@ -113,6 +117,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     setStatus("loading")
     setIndex(target)
     setFraction(0)
+    // Latency measurement: time from requesting section audio to it being
+    // playable. `resolve` returns instantly for cached sections, so a large
+    // value here points at translation/TTS as the bottleneck.
+    const startedAt = Date.now()
     // Retry a couple of times if the TTS backend is briefly throttled so the
     // user doesn't have to press play again.
     let url = await resolve(target)
@@ -120,6 +128,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
       url = await resolve(target)
     }
+    const resolveMs = Date.now() - startedAt
     if (!url) {
       setStatus("paused")
       return
@@ -127,10 +136,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.src = url
     audio.playbackRate = rateRef.current
     try {
+      // playbackStartMs isolates AUDIO LOADING/decoding time (fetching the MP3
+      // into the element and starting playback) from the resolve time above,
+      // so translation/TTS vs. media-buffering delays can be told apart.
+      const playStartedAt = Date.now()
       await audio.play()
+      const playbackStartMs = Date.now() - playStartedAt
       setStatus("playing")
-      // Prefetch the next section for seamless playback.
+      // A fast resolve (<250ms) means the section audio was already cached; a
+      // slow one means it was generated on demand (translation + TTS).
+      const cache = resolveMs < 250 ? "cacheHit" : "cacheMiss"
+      console.log(
+        `[v0][perf] stage=playback section=${target + 1} voice=${voiceLabelRef.current || "?"} ${cache} resolveMs=${resolveMs} playbackStartMs=${playbackStartMs}`,
+      )
+      // Prefetch the NEXT 1–2 sections for seamless playback. The current
+      // section was awaited above (highest priority); these run unawaited in
+      // the background and are deduped/cached by the resolver, so they never
+      // block playback or double-generate.
       if (target + 1 < totalRef.current) void resolve(target + 1)
+      if (target + 2 < totalRef.current) void resolve(target + 2)
     } catch {
       setStatus("paused")
     }
@@ -486,7 +510,7 @@ function MiniPlayer() {
             <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
               <ChevronUp className="h-3 w-3" aria-hidden="true" />
               {busy
-                ? "Loading…"
+                ? `${session.voiceName} · Preparing audio…`
                 : `${session.voiceName} · Section ${Math.min(index + 1, total)} of ${total}`}
             </span>
           </Link>

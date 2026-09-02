@@ -390,7 +390,14 @@ export function PremiumNarration({
     async (i: number): Promise<string | null> => {
       const key = `${lang}:${voice}:${i}`
       const cached = cacheRef.current.get(key)
-      if (cached) return cached
+      if (cached) {
+        // Client-cache hit: audio URL already resolved this session, so the
+        // resolver returns instantly (no translation or TTS work).
+        console.log(
+          `[v0][perf] stage=resolve section=${i + 1} language=${lang} voice=${voice} cacheHit translationMs=0 ttsMs=0`,
+        )
+        return cached
+      }
       // Dedupe concurrent requests for the same section so a background prewarm
       // and the user pressing play (or the provider's next-section prefetch)
       // never translate + generate speech twice.
@@ -399,7 +406,12 @@ export function PremiumNarration({
 
       const work = (async (): Promise<string | null> => {
         let sectionText = sourceChunks[i]
+        // Latency measurement: translation vs. TTS are timed separately so the
+        // logs pinpoint which stage dominates. A cached translation/audio
+        // returns in a few ms; large values flag the real bottleneck.
+        let translateMs = 0
         if (lang !== ORIGINAL) {
+          const t0 = Date.now()
           try {
             sectionText = await translateSection(lang, i)
           } catch {
@@ -408,12 +420,24 @@ export function PremiumNarration({
             )
             sectionText = sourceChunks[i]
           }
+          translateMs = Date.now() - t0
         }
         // Language actually being spoken: the target language when translating,
         // otherwise the document's own detected language. Passed to TTS so
         // non-English text is voiced natively instead of with an English accent.
         const spokenLang = lang !== ORIGINAL ? lang : sourceNorm
+        const t1 = Date.now()
         const res = await generatePremiumSpeech(sectionText, voice, spokenLang)
+        const ttsMs = Date.now() - t1
+        // Client-cache miss: this section was resolved on demand. translationMs
+        // and ttsMs isolate the two server stages — a near-zero value means the
+        // durable server cache (translation table / Blob audio) was hit, a large
+        // value means it was freshly generated. No document text is logged.
+        const translationCache = lang === ORIGINAL ? "n/a" : translateMs < 250 ? "hit" : "miss"
+        const ttsCache = ttsMs < 250 ? "hit" : "miss"
+        console.log(
+          `[v0][perf] stage=resolve section=${i + 1} language=${lang} voice=${voice} cacheMiss translationMs=${translateMs} translationCache=${translationCache} ttsMs=${ttsMs} ttsCache=${ttsCache}`,
+        )
         if ("error" in res) {
           setError(res.error)
           return null
@@ -500,20 +524,39 @@ export function PremiumNarration({
   const prewarmKeyRef = useRef<string>("")
   useEffect(() => {
     if (paused || status !== "idle" || sourceChunks.length === 0) return
-    const key = `${lang}:${voice}`
+    // A pending resume (from a voice/language switch that was mid-playback)
+    // will play the correct section itself — don't also prewarm section 0.
+    if (pendingResumeRef.current != null) return
+    // Prewarm the section the user is actually parked on (not always the first
+    // one), so switching language/voice deep in a document prepares the right
+    // audio and Play starts almost instantly.
+    const target = Math.min(Math.max(0, index), sourceChunks.length - 1)
+    const key = `${lang}:${voice}:${target}`
     if (prewarmKeyRef.current === key) return
-    prewarmKeyRef.current = key
-    void loadChunk(0)
-  }, [paused, status, sourceChunks.length, lang, voice, loadChunk])
+    // Debounce: while the user is rapidly flipping through voices/languages we
+    // only want to spend a (paid) TTS generation on the selection they SETTLE
+    // on. The timer is cleared on every change, so intermediate selections
+    // never fire a request — deprioritizing/cancelling obsolete TTS work.
+    const timer = setTimeout(() => {
+      prewarmKeyRef.current = key
+      void loadChunk(target)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [paused, status, sourceChunks.length, lang, voice, index, loadChunk])
 
   // Preload the NEXT page while the user reads/listens: as the position moves,
   // jump the current and next sections to the front of the translation queue so
   // they're ready before the user gets there. translateSection dedupes and hits
-  // the cache, so this is free for already-translated pages.
+  // the cache, so this is free for already-translated pages. Debounced so
+  // rapid language switching doesn't translate intermediate languages that the
+  // user immediately abandons (wasting API credits).
   useEffect(() => {
     if (lang === ORIGINAL || sourceChunks.length === 0) return
-    void translateSection(lang, index)
-    if (index + 1 < sourceChunks.length) void translateSection(lang, index + 1)
+    const timer = setTimeout(() => {
+      void translateSection(lang, index)
+      if (index + 1 < sourceChunks.length) void translateSection(lang, index + 1)
+    }, 300)
+    return () => clearTimeout(timer)
   }, [lang, index, sourceChunks.length, translateSection])
 
   const busy = status === "loading"
@@ -562,32 +605,41 @@ export function PremiumNarration({
     [voice, status, index, canUseVoice, router, stop],
   )
 
-  // After a voice switch, resume playback of the pending section. This runs
-  // after the setSource effect above (defined earlier) has refreshed the
-  // provider's resolver to the new voice.
+  // After a voice OR language switch, resume playback of the pending section.
+  // This runs after the setSource effect above (defined earlier) has refreshed
+  // the provider's resolver to the new voice/language, so playback continues
+  // from the same section instead of restarting.
   useEffect(() => {
     if (pendingResumeRef.current == null) return
     const i = pendingResumeRef.current
     pendingResumeRef.current = null
     void play(i)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice])
+  }, [voice, lang])
 
   // Toggle between the document's original language and an automatic
-  // translation into the reader's device language.
+  // translation into the reader's device language. Section boundaries are
+  // stable across languages, so we PRESERVE the current playback position: we
+  // stop the now-stale (old-language) audio and, if it was playing, resume the
+  // SAME section in the new language once the resolver refreshes — mirroring a
+  // voice switch. This keeps language switching from throwing the user back to
+  // the start.
   const toggleTranslation = useCallback(() => {
-    stop()
     setError(null)
+    const wasActive = status === "playing" || status === "loading"
+    const resumeIndex = index
+    stop()
     if (lang === ORIGINAL) {
       setLang(deviceLang)
       // Start from where the reader currently is so the visible/about-to-play
       // section is translated first.
-      void translateInBackground(deviceLang, index)
+      void translateInBackground(deviceLang, resumeIndex)
     } else {
       setLang(ORIGINAL)
       setTranslating(false)
     }
-  }, [lang, deviceLang, index, translateInBackground, stop])
+    if (wasActive) pendingResumeRef.current = resumeIndex
+  }, [lang, deviceLang, index, status, translateInBackground, stop])
 
   // Automatically translate into the device language the first time we detect
   // that it differs from the document's language.
@@ -728,7 +780,7 @@ export function PremiumNarration({
             <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
               <Sparkles className="h-3 w-3 text-primary" />
               {status === "loading"
-                ? "Loading…"
+                ? `${selectedVoice.name} · Preparing audio…`
                 : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
             </p>
           </div>
