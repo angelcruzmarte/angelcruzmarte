@@ -500,11 +500,18 @@ export function PremiumNarration({
   const prewarmKeyRef = useRef<string>("")
   useEffect(() => {
     if (paused || status !== "idle" || sourceChunks.length === 0) return
-    const key = `${lang}:${voice}`
+    // A pending resume (from a voice/language switch that was mid-playback)
+    // will play the correct section itself — don't also prewarm section 0.
+    if (pendingResumeRef.current != null) return
+    // Prewarm the section the user is actually parked on (not always the first
+    // one), so switching language/voice deep in a document prepares the right
+    // audio and Play starts almost instantly.
+    const target = Math.min(Math.max(0, index), sourceChunks.length - 1)
+    const key = `${lang}:${voice}:${target}`
     if (prewarmKeyRef.current === key) return
     prewarmKeyRef.current = key
-    void loadChunk(0)
-  }, [paused, status, sourceChunks.length, lang, voice, loadChunk])
+    void loadChunk(target)
+  }, [paused, status, sourceChunks.length, lang, voice, index, loadChunk])
 
   // Preload the NEXT page while the user reads/listens: as the position moves,
   // jump the current and next sections to the front of the translation queue so
@@ -562,32 +569,41 @@ export function PremiumNarration({
     [voice, status, index, canUseVoice, router, stop],
   )
 
-  // After a voice switch, resume playback of the pending section. This runs
-  // after the setSource effect above (defined earlier) has refreshed the
-  // provider's resolver to the new voice.
+  // After a voice OR language switch, resume playback of the pending section.
+  // This runs after the setSource effect above (defined earlier) has refreshed
+  // the provider's resolver to the new voice/language, so playback continues
+  // from the same section instead of restarting.
   useEffect(() => {
     if (pendingResumeRef.current == null) return
     const i = pendingResumeRef.current
     pendingResumeRef.current = null
     void play(i)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice])
+  }, [voice, lang])
 
   // Toggle between the document's original language and an automatic
-  // translation into the reader's device language.
+  // translation into the reader's device language. Section boundaries are
+  // stable across languages, so we PRESERVE the current playback position: we
+  // stop the now-stale (old-language) audio and, if it was playing, resume the
+  // SAME section in the new language once the resolver refreshes — mirroring a
+  // voice switch. This keeps language switching from throwing the user back to
+  // the start.
   const toggleTranslation = useCallback(() => {
-    stop()
     setError(null)
+    const wasActive = status === "playing" || status === "loading"
+    const resumeIndex = index
+    stop()
     if (lang === ORIGINAL) {
       setLang(deviceLang)
       // Start from where the reader currently is so the visible/about-to-play
       // section is translated first.
-      void translateInBackground(deviceLang, index)
+      void translateInBackground(deviceLang, resumeIndex)
     } else {
       setLang(ORIGINAL)
       setTranslating(false)
     }
-  }, [lang, deviceLang, index, translateInBackground, stop])
+    if (wasActive) pendingResumeRef.current = resumeIndex
+  }, [lang, deviceLang, index, status, translateInBackground, stop])
 
   // Automatically translate into the device language the first time we detect
   // that it differs from the document's language.
@@ -728,7 +744,7 @@ export function PremiumNarration({
             <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
               <Sparkles className="h-3 w-3 text-primary" />
               {status === "loading"
-                ? "Loading…"
+                ? `${selectedVoice.name} · Preparing audio…`
                 : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
             </p>
           </div>

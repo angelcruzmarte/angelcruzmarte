@@ -486,7 +486,7 @@ function MiniPlayer() {
             <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
               <ChevronUp className="h-3 w-3" aria-hidden="true" />
               {busy
-                ? "Loading…"
+                ? `${session.voiceName} · Preparing audio…`
                 : `${session.voiceName} · Section ${Math.min(index + 1, total)} of ${total}`}
             </span>
           </Link>
