@@ -390,7 +390,14 @@ export function PremiumNarration({
     async (i: number): Promise<string | null> => {
       const key = `${lang}:${voice}:${i}`
       const cached = cacheRef.current.get(key)
-      if (cached) return cached
+      if (cached) {
+        // Client-cache hit: audio URL already resolved this session, so the
+        // resolver returns instantly (no translation or TTS work).
+        console.log(
+          `[v0][perf] stage=resolve section=${i + 1} language=${lang} voice=${voice} cacheHit translationMs=0 ttsMs=0`,
+        )
+        return cached
+      }
       // Dedupe concurrent requests for the same section so a background prewarm
       // and the user pressing play (or the provider's next-section prefetch)
       // never translate + generate speech twice.
@@ -422,8 +429,14 @@ export function PremiumNarration({
         const t1 = Date.now()
         const res = await generatePremiumSpeech(sectionText, voice, spokenLang)
         const ttsMs = Date.now() - t1
+        // Client-cache miss: this section was resolved on demand. translationMs
+        // and ttsMs isolate the two server stages — a near-zero value means the
+        // durable server cache (translation table / Blob audio) was hit, a large
+        // value means it was freshly generated. No document text is logged.
+        const translationCache = lang === ORIGINAL ? "n/a" : translateMs < 250 ? "hit" : "miss"
+        const ttsCache = ttsMs < 250 ? "hit" : "miss"
         console.log(
-          `[v0] loadChunk section=${i} lang=${lang} voice=${voice} translateMs=${translateMs} ttsMs=${ttsMs}`,
+          `[v0][perf] stage=resolve section=${i + 1} language=${lang} voice=${voice} cacheMiss translationMs=${translateMs} translationCache=${translationCache} ttsMs=${ttsMs} ttsCache=${ttsCache}`,
         )
         if ("error" in res) {
           setError(res.error)

@@ -103,6 +103,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   rateRef.current = rate
   const totalRef = useRef(0)
   totalRef.current = session?.total ?? 0
+  // Narrator label mirrored for the perf log (play() has empty deps and would
+  // otherwise close over a stale/null session).
+  const voiceLabelRef = useRef<string>("")
+  voiceLabelRef.current = session?.voiceName ?? ""
 
   const play = useCallback(async (i?: number) => {
     const audio = audioRef.current
@@ -132,10 +136,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.src = url
     audio.playbackRate = rateRef.current
     try {
+      // playbackStartMs isolates AUDIO LOADING/decoding time (fetching the MP3
+      // into the element and starting playback) from the resolve time above,
+      // so translation/TTS vs. media-buffering delays can be told apart.
+      const playStartedAt = Date.now()
       await audio.play()
+      const playbackStartMs = Date.now() - playStartedAt
       setStatus("playing")
+      // A fast resolve (<250ms) means the section audio was already cached; a
+      // slow one means it was generated on demand (translation + TTS).
+      const cache = resolveMs < 250 ? "cacheHit" : "cacheMiss"
       console.log(
-        `[v0] playback-start section=${target} resolveMs=${resolveMs} (cached≈<50ms)`,
+        `[v0][perf] stage=playback section=${target + 1} voice=${voiceLabelRef.current || "?"} ${cache} resolveMs=${resolveMs} playbackStartMs=${playbackStartMs}`,
       )
       // Prefetch the NEXT 1–2 sections for seamless playback. The current
       // section was awaited above (highest priority); these run unawaited in
