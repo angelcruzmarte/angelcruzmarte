@@ -222,6 +222,22 @@ async function loadPicker(): Promise<any> {
 // Opens the Google Picker filtered to importable document types and resolves
 // with the chosen file id (or null if the user cancels/closes it).
 async function openGooglePicker(token: string): Promise<string | null> {
+  const developerKey = cloudConfig.googleApiKey
+  // Never pass an empty developerKey to the Picker: fail loudly instead so the
+  // cause is unambiguous (missing/blank NEXT_PUBLIC_GOOGLE_PICKER_API_KEY at
+  // build time) rather than surfacing Google's generic "API developer key is
+  // invalid" message.
+  if (!developerKey) {
+    throw new Error(
+      "Google Picker is not configured (missing NEXT_PUBLIC_GOOGLE_PICKER_API_KEY).",
+    )
+  }
+  // Temporary diagnostic: confirms in the LIVE console exactly what is sent as
+  // developerKey without leaking the full key (public, referrer-restricted key;
+  // only its length + short prefix are shown). Remove once verified.
+  console.log(
+    `[v0] picker developerKey len=${developerKey.length} prefix=${developerKey.slice(0, 4)} appId=${googleAppId()} origin=${window.location.protocol}//${window.location.host}`,
+  )
   const picker = await loadPicker()
   return new Promise((resolve) => {
     const view = new picker.DocsView(picker.ViewId.DOCS)
@@ -232,7 +248,7 @@ async function openGooglePicker(token: string): Promise<string | null> {
     const builder = new picker.PickerBuilder()
       .setAppId(googleAppId())
       .setOAuthToken(token)
-      .setDeveloperKey(cloudConfig.googleApiKey)
+      .setDeveloperKey(developerKey)
       .setOrigin(window.location.protocol + "//" + window.location.host)
       .addView(view)
       .setTitle("Select a document to import")
