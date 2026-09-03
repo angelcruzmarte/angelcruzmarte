@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Plus,
@@ -13,18 +13,14 @@ import {
   AudioLines,
   HelpCircle,
   FileText,
-  FileType2,
-  BookText,
   HardDrive,
   Cloud,
   CloudCog,
   ChevronDown,
-  ChevronLeft,
-  Search,
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useCloudImport, type DriveFile } from "@/hooks/use-cloud-import"
+import { useCloudImport } from "@/hooks/use-cloud-import"
 import {
   isCloudProviderConfigured,
   type CloudProviderId,
@@ -75,16 +71,7 @@ export function AddSheet({
 }) {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
-  const {
-    importFrom,
-    status,
-    activeProvider,
-    error,
-    driveOpen,
-    driveFiles,
-    selectDriveFile,
-    closeDrive,
-  } = useCloudImport(
+  const { importFrom, status, activeProvider, error } = useCloudImport(
     (id) => {
       onClose()
       router.push(`/app/listen/${id}`)
@@ -151,66 +138,54 @@ export function AddSheet({
           <span className="mx-auto h-1.5 w-10 rounded-full bg-border" />
         </div>
 
-        {driveOpen ? (
-          <DriveBrowser
-            files={driveFiles}
-            importing={status === "importing"}
-            error={error}
-            onBack={closeDrive}
-            onSelect={selectDriveFile}
-          />
-        ) : (
-          <>
-            <div className="flex items-center justify-between px-5">
-              <h2 className="text-2xl font-bold tracking-tight">Add</h2>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-accent"
-              >
-                <ChevronDown className="h-5 w-5" />
-              </button>
-            </div>
+        <div className="flex items-center justify-between px-5">
+          <h2 className="text-2xl font-bold tracking-tight">Add</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-accent"
+          >
+            <ChevronDown className="h-5 w-5" />
+          </button>
+        </div>
 
-            <div className="mt-3 px-3">
-              {addItems.map((item) => (
-                <Row key={item.label} item={item} onClick={() => go(item.href, item.soon)} />
-              ))}
-            </div>
+        <div className="mt-3 px-3">
+          {addItems.map((item) => (
+            <Row key={item.label} item={item} onClick={() => go(item.href, item.soon)} />
+          ))}
+        </div>
 
-            <SectionLabel>Create</SectionLabel>
-            <div className="px-3">
-              {createItems.map((item) => (
-                <Row key={item.label} item={item} onClick={() => go(item.href, item.soon)} />
-              ))}
-            </div>
+        <SectionLabel>Create</SectionLabel>
+        <div className="px-3">
+          {createItems.map((item) => (
+            <Row key={item.label} item={item} onClick={() => go(item.href, item.soon)} />
+          ))}
+        </div>
 
-            <SectionLabel>Apps</SectionLabel>
-            <div className="px-3">
-              {appItems.map((item) => {
-                const configured =
-                  !item.comingSoon && isCloudProviderConfigured(item.id)
-                const busy = activeProvider === item.id && status !== "idle"
-                return (
-                  <AppRow
-                    key={item.id}
-                    item={item}
-                    configured={configured}
-                    busy={busy}
-                    busyLabel={status === "importing" ? "Importing…" : "Opening…"}
-                    onClick={() => {
-                      if (configured) importFrom(item.id)
-                    }}
-                  />
-                )
-              })}
-              {error && (
-                <p className="px-2 pt-1 text-sm text-destructive">{error}</p>
-              )}
-            </div>
-          </>
-        )}
+        <SectionLabel>Apps</SectionLabel>
+        <div className="px-3">
+          {appItems.map((item) => {
+            const configured =
+              !item.comingSoon && isCloudProviderConfigured(item.id)
+            const busy = activeProvider === item.id && status !== "idle"
+            return (
+              <AppRow
+                key={item.id}
+                item={item}
+                configured={configured}
+                busy={busy}
+                busyLabel={status === "importing" ? "Importing…" : "Opening…"}
+                onClick={() => {
+                  if (configured) importFrom(item.id)
+                }}
+              />
+            )
+          })}
+          {error && (
+            <p className="px-2 pt-1 text-sm text-destructive">{error}</p>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -291,139 +266,6 @@ function AppRow({
         </span>
       )}
     </button>
-  )
-}
-
-// Maps a Drive MIME type to a friendly icon + label.
-function driveFileMeta(mimeType: string): { Icon: React.ElementType; kind: string } {
-  if (mimeType === "application/pdf") return { Icon: FileText, kind: "PDF" }
-  if (
-    mimeType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    mimeType === "application/vnd.google-apps.document"
-  )
-    return { Icon: FileType2, kind: "Document" }
-  if (mimeType === "application/epub+zip")
-    return { Icon: BookText, kind: "EPUB" }
-  if (mimeType === "text/markdown") return { Icon: FileText, kind: "Markdown" }
-  return { Icon: FileText, kind: "Text" }
-}
-
-function formatDate(iso?: string): string {
-  if (!iso) return ""
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ""
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
-
-function DriveBrowser({
-  files,
-  importing,
-  error,
-  onBack,
-  onSelect,
-}: {
-  files: DriveFile[] | null
-  importing: boolean
-  error: string | null
-  onBack: () => void
-  onSelect: (file: DriveFile) => void
-}) {
-  const [query, setQuery] = useState("")
-
-  const filtered = useMemo(() => {
-    if (!files) return null
-    const q = query.trim().toLowerCase()
-    if (!q) return files
-    return files.filter((f) => f.name.toLowerCase().includes(q))
-  }, [files, query])
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2 px-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:bg-accent"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <h2 className="text-2xl font-bold tracking-tight">Google Drive</h2>
-      </div>
-
-      {/* Search */}
-      <div className="mt-3 px-5">
-        <div className="flex items-center gap-2 rounded-xl bg-secondary px-3 py-2">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search your files"
-            className="w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"
-          />
-        </div>
-      </div>
-
-      {error && <p className="px-5 pt-3 text-sm text-destructive">{error}</p>}
-
-      {/* File list */}
-      <div className="mt-2 max-h-[55vh] overflow-y-auto px-3 pb-2">
-        {filtered === null ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm font-medium">Loading your files…</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="px-2 py-12 text-center text-sm text-muted-foreground">
-            {query
-              ? "No files match your search."
-              : "No supported documents found in your Drive."}
-          </p>
-        ) : (
-          filtered.map((file) => {
-            const { Icon, kind } = driveFileMeta(file.mimeType)
-            return (
-              <button
-                key={file.id}
-                type="button"
-                onClick={() => onSelect(file)}
-                disabled={importing}
-                className="flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left transition-colors hover:bg-secondary disabled:opacity-55"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground">
-                  <Icon className="h-5 w-5" strokeWidth={1.75} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base font-semibold">
-                    {file.name}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {kind}
-                    {formatDate(file.modifiedTime)
-                      ? ` · ${formatDate(file.modifiedTime)}`
-                      : ""}
-                  </span>
-                </span>
-              </button>
-            )
-          })
-        )}
-      </div>
-
-      {/* Importing overlay */}
-      {importing && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-card/80 backdrop-blur-sm">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm font-medium">Importing…</span>
-        </div>
-      )}
-    </div>
   )
 }
 
