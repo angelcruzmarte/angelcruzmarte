@@ -6,14 +6,24 @@
 // "Set up" hint instead of being clickable — so the feature activates
 // automatically as soon as the corresponding key is added to the project.
 //
-// Google Drive uses a custom file browser built on the Drive REST API + an
-// OAuth token from Google Identity Services, so it only needs the OAuth client
-// ID (no developer/API key — the Google Picker is intentionally not used).
+// Google Drive uses the official Google Picker together with the narrow
+// `drive.file` OAuth scope. `drive.file` is a NON-sensitive scope: it grants
+// access only to the specific files the user picks, so the app needs NO Google
+// OAuth verification or CASA security assessment and every public user can use
+// it without the "Google hasn't verified this app" warning. This is the
+// production-correct, publicly-distributable choice. The Picker requires both
+// the OAuth client ID and a browser API key.
 //
 // Required env vars per provider:
 //   Dropbox           -> NEXT_PUBLIC_DROPBOX_APP_KEY
-//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID
+//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID + NEXT_PUBLIC_GOOGLE_PICKER_API_KEY
 //   Microsoft OneDrive-> NEXT_PUBLIC_ONEDRIVE_CLIENT_ID
+//
+// The Google browser API key ("Voxyfi Google Picker") is a PUBLIC key by
+// design — the Picker needs it in the browser — so it lives in a NEXT_PUBLIC_*
+// var and is protected by HTTP-referrer restrictions in Google Cloud, never by
+// secrecy. It is NOT an OAuth client secret. NEXT_PUBLIC_GOOGLE_API_KEY is kept
+// only as a legacy fallback so an in-flight deploy doesn't break.
 
 export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 
@@ -21,6 +31,12 @@ export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 export const cloudConfig = {
   dropboxAppKey: process.env.NEXT_PUBLIC_DROPBOX_APP_KEY ?? "",
   googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
+  // Prefer the dedicated "Voxyfi Google Picker" browser key; fall back to the
+  // legacy var so an in-progress rollout keeps working.
+  googleApiKey:
+    process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY ??
+    process.env.NEXT_PUBLIC_GOOGLE_API_KEY ??
+    "",
   onedriveClientId: process.env.NEXT_PUBLIC_ONEDRIVE_CLIENT_ID ?? "",
 }
 
@@ -29,12 +45,20 @@ export function isCloudProviderConfigured(id: CloudProviderId): boolean {
     case "dropbox":
       return Boolean(cloudConfig.dropboxAppKey)
     case "google-drive":
-      return Boolean(cloudConfig.googleClientId)
+      // The Picker needs BOTH the OAuth client ID and a browser API key.
+      return Boolean(cloudConfig.googleClientId && cloudConfig.googleApiKey)
     case "onedrive":
       return Boolean(cloudConfig.onedriveClientId)
     default:
       return false
   }
+}
+
+// The Cloud project NUMBER (Picker `appId`), derived from the OAuth client ID
+// whose form is "<projectNumber>-<random>.apps.googleusercontent.com". Passing
+// it to the Picker avoids cross-project access issues.
+export function googleAppId(): string {
+  return cloudConfig.googleClientId.split("-")[0] ?? ""
 }
 
 // File types we can turn into audio (mirrors lib/parse-document.ts support).

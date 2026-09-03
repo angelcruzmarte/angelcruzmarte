@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react"
 import {
   cloudConfig,
+  googleAppId,
   GOOGLE_EXPORT_MIME,
   GOOGLE_DRIVE_MIME_TYPES,
   isCloudProviderConfigured,
@@ -151,12 +152,32 @@ async function pickOneDrive(): Promise<PickResult | null> {
   })
 }
 
-// --- Google Drive (custom browser, no developer API key needed) -------------
-// We request a read-only OAuth token via Google Identity Services and then call
-// the Drive REST API directly with that token. This deliberately avoids the
-// Google Picker, which requires a classic "AIza" browser API key that newer
-// Google Cloud projects can no longer issue.
-async function getGoogleToken(): Promise<string> {
+// --- Google Drive (official Google Picker + narrow `drive.file` scope) -------
+// We request an OAuth token via Google Identity Services using the NON-sensitive
+// `drive.file` scope, then let the user choose a document with Google's own
+// Picker. `drive.file` grants the app access ONLY to the specific files the
+// user picks, so the app needs NO Google OAuth verification / CASA assessment
+// and every public user can import without the "Google hasn't verified this
+// app" warning. Listing the entire Drive (the old drive.readonly REST browser)
+// is intentionally gone — that broad, restricted scope is exactly what forced
+// app verification and produced the warning for non-test users.
+const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+
+// Cached OAuth token for the drive.file scope, reused across user actions within
+// its lifetime so we DON'T re-authenticate (or pop up consent) on every click —
+// we only request a new token when none is cached or the current one is
+// expiring. Module-scoped so it survives component re-renders.
+let cachedGoogleToken: { token: string; expiresAt: number } | null = null
+
+async function getGoogleToken(forceRefresh = false): Promise<string> {
+  // Reuse a still-valid token (60s safety buffer) unless a refresh is forced.
+  if (
+    !forceRefresh &&
+    cachedGoogleToken &&
+    cachedGoogleToken.expiresAt - 60_000 > Date.now()
+  ) {
+    return cachedGoogleToken.token
+  }
   await loadScript("https://accounts.google.com/gsi/client")
   const g = (window as any).google
   if (!g?.accounts?.oauth2) {
@@ -165,40 +186,86 @@ async function getGoogleToken(): Promise<string> {
   return new Promise((resolve, reject) => {
     const client = g.accounts.oauth2.initTokenClient({
       client_id: cloudConfig.googleClientId,
-      scope: "https://www.googleapis.com/auth/drive.readonly",
+      scope: DRIVE_FILE_SCOPE,
       callback: (resp: any) => {
-        if (resp?.access_token) resolve(resp.access_token)
-        else reject(new Error("Google sign-in was cancelled."))
+        if (resp?.access_token) {
+          const ttlMs = Number(resp.expires_in ?? 3600) * 1000
+          cachedGoogleToken = {
+            token: resp.access_token,
+            expiresAt: Date.now() + ttlMs,
+          }
+          resolve(resp.access_token)
+        } else reject(new Error("Google sign-in was cancelled."))
       },
-      error_callback: () =>
-        reject(new Error("Google sign-in was cancelled.")),
+      error_callback: () => reject(new Error("Google sign-in was cancelled.")),
     })
     client.requestAccessToken()
   })
 }
 
-async function listGoogleDriveFiles(token: string): Promise<DriveFile[]> {
-  const q = `(${GOOGLE_DRIVE_MIME_TYPES.map((m) => `mimeType='${m}'`).join(
-    " or ",
-  )}) and trashed=false`
+// Loads the Picker library (part of Google's api.js) exactly once.
+async function loadPicker(): Promise<any> {
+  await loadScript("https://apis.google.com/js/api.js")
+  const gapi = (window as any).gapi
+  if (!gapi) throw new Error("Google Picker failed to load.")
+  if (!(window as any).google?.picker) {
+    await new Promise<void>((resolve, reject) =>
+      gapi.load("picker", {
+        callback: () => resolve(),
+        onerror: () => reject(new Error("Google Picker failed to load.")),
+      }),
+    )
+  }
+  return (window as any).google.picker
+}
+
+// Opens the Google Picker filtered to importable document types and resolves
+// with the chosen file id (or null if the user cancels/closes it).
+async function openGooglePicker(token: string): Promise<string | null> {
+  const picker = await loadPicker()
+  return new Promise((resolve) => {
+    const view = new picker.DocsView(picker.ViewId.DOCS)
+      .setMimeTypes(GOOGLE_DRIVE_MIME_TYPES.join(","))
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false)
+      .setMode(picker.DocsViewMode.LIST)
+    const builder = new picker.PickerBuilder()
+      .setAppId(googleAppId())
+      .setOAuthToken(token)
+      .setDeveloperKey(cloudConfig.googleApiKey)
+      .setOrigin(window.location.protocol + "//" + window.location.host)
+      .addView(view)
+      .setTitle("Select a document to import")
+      .setCallback((data: any) => {
+        const action = data[picker.Response.ACTION]
+        if (action === picker.Action.PICKED) {
+          const docs = data[picker.Response.DOCUMENTS] ?? []
+          resolve(docs[0]?.[picker.Document.ID] ?? null)
+        } else if (action === picker.Action.CANCEL) {
+          resolve(null)
+        }
+      })
+    builder.build().setVisible(true)
+  })
+}
+
+// Fetches metadata for a single file by id. Under `drive.file` the app can read
+// exactly the files the user has picked, so this works for the current pick and
+// for any previously-picked (tracked) file — without listing the whole Drive.
+async function getDriveFileMeta(
+  id: string,
+  token: string,
+): Promise<DriveFile | null> {
   const params = new URLSearchParams({
-    q,
-    fields: "files(id,name,mimeType,modifiedTime,size)",
-    orderBy: "modifiedTime desc",
-    pageSize: "100",
-    spaces: "drive",
+    fields: "id,name,mimeType,modifiedTime,size",
     supportsAllDrives: "true",
-    includeItemsFromAllDrives: "true",
   })
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+    `https://www.googleapis.com/drive/v3/files/${id}?${params.toString()}`,
     { headers: { Authorization: `Bearer ${token}` } },
   )
-  if (!res.ok) {
-    throw new Error("Could not list your Google Drive files.")
-  }
-  const data = (await res.json()) as { files?: DriveFile[] }
-  return data.files ?? []
+  if (!res.ok) return null
+  return (await res.json()) as DriveFile
 }
 
 // Turns a chosen Drive file + token into an importable download request.
@@ -249,26 +316,26 @@ export function useCloudImport(
   const optionsRef = useRef(options)
   optionsRef.current = options
 
-  // Google Drive custom browser state.
-  const [driveOpen, setDriveOpen] = useState(false)
-  const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null)
+  // Holds the current Google OAuth token for the in-progress pick/import.
   const tokenRef = useRef<string | null>(null)
 
-  // Background delta-sync: right after we list the user's Drive with a fresh
-  // token, compare each tracked Drive-sourced document's stored revision
-  // (modifiedTime) against the live one and re-import the changed files IN
-  // PLACE. This reuses the token we already hold, so it needs no extra consent
-  // and never blocks the picker UI. Fully best-effort and silent on failure.
+  // Background delta-sync: right after we obtain a fresh token, compare each
+  // tracked Drive-sourced document's stored revision (modifiedTime) against the
+  // live one and re-import the changed files IN PLACE. Under `drive.file` we
+  // can't list the whole Drive, so we fetch each tracked file's metadata by id
+  // (the app retains access to files the user previously picked). Reuses the
+  // token we already hold, needs no extra consent, and never blocks the picker.
+  // Fully best-effort and silent on failure.
   const reconcileDrive = useCallback(
-    async (files: DriveFile[], token: string) => {
+    async (token: string) => {
       try {
         const tracked = await getCloudTrackedDocuments("google-drive")
         if (!tracked.length) return
-        const byId = new Map(files.map((f) => [f.id, f]))
         let synced = 0
         for (const t of tracked) {
           if (!t.cloudFileId) continue
-          const live = byId.get(t.cloudFileId)
+          // Files the app no longer has a grant for return null and are skipped.
+          const live = await getDriveFileMeta(t.cloudFileId, token)
           if (!live || !live.modifiedTime) continue
           if (live.modifiedTime === t.cloudRevision) continue // unchanged
           try {
@@ -319,24 +386,40 @@ export function useCloudImport(
       setError(null)
       setActiveProvider(provider)
 
-      // Google Drive: sign in, list files, and open our own browser.
+      // Google Drive: sign in with the narrow `drive.file` scope, open Google's
+      // own Picker, and import the chosen file. No custom full-Drive browser.
       if (provider === "google-drive") {
         busyRef.current = true
         setStatus("picking")
-        setDriveOpen(true)
-        setDriveFiles(null)
         try {
-          const token = await getGoogleToken()
+          let token = await getGoogleToken()
           tokenRef.current = token
-          const files = await listGoogleDriveFiles(token)
-          setDriveFiles(files)
-          // Kick off background delta-sync for previously-imported Drive files.
-          void reconcileDrive(files, token)
+          // Background delta-sync for previously-imported Drive files.
+          void reconcileDrive(token)
+          const fileId = await openGooglePicker(token)
+          if (!fileId) {
+            // User closed/cancelled the Picker: stop here. Do NOT re-auth or
+            // make any further Google API call automatically.
+            setStatus("idle")
+            setActiveProvider(null)
+            busyRef.current = false
+            return
+          }
+          let meta = await getDriveFileMeta(fileId, token)
+          if (!meta) {
+            // A null result can mean the cached token expired mid-session.
+            // Refresh once and retry before giving up (refresh only when
+            // necessary — never on a plain cancel or on page load).
+            token = await getGoogleToken(true)
+            tokenRef.current = token
+            meta = await getDriveFileMeta(fileId, token)
+          }
+          if (!meta) throw new Error("Could not read the selected file.")
+          await runImport(driveFileToPick(meta, token))
         } catch (e) {
           setError(
             e instanceof Error ? e.message : "Could not open Google Drive.",
           )
-          setDriveOpen(false)
           setStatus("idle")
           setActiveProvider(null)
         } finally {
@@ -367,38 +450,8 @@ export function useCloudImport(
         busyRef.current = false
       }
     },
-    [runImport],
+    [runImport, reconcileDrive],
   )
-
-  // Google Drive: import the file the user tapped in our browser.
-  const selectDriveFile = useCallback(
-    async (file: DriveFile) => {
-      const token = tokenRef.current
-      if (!token || busyRef.current) return
-      busyRef.current = true
-      setError(null)
-      try {
-        await runImport(driveFileToPick(file, token))
-      } catch (e) {
-        setError(
-          e instanceof Error ? e.message : "Could not import that file.",
-        )
-        setStatus("picking")
-      } finally {
-        busyRef.current = false
-      }
-    },
-    [runImport],
-  )
-
-  const closeDrive = useCallback(() => {
-    setDriveOpen(false)
-    setDriveFiles(null)
-    setStatus("idle")
-    setActiveProvider(null)
-    tokenRef.current = null
-    busyRef.current = false
-  }, [])
 
   return {
     importFrom,
@@ -406,10 +459,5 @@ export function useCloudImport(
     activeProvider,
     error,
     setError,
-    // Google Drive browser
-    driveOpen,
-    driveFiles,
-    selectDriveFile,
-    closeDrive,
   }
 }
