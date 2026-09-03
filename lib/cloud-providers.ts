@@ -16,8 +16,14 @@
 //
 // Required env vars per provider:
 //   Dropbox           -> NEXT_PUBLIC_DROPBOX_APP_KEY
-//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID + NEXT_PUBLIC_GOOGLE_API_KEY
+//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID + NEXT_PUBLIC_GOOGLE_PICKER_API_KEY
 //   Microsoft OneDrive-> NEXT_PUBLIC_ONEDRIVE_CLIENT_ID
+//
+// The Google browser API key ("Voxyfi Google Picker") is a PUBLIC key by
+// design — the Picker needs it in the browser — so it lives in a NEXT_PUBLIC_*
+// var and is protected by HTTP-referrer restrictions in Google Cloud, never by
+// secrecy. It is NOT an OAuth client secret. NEXT_PUBLIC_GOOGLE_API_KEY is kept
+// only as a legacy fallback so an in-flight deploy doesn't break.
 
 export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 
@@ -25,7 +31,12 @@ export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 export const cloudConfig = {
   dropboxAppKey: process.env.NEXT_PUBLIC_DROPBOX_APP_KEY ?? "",
   googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
-  googleApiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY ?? "",
+  // Prefer the dedicated "Voxyfi Google Picker" browser key; fall back to the
+  // legacy var so an in-progress rollout keeps working.
+  googleApiKey:
+    process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY ??
+    process.env.NEXT_PUBLIC_GOOGLE_API_KEY ??
+    "",
   onedriveClientId: process.env.NEXT_PUBLIC_ONEDRIVE_CLIENT_ID ?? "",
 }
 

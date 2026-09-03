@@ -163,7 +163,21 @@ async function pickOneDrive(): Promise<PickResult | null> {
 // app verification and produced the warning for non-test users.
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 
-async function getGoogleToken(): Promise<string> {
+// Cached OAuth token for the drive.file scope, reused across user actions within
+// its lifetime so we DON'T re-authenticate (or pop up consent) on every click —
+// we only request a new token when none is cached or the current one is
+// expiring. Module-scoped so it survives component re-renders.
+let cachedGoogleToken: { token: string; expiresAt: number } | null = null
+
+async function getGoogleToken(forceRefresh = false): Promise<string> {
+  // Reuse a still-valid token (60s safety buffer) unless a refresh is forced.
+  if (
+    !forceRefresh &&
+    cachedGoogleToken &&
+    cachedGoogleToken.expiresAt - 60_000 > Date.now()
+  ) {
+    return cachedGoogleToken.token
+  }
   await loadScript("https://accounts.google.com/gsi/client")
   const g = (window as any).google
   if (!g?.accounts?.oauth2) {
@@ -174,8 +188,14 @@ async function getGoogleToken(): Promise<string> {
       client_id: cloudConfig.googleClientId,
       scope: DRIVE_FILE_SCOPE,
       callback: (resp: any) => {
-        if (resp?.access_token) resolve(resp.access_token)
-        else reject(new Error("Google sign-in was cancelled."))
+        if (resp?.access_token) {
+          const ttlMs = Number(resp.expires_in ?? 3600) * 1000
+          cachedGoogleToken = {
+            token: resp.access_token,
+            expiresAt: Date.now() + ttlMs,
+          }
+          resolve(resp.access_token)
+        } else reject(new Error("Google sign-in was cancelled."))
       },
       error_callback: () => reject(new Error("Google sign-in was cancelled.")),
     })
@@ -372,19 +392,28 @@ export function useCloudImport(
         busyRef.current = true
         setStatus("picking")
         try {
-          const token = await getGoogleToken()
+          let token = await getGoogleToken()
           tokenRef.current = token
           // Background delta-sync for previously-imported Drive files.
           void reconcileDrive(token)
           const fileId = await openGooglePicker(token)
           if (!fileId) {
-            // User closed/cancelled the Picker.
+            // User closed/cancelled the Picker: stop here. Do NOT re-auth or
+            // make any further Google API call automatically.
             setStatus("idle")
             setActiveProvider(null)
             busyRef.current = false
             return
           }
-          const meta = await getDriveFileMeta(fileId, token)
+          let meta = await getDriveFileMeta(fileId, token)
+          if (!meta) {
+            // A null result can mean the cached token expired mid-session.
+            // Refresh once and retry before giving up (refresh only when
+            // necessary — never on a plain cancel or on page load).
+            token = await getGoogleToken(true)
+            tokenRef.current = token
+            meta = await getDriveFileMeta(fileId, token)
+          }
           if (!meta) throw new Error("Could not read the selected file.")
           await runImport(driveFileToPick(meta, token))
         } catch (e) {
