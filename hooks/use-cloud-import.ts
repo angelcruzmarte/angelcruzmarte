@@ -203,6 +203,22 @@ async function getGoogleToken(forceRefresh = false): Promise<string> {
   })
 }
 
+// Fetches the Picker developer key from the server AT RUNTIME (it lives in the
+// server-only GCP_API_KEY var). Cached module-side after the first success so
+// opening the Picker repeatedly makes no extra requests.
+let cachedPickerKey: string | null = null
+async function fetchPickerApiKey(): Promise<string> {
+  if (cachedPickerKey) return cachedPickerKey
+  const res = await fetch("/api/integrations/google-picker-key")
+  if (!res.ok) {
+    throw new Error("Google Picker is not configured.")
+  }
+  const data = (await res.json()) as { apiKey?: string }
+  if (!data.apiKey) throw new Error("Google Picker is not configured.")
+  cachedPickerKey = data.apiKey
+  return data.apiKey
+}
+
 // Loads the Picker library (part of Google's api.js) exactly once.
 async function loadPicker(): Promise<any> {
   await loadScript("https://apis.google.com/js/api.js")
@@ -222,22 +238,10 @@ async function loadPicker(): Promise<any> {
 // Opens the Google Picker filtered to importable document types and resolves
 // with the chosen file id (or null if the user cancels/closes it).
 async function openGooglePicker(token: string): Promise<string | null> {
-  const developerKey = cloudConfig.googleApiKey
-  // Never pass an empty developerKey to the Picker: fail loudly instead so the
-  // cause is unambiguous (missing/blank NEXT_PUBLIC_GOOGLE_PICKER_API_KEY at
-  // build time) rather than surfacing Google's generic "API developer key is
-  // invalid" message.
-  if (!developerKey) {
-    throw new Error(
-      "Google Picker is not configured (missing NEXT_PUBLIC_GOOGLE_PICKER_API_KEY).",
-    )
-  }
-  // Temporary diagnostic: confirms in the LIVE console exactly what is sent as
-  // developerKey without leaking the full key (public, referrer-restricted key;
-  // only its length + short prefix are shown). Remove once verified.
-  console.log(
-    `[v0] picker developerKey len=${developerKey.length} prefix=${developerKey.slice(0, 4)} appId=${googleAppId()} origin=${window.location.protocol}//${window.location.host}`,
-  )
+  // Pull the developer key from the server at runtime; never pass an empty
+  // value to the Picker (that surfaces Google's generic "API developer key is
+  // invalid" message) — fetchPickerApiKey throws with a clear reason instead.
+  const developerKey = await fetchPickerApiKey()
   const picker = await loadPicker()
   return new Promise((resolve) => {
     const view = new picker.DocsView(picker.ViewId.DOCS)

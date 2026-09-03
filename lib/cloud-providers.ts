@@ -16,14 +16,17 @@
 //
 // Required env vars per provider:
 //   Dropbox           -> NEXT_PUBLIC_DROPBOX_APP_KEY
-//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID + NEXT_PUBLIC_GOOGLE_PICKER_API_KEY
+//   Google Drive      -> NEXT_PUBLIC_GOOGLE_CLIENT_ID  (client-side)
+//                        GCP_API_KEY                   (server-side, Picker key)
 //   Microsoft OneDrive-> NEXT_PUBLIC_ONEDRIVE_CLIENT_ID
 //
-// The Google browser API key ("Voxyfi Google Picker") is a PUBLIC key by
-// design — the Picker needs it in the browser — so it lives in the
-// NEXT_PUBLIC_GOOGLE_PICKER_API_KEY var and is protected by HTTP-referrer
-// restrictions in Google Cloud, never by secrecy. It is NOT an OAuth client
-// secret, and there is no legacy-key fallback.
+// The Google browser API key ("Voxyfi Google Picker") is a PUBLIC, HTTP-
+// referrer-restricted key, but it is stored in the SERVER-only GCP_API_KEY var
+// and served to the browser at runtime via /api/integrations/google-picker-key.
+// Fetching it at request time (instead of inlining a NEXT_PUBLIC_* var at build
+// time) guarantees the running app always uses the current key and never a
+// stale or mistyped build-time copy. It is NOT an OAuth client secret and there
+// is no legacy-key fallback.
 
 export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 
@@ -31,10 +34,8 @@ export type CloudProviderId = "dropbox" | "google-drive" | "onedrive"
 export const cloudConfig = {
   dropboxAppKey: process.env.NEXT_PUBLIC_DROPBOX_APP_KEY ?? "",
   googleClientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
-  // Dedicated "Voxyfi Google Picker" browser key. This is the ONLY source for
-  // the Picker developer key — there is intentionally no legacy fallback, so
-  // the app can never silently use an old key.
-  googleApiKey: process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY ?? "",
+  // The Google Picker developer key is NOT here: it comes from the server-only
+  // GCP_API_KEY var, fetched at runtime via /api/integrations/google-picker-key.
   onedriveClientId: process.env.NEXT_PUBLIC_ONEDRIVE_CLIENT_ID ?? "",
 }
 
@@ -43,8 +44,10 @@ export function isCloudProviderConfigured(id: CloudProviderId): boolean {
     case "dropbox":
       return Boolean(cloudConfig.dropboxAppKey)
     case "google-drive":
-      // The Picker needs BOTH the OAuth client ID and a browser API key.
-      return Boolean(cloudConfig.googleClientId && cloudConfig.googleApiKey)
+      // Only the OAuth client ID is checked client-side; the Picker developer
+      // key is validated at runtime by /api/integrations/google-picker-key
+      // (it lives in the server-only GCP_API_KEY var).
+      return Boolean(cloudConfig.googleClientId)
     case "onedrive":
       return Boolean(cloudConfig.onedriveClientId)
     default:
