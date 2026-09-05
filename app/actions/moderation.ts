@@ -99,6 +99,8 @@ export async function submitReport(input: {
     }
   }
 
+  const actingAs = user.username ? `@${user.username}` : user.name
+
   try {
     await db.insert(contentReport).values({
       reporterId: user.id,
@@ -108,7 +110,7 @@ export async function submitReport(input: {
       reason: String(input.reason),
       details,
     })
-    console.log("[v0] submitReport: inserted report OK")
+    console.log("[v0] submitReport: inserted report OK for", user.id.slice(0, 8))
   } catch (err) {
     // 23505 = unique_violation: this user already reported this content, which
     // is an idempotent success. ANY OTHER error is a real failure — log the
@@ -119,13 +121,13 @@ export async function submitReport(input: {
         ? (err as { code?: string }).code
         : undefined
     if (code === "23505") {
-      return { ok: true as const, duplicate: true as const }
+      return { ok: true as const, duplicate: true as const, actingAs }
     }
     console.error("[v0] submitReport: failed to insert content_report:", err)
     return { error: "We couldn't submit your report. Please try again." }
   }
 
-  return { ok: true as const }
+  return { ok: true as const, actingAs }
 }
 
 /** Blocks another user. Idempotent. Their UGC disappears from the blocker's views. */

@@ -36,6 +36,7 @@ export function ReportContentDialog({
   const [details, setDetails] = useState("")
   const [confirming, setConfirming] = useState(false)
   const [done, setDone] = useState(false)
+  const [actingAs, setActingAs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -44,6 +45,7 @@ export function ReportContentDialog({
     setDetails("")
     setConfirming(false)
     setDone(false)
+    setActingAs(null)
     setError(null)
   }
 
@@ -69,6 +71,7 @@ export function ReportContentDialog({
           setConfirming(false)
           return
         }
+        setActingAs("actingAs" in res ? (res.actingAs ?? null) : null)
         setDone(true)
       } catch (e) {
         console.error("[v0] report submission failed:", e)
@@ -88,7 +91,8 @@ export function ReportContentDialog({
             <DialogHeader>
               <DialogTitle>Report submitted</DialogTitle>
               <DialogDescription>
-                Report submitted. Thank you for helping keep Voxyfi safe.
+                Report submitted{actingAs ? ` as ${actingAs}` : ""}. Thank you
+                for helping keep Voxyfi safe.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
