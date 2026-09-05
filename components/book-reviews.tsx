@@ -61,6 +61,18 @@ export function BookReviews({
 
   const [editing, setEditing] = useState(false)
 
+  // "Edit review" on the viewer's own card: bring the always-present editor
+  // into view and focus it (the form itself handles the actual edit/save).
+  function focusOwnReview() {
+    document
+      .getElementById("your-review-form")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" })
+    const ta = document.getElementById(
+      "your-review-textarea",
+    ) as HTMLTextAreaElement | null
+    ta?.focus()
+  }
+
   function confirmBlock() {
     if (!blockTarget) return
     const targetUserId = blockTarget.userId
@@ -83,16 +95,18 @@ export function BookReviews({
 
       {/* Write / edit your own review */}
       {viewer?.canPost ? (
-        <ReviewForm
-          bookId={bookId}
-          initialStars={mine?.stars ?? initialMyStars}
-          initialText={mine?.review ?? ""}
-          isEditing={Boolean(mine) || editing}
-          onSaved={() => {
-            setEditing(false)
-            router.refresh()
-          }}
-        />
+        <div id="your-review-form">
+          <ReviewForm
+            bookId={bookId}
+            initialStars={mine?.stars ?? initialMyStars}
+            initialText={mine?.review ?? ""}
+            isEditing={Boolean(mine) || editing}
+            onSaved={() => {
+              setEditing(false)
+              router.refresh()
+            }}
+          />
+        </div>
       ) : viewer ? (
         <p className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           Your account is not able to post reviews right now.
@@ -106,13 +120,17 @@ export function BookReviews({
       {/* Your existing review (with an edit affordance) */}
       {mine ? (
         <div className="mt-4">
-          <ReviewCard review={mine} highlight />
+          <ReviewCard
+            review={mine}
+            highlight
+            onEdit={viewer?.canPost ? focusOwnReview : undefined}
+          />
         </div>
       ) : null}
 
       {/* Everyone else's reviews */}
       <div className="mt-4 space-y-4">
-        {others.length === 0 ? (
+        {reviews.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No reviews yet. Be the first to share your thoughts.
           </p>
@@ -253,6 +271,7 @@ function ReviewForm({
         ))}
       </div>
       <Textarea
+        id="your-review-textarea"
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={3}
@@ -280,14 +299,22 @@ function ReviewCard({
   highlight,
   onReport,
   onBlock,
+  onEdit,
 }: {
   review: PublicReview
   viewer?: Viewer | null
   highlight?: boolean
   onReport?: () => void
   onBlock?: () => void
+  onEdit?: () => void
 }) {
-  const showMenu = !review.isMine && viewer != null && onReport && onBlock
+  // Moderation menu (Report/Block) on OTHER users' reviews; an Edit menu on
+  // your own. Either way a ⋯ button is shown so every card has a discoverable,
+  // tappable menu on mobile.
+  const showModMenu =
+    !review.isMine && viewer != null && Boolean(onReport) && Boolean(onBlock)
+  const showEditMenu = review.isMine && Boolean(onEdit)
+  const showMenu = showModMenu || showEditMenu
   return (
     <article
       className={cn(
@@ -317,21 +344,33 @@ function ReviewCard({
             {showMenu ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={`Options for ${review.authorName}'s review`}
+                  className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={
+                    review.isMine
+                      ? "Options for your review"
+                      : `Options for ${review.authorName}'s review`
+                  }
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <MoreVertical className="h-5 w-5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => onReport?.()}>
-                    Report Review
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onSelect={() => onBlock?.()}
-                  >
-                    Block User
-                  </DropdownMenuItem>
+                  {showEditMenu ? (
+                    <DropdownMenuItem onSelect={() => onEdit?.()}>
+                      Edit Review
+                    </DropdownMenuItem>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onSelect={() => onReport?.()}>
+                        Report Review
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => onBlock?.()}
+                      >
+                        Block User
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
