@@ -9,11 +9,14 @@ import {
   userInterest,
   bookPurchase,
   bookFavorite,
+  bookRating,
+  contentReport,
+  userBlock,
   session as sessionTable,
   account as accountTable,
 } from "@/lib/db/schema"
 import { getUserId } from "@/lib/session"
-import { and, eq, ne, sql } from "drizzle-orm"
+import { and, eq, ne, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 /** Listening preference keys that map to boolean columns on the user table. */
@@ -68,6 +71,21 @@ export async function deleteAccount(): Promise<{ ok: boolean }> {
   await db.delete(userInterest).where(eq(userInterest.userId, userId))
   await db.delete(bookPurchase).where(eq(bookPurchase.userId, userId))
   await db.delete(bookFavorite).where(eq(bookFavorite.userId, userId))
+  // User-generated content and moderation rows tied to this user (Apple account
+  // deletion): their book reviews, any reports they filed or that named them,
+  // and any blocks in either direction.
+  await db.delete(bookRating).where(eq(bookRating.userId, userId))
+  await db
+    .delete(contentReport)
+    .where(
+      or(
+        eq(contentReport.reporterId, userId),
+        eq(contentReport.reportedUserId, userId),
+      ),
+    )
+  await db
+    .delete(userBlock)
+    .where(or(eq(userBlock.blockerId, userId), eq(userBlock.blockedId, userId)))
   await db.delete(sessionTable).where(eq(sessionTable.userId, userId))
   await db.delete(accountTable).where(eq(accountTable.userId, userId))
   await db.delete(userTable).where(eq(userTable.id, userId))

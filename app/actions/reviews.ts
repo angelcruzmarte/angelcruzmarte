@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { book, bookRating, user as userTable } from "@/lib/db/schema"
 import { getCurrentUser } from "@/lib/session"
 import { getBlockedIds } from "@/lib/blocks"
+import { screenContent } from "@/lib/content-filter"
 import { MAX_REVIEW_LENGTH, type PublicReview } from "@/lib/moderation"
 import { and, desc, eq, isNotNull, ne, notInArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
@@ -31,6 +32,12 @@ export async function submitReview(
   const text = (review ?? "").trim()
   if (text.length > MAX_REVIEW_LENGTH) {
     return { error: `Reviews must be ${MAX_REVIEW_LENGTH} characters or fewer.` }
+  }
+  // Pre-posting objectionable-content filter (Apple Guideline 1.2). Screened
+  // BEFORE the review is stored, so disallowed language never becomes visible.
+  if (text) {
+    const screen = screenContent(text)
+    if (!screen.ok) return { error: screen.reason }
   }
 
   const [exists] = await db
