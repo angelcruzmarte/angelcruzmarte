@@ -20,6 +20,11 @@ export const user = pgTable("user", {
   // Unique, user-chosen @handle (lowercase). Distinct from the display name.
   username: text("username").unique(),
   role: text("role").notNull().default("user"),
+  // Moderation status set by admins: 'active' (normal), 'restricted' (may read
+  // but not post user-generated content), or 'suspended' (blocked from posting;
+  // their existing UGC is hidden from everyone). Enforced server-side.
+  status: text("status").notNull().default("active"),
+  statusReason: text("statusReason"),
   // Stripe subscription fields
   stripeCustomerId: text("stripeCustomerId"),
   stripeSubscriptionId: text("stripeSubscriptionId"),
@@ -322,8 +327,13 @@ export const bookRating = pgTable(
       .references(() => book.id, { onDelete: "cascade" }),
     // 1-5 whole stars.
     stars: integer("stars").notNull(),
-    // Optional short written review.
+    // Optional short written review — the user-generated content other users
+    // can read. Reportable and subject to moderation.
     review: text("review"),
+    // Moderator-driven hide: when true the review text is withheld from all
+    // readers (the row is kept for audit/appeal). Toggled by admin moderation.
+    hidden: boolean("hidden").notNull().default(false),
+    hiddenReason: text("hiddenReason"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     updatedAt: timestamp("updatedAt").notNull().defaultNow(),
   },
@@ -331,6 +341,72 @@ export const bookRating = pgTable(
     uniqUserBookRating: unique().on(t.userId, t.bookId),
   }),
 )
+
+// ----- UGC safety (Apple-required reporting, blocking, moderation) -----
+
+// A user's report of a piece of user-generated content (currently book
+// reviews). One report per (reporter, content) via the unique constraint, so a
+// user cannot spam duplicate reports for the same item. `reportedUserId` is
+// snapshotted so moderators can act on the author even if the content changes.
+export const contentReport = pgTable(
+  "content_report",
+  {
+    id: serial("id").primaryKey(),
+    reporterId: text("reporterId").notNull(),
+    reportedUserId: text("reportedUserId").notNull(),
+    // Discriminator for what was reported. Currently always "book_review".
+    contentType: text("contentType").notNull(),
+    // ID of the reported content (book_rating.id as text for flexibility).
+    contentId: text("contentId").notNull(),
+    reason: text("reason").notNull(),
+    details: text("details"),
+    // pending | reviewed | resolved | dismissed
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqReporterContent: unique().on(
+      t.reporterId,
+      t.contentType,
+      t.contentId,
+    ),
+  }),
+)
+
+// One-directional block: `blockerId` no longer sees content authored by
+// `blockedId` anywhere (reviews, discovery). Unique per pair.
+export const userBlock = pgTable(
+  "user_block",
+  {
+    id: serial("id").primaryKey(),
+    blockerId: text("blockerId").notNull(),
+    blockedId: text("blockedId").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqBlock: unique().on(t.blockerId, t.blockedId),
+  }),
+)
+
+// Append-only audit trail of moderation actions (report status changes, content
+// hides, user suspensions/restrictions). Actor is snapshotted so entries
+// survive account changes; never exposed to non-admins.
+export const moderationLog = pgTable("moderation_log", {
+  id: serial("id").primaryKey(),
+  actorId: text("actorId"),
+  actorName: text("actorName").notNull().default(""),
+  actorEmail: text("actorEmail").notNull().default(""),
+  // e.g. report_status_change | hide_content | unhide_content |
+  // suspend_user | restrict_user | reinstate_user
+  action: text("action").notNull(),
+  // report | book_review | user
+  targetType: text("targetType"),
+  targetId: text("targetId"),
+  targetUserId: text("targetUserId"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+})
 
 // Append-only audit trail of admin actions on the book catalog. `bookId` is
 // intentionally NOT a FK (and `bookTitle` is snapshotted) so entries survive a
@@ -490,3 +566,6 @@ export type BookPurchase = typeof bookPurchase.$inferSelect
 export type BookFavorite = typeof bookFavorite.$inferSelect
 export type BookAuditLog = typeof bookAuditLog.$inferSelect
 export type AppSetting = typeof appSetting.$inferSelect
+export type ContentReport = typeof contentReport.$inferSelect
+export type UserBlock = typeof userBlock.$inferSelect
+export type ModerationLog = typeof moderationLog.$inferSelect

@@ -21,6 +21,7 @@ import {
   Star,
   Trash2,
   Trophy,
+  UserX,
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 import type { LifetimeStats } from "@/lib/stats-shared"
@@ -180,6 +181,11 @@ export function ProfileView({
             href="/app/profile/deleted"
             icon={<Trash2 className="h-5 w-5" />}
             label="Deleted Files"
+          />
+          <RowLink
+            href="/app/profile/blocked"
+            icon={<UserX className="h-5 w-5" />}
+            label="Blocked Users"
           />
         </section>
 
