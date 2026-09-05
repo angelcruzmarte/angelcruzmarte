@@ -63,32 +63,46 @@ export async function updateDailyGoal(
 export async function deleteAccount(): Promise<{ ok: boolean }> {
   const userId = await getUserId()
 
-  // Remove all child rows first (these tables reference the user by id but do
-  // not all have ON DELETE CASCADE), then the user row itself.
-  await db.delete(document).where(eq(document.userId, userId))
-  await db.delete(listeningStat).where(eq(listeningStat.userId, userId))
-  await db.delete(aiQuota).where(eq(aiQuota.userId, userId))
-  await db.delete(userInterest).where(eq(userInterest.userId, userId))
-  await db.delete(bookPurchase).where(eq(bookPurchase.userId, userId))
-  await db.delete(bookFavorite).where(eq(bookFavorite.userId, userId))
-  // User-generated content and moderation rows tied to this user (Apple account
-  // deletion): their book reviews, any reports they filed or that named them,
-  // and any blocks in either direction.
-  await db.delete(bookRating).where(eq(bookRating.userId, userId))
-  await db
-    .delete(contentReport)
-    .where(
-      or(
-        eq(contentReport.reporterId, userId),
-        eq(contentReport.reportedUserId, userId),
-      ),
-    )
-  await db
-    .delete(userBlock)
-    .where(or(eq(userBlock.blockerId, userId), eq(userBlock.blockedId, userId)))
-  await db.delete(sessionTable).where(eq(sessionTable.userId, userId))
-  await db.delete(accountTable).where(eq(accountTable.userId, userId))
-  await db.delete(userTable).where(eq(userTable.id, userId))
+  // Delete the account and ALL associated data atomically: either every row
+  // (child data, user-generated content, moderation rows, and the user itself)
+  // is removed together, or nothing is — so a mid-way failure can never leave a
+  // half-deleted account or orphaned references behind.
+  await db.transaction(async (tx) => {
+    // App data that references the user by id (no ON DELETE CASCADE on all).
+    await tx.delete(document).where(eq(document.userId, userId))
+    await tx.delete(listeningStat).where(eq(listeningStat.userId, userId))
+    await tx.delete(aiQuota).where(eq(aiQuota.userId, userId))
+    await tx.delete(userInterest).where(eq(userInterest.userId, userId))
+    await tx.delete(bookPurchase).where(eq(bookPurchase.userId, userId))
+    await tx.delete(bookFavorite).where(eq(bookFavorite.userId, userId))
+
+    // User-generated content + moderation rows (Apple account-deletion): their
+    // book reviews, any reports they filed or that named them, and any blocks
+    // in either direction. This guarantees no deleted user's review remains
+    // publicly visible and leaves no dangling report/block references. The
+    // admin-only moderation_log audit trail is intentionally retained (it holds
+    // no personal data beyond a snapshotted actor label and is required for
+    // moderation-audit purposes).
+    await tx.delete(bookRating).where(eq(bookRating.userId, userId))
+    await tx
+      .delete(contentReport)
+      .where(
+        or(
+          eq(contentReport.reporterId, userId),
+          eq(contentReport.reportedUserId, userId),
+        ),
+      )
+    await tx
+      .delete(userBlock)
+      .where(
+        or(eq(userBlock.blockerId, userId), eq(userBlock.blockedId, userId)),
+      )
+
+    // Auth rows, then the user record itself.
+    await tx.delete(sessionTable).where(eq(sessionTable.userId, userId))
+    await tx.delete(accountTable).where(eq(accountTable.userId, userId))
+    await tx.delete(userTable).where(eq(userTable.id, userId))
+  })
 
   return { ok: true }
 }
