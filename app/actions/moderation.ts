@@ -84,10 +84,20 @@ export async function submitReport(input: {
       reason: String(input.reason),
       details,
     })
-  } catch {
-    // Unique-constraint violation => this user already reported this content.
-    // Treat as success so the UX is idempotent and doesn't leak DB internals.
-    return { ok: true as const, duplicate: true as const }
+  } catch (err) {
+    // 23505 = unique_violation: this user already reported this content, which
+    // is an idempotent success. ANY OTHER error is a real failure — log the
+    // actual error and report it, so the UI never shows "submitted" when
+    // nothing was persisted.
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? (err as { code?: string }).code
+        : undefined
+    if (code === "23505") {
+      return { ok: true as const, duplicate: true as const }
+    }
+    console.error("[v0] submitReport: failed to insert content_report:", err)
+    return { error: "We couldn't submit your report. Please try again." }
   }
 
   return { ok: true as const }

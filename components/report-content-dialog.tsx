@@ -56,13 +56,27 @@ export function ReportContentDialog({
     if (!reason) return
     setError(null)
     startTransition(async () => {
-      const res = await submitReport({ contentType, contentId, reason, details })
-      if ("error" in res && res.error) {
-        setError(res.error)
+      try {
+        const res = await submitReport({
+          contentType,
+          contentId,
+          reason,
+          details,
+        })
+        // Only confirm success when the server actually persisted the report.
+        if ("error" in res && res.error) {
+          setError(res.error)
+          setConfirming(false)
+          return
+        }
+        setDone(true)
+      } catch (e) {
+        console.error("[v0] report submission failed:", e)
+        setError(
+          "Something went wrong submitting your report. Please try again.",
+        )
         setConfirming(false)
-        return
       }
-      setDone(true)
     })
   }
 
