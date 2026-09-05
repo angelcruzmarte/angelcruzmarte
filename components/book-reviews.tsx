@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, MoreVertical, Pencil, Star } from "lucide-react"
+import { Loader2, MoreVertical, Star } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,20 +59,6 @@ export function BookReviews({
   )
   const others = reviews.filter((r) => !r.isMine)
 
-  const [editing, setEditing] = useState(false)
-
-  // "Edit review" on the viewer's own card: bring the always-present editor
-  // into view and focus it (the form itself handles the actual edit/save).
-  function focusOwnReview() {
-    document
-      .getElementById("your-review-form")
-      ?.scrollIntoView({ behavior: "smooth", block: "center" })
-    const ta = document.getElementById(
-      "your-review-textarea",
-    ) as HTMLTextAreaElement | null
-    ta?.focus()
-  }
-
   function confirmBlock() {
     if (!blockTarget) return
     const targetUserId = blockTarget.userId
@@ -93,20 +79,15 @@ export function BookReviews({
         Reader reviews
       </h2>
 
-      {/* Write / edit your own review */}
-      {viewer?.canPost ? (
-        <div id="your-review-form">
-          <ReviewForm
-            bookId={bookId}
-            initialStars={mine?.stars ?? initialMyStars}
-            initialText={mine?.review ?? ""}
-            isEditing={Boolean(mine) || editing}
-            onSaved={() => {
-              setEditing(false)
-              router.refresh()
-            }}
-          />
-        </div>
+      {/* Write your own review — ONLY when you haven't posted one yet. Reviews
+          are final and can't be edited after submitting; a moderator handles
+          anything raised through reports or blocks. */}
+      {mine ? null : viewer?.canPost ? (
+        <ReviewForm
+          bookId={bookId}
+          initialStars={initialMyStars}
+          onSaved={() => router.refresh()}
+        />
       ) : viewer ? (
         <p className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           Your account is not able to post reviews right now.
@@ -117,14 +98,15 @@ export function BookReviews({
         </p>
       )}
 
-      {/* Your existing review (with an edit affordance) */}
+      {/* Your submitted review — read-only. No edit affordance: reviews are
+          final once posted. */}
       {mine ? (
         <div className="mt-4">
-          <ReviewCard
-            review={mine}
-            highlight
-            onEdit={viewer?.canPost ? focusOwnReview : undefined}
-          />
+          <ReviewCard review={mine} highlight />
+          <p className="mt-2 text-xs text-muted-foreground">
+            You&apos;ve reviewed this book. Reviews are final and can&apos;t be
+            edited after posting.
+          </p>
         </div>
       ) : null}
 
@@ -200,19 +182,15 @@ export function BookReviews({
 function ReviewForm({
   bookId,
   initialStars,
-  initialText,
-  isEditing,
   onSaved,
 }: {
   bookId: number
   initialStars: number
-  initialText: string
-  isEditing: boolean
   onSaved: () => void
 }) {
   const [stars, setStars] = useState(initialStars || 0)
   const [hover, setHover] = useState(0)
-  const [text, setText] = useState(initialText)
+  const [text, setText] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -236,9 +214,7 @@ function ReviewForm({
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <p className="mb-1.5 text-sm font-medium">
-        {isEditing ? "Edit your review" : "Write a review"}
-      </p>
+      <p className="mb-1.5 text-sm font-medium">Write a review</p>
       <div
         className="mb-3 flex items-center gap-1"
         role="radiogroup"
@@ -282,8 +258,6 @@ function ReviewForm({
         <Button size="sm" onClick={save} disabled={pending}>
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
-          ) : isEditing ? (
-            "Update review"
           ) : (
             "Post review"
           )}
@@ -299,22 +273,17 @@ function ReviewCard({
   highlight,
   onReport,
   onBlock,
-  onEdit,
 }: {
   review: PublicReview
   viewer?: Viewer | null
   highlight?: boolean
   onReport?: () => void
   onBlock?: () => void
-  onEdit?: () => void
 }) {
-  // Moderation menu (Report/Block) on OTHER users' reviews; an Edit menu on
-  // your own. Either way a ⋯ button is shown so every card has a discoverable,
-  // tappable menu on mobile.
-  const showModMenu =
+  // Report/Block menu on OTHER users' reviews only. Your own review has no menu
+  // — reviews can't be edited after posting; a moderator handles any issues.
+  const showMenu =
     !review.isMine && viewer != null && Boolean(onReport) && Boolean(onBlock)
-  const showEditMenu = review.isMine && Boolean(onEdit)
-  const showMenu = showModMenu || showEditMenu
   return (
     <article
       className={cn(
@@ -345,32 +314,20 @@ function ReviewCard({
               <DropdownMenu>
                 <DropdownMenuTrigger
                   className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={
-                    review.isMine
-                      ? "Options for your review"
-                      : `Options for ${review.authorName}'s review`
-                  }
+                  aria-label={`Options for ${review.authorName}'s review`}
                 >
                   <MoreVertical className="h-5 w-5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {showEditMenu ? (
-                    <DropdownMenuItem onSelect={() => onEdit?.()}>
-                      Edit Review
-                    </DropdownMenuItem>
-                  ) : (
-                    <>
-                      <DropdownMenuItem onSelect={() => onReport?.()}>
-                        Report Review
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onSelect={() => onBlock?.()}
-                      >
-                        Block User
-                      </DropdownMenuItem>
-                    </>
-                  )}
+                  <DropdownMenuItem onSelect={() => onReport?.()}>
+                    Report Review
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => onBlock?.()}
+                  >
+                    Block User
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}

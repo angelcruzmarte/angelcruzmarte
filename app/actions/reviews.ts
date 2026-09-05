@@ -47,6 +47,23 @@ export async function submitReview(
     .limit(1)
   if (!exists) return { error: "That book no longer exists." }
 
+  // Reviews are final: once a user has posted review text for this book they
+  // can't edit it. Issues are handled by a moderator (report / block / hide),
+  // not by the author editing after the fact. A star-only rating (no review
+  // text) does NOT count as a submitted review, so posting a first review on
+  // top of an existing rating is still allowed.
+  const [existing] = await db
+    .select({ review: bookRating.review })
+    .from(bookRating)
+    .where(and(eq(bookRating.userId, user.id), eq(bookRating.bookId, bookId)))
+    .limit(1)
+  if (existing && (existing.review ?? "").trim().length > 0) {
+    return {
+      error:
+        "You've already submitted a review for this book. Reviews can't be edited after posting.",
+    }
+  }
+
   await db
     .insert(bookRating)
     .values({ userId: user.id, bookId, stars: value, review: text || null })
