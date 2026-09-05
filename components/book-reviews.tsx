@@ -324,7 +324,7 @@ function ReviewCard({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => onReport?.()}>
-                    Report Content
+                    Report Review
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
