@@ -3,6 +3,8 @@ import { db } from "@/lib/db"
 import { user as userTable } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { headers } from "next/headers"
+import { redirect } from "next/navigation"
+import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import type { User } from "@/lib/db/schema"
 
 /** Returns the full DB user row for the current session, or null. */
@@ -15,6 +17,25 @@ export async function getCurrentUser(): Promise<User | null> {
     .where(eq(userTable.id, session.user.id))
     .limit(1)
   return rows[0] ?? null
+}
+
+/**
+ * Admin guard for code that runs during a page/layout RENDER (as opposed to a
+ * mutation). On a non-admin or missing session it `redirect()`s — which throws
+ * the special NEXT_REDIRECT that Next treats as navigation — instead of a plain
+ * Error. This is critical: the admin layout and its child page render
+ * concurrently, so if a page's data loader throws a normal Error for a
+ * non-admin (e.g. when the shared cross-subdomain session is replaced by a
+ * regular user), the app-level error boundary shows "Something went wrong"
+ * before the layout's redirect can take effect. Redirecting here avoids that
+ * crash and sends the visitor to the right place.
+ */
+export async function requireAdminPage(): Promise<User> {
+  const user = await getCurrentUser()
+  const onAdminHost = isAdminHost((await headers()).get("host"))
+  if (!user) redirect(onAdminHost ? "/login" : "/admin/login")
+  if (!isAdmin(user)) redirect(onAdminHost ? mainSiteUrl("/app") : "/app")
+  return user
 }
 
 /** Throws if not authenticated. Returns the session user id. */

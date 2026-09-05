@@ -8,7 +8,7 @@ import {
   moderationLog,
   user as userTable,
 } from "@/lib/db/schema"
-import { getCurrentUser, isAdmin } from "@/lib/session"
+import { getCurrentUser, isAdmin, requireAdminPage } from "@/lib/session"
 import {
   CONTENT_TYPE_BOOK_REVIEW,
   REPORT_STATUSES,
@@ -91,7 +91,9 @@ export async function queryReports({
   total: number
   counts: Record<string, number>
 }> {
-  await requireAdmin()
+  // Runs during the moderation page render → redirect (not throw) for
+  // non-admins so a replaced session never triggers the error boundary.
+  await requireAdminPage()
 
   const reporter = alias(userTable, "reporter")
   const reported = alias(userTable, "reported")
@@ -335,7 +337,7 @@ export async function queryModerationLog({
   page = 1,
   pageSize = 100,
 }: { page?: number; pageSize?: number } = {}): Promise<ModerationLogRow[]> {
-  await requireAdmin()
+  await requireAdminPage()
   const offset = (Math.max(1, page) - 1) * pageSize
   const rows = await db
     .select()
