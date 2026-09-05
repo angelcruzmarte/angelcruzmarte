@@ -51,6 +51,7 @@ export function BookReviews({
   const [reviews, setReviews] = useState<PublicReview[]>(initialReviews)
   const [reportId, setReportId] = useState<number | null>(null)
   const [blockTarget, setBlockTarget] = useState<PublicReview | null>(null)
+  const [blockError, setBlockError] = useState<string | null>(null)
   const [blocking, startBlock] = useTransition()
 
   const mine = useMemo(
@@ -62,14 +63,28 @@ export function BookReviews({
   function confirmBlock() {
     if (!blockTarget) return
     const targetUserId = blockTarget.userId
+    setBlockError(null)
     startBlock(async () => {
-      const res = await blockUser(targetUserId)
-      setBlockTarget(null)
-      if ("error" in res && res.error) return
-      // Optimistically drop every review by the blocked author, then refresh
-      // so server-side filtering (feed/discovery) reflects the block too.
-      setReviews((prev) => prev.filter((r) => r.userId !== targetUserId))
-      router.refresh()
+      try {
+        const res = await blockUser(targetUserId)
+        // Surface a server-returned error instead of silently closing.
+        if (res && "error" in res && res.error) {
+          setBlockError(res.error)
+          return
+        }
+        // Optimistically drop every review by the blocked author, then refresh
+        // so server-side filtering (feed/discovery) reflects the block too.
+        setReviews((prev) => prev.filter((r) => r.userId !== targetUserId))
+        setBlockTarget(null)
+        router.refresh()
+      } catch (e) {
+        // A thrown action (e.g. lost session -> Unauthorized) must NOT fail
+        // silently — tell the user so the block isn't a mystery no-op.
+        console.error("[v0] blockUser failed:", e)
+        setBlockError(
+          "We couldn't block this user. Please make sure you're signed in and try again.",
+        )
+      }
     })
   }
 
@@ -143,7 +158,10 @@ export function BookReviews({
       <AlertDialog
         open={blockTarget != null}
         onOpenChange={(o) => {
-          if (!o) setBlockTarget(null)
+          if (!o) {
+            setBlockTarget(null)
+            setBlockError(null)
+          }
         }}
       >
         <AlertDialogContent>
@@ -157,6 +175,9 @@ export function BookReviews({
               unblock them later from Settings.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {blockError ? (
+            <p className="text-sm text-destructive">{blockError}</p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={blocking}>Cancel</AlertDialogCancel>
             <AlertDialogAction

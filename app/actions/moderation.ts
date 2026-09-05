@@ -56,7 +56,21 @@ export async function submitReport(input: {
   reason: string
   details?: string
 }) {
-  const user = await requireUser()
+  const current = await getCurrentUser()
+  if (!current) {
+    console.error("[v0] submitReport: no session (Unauthorized)")
+    return {
+      error: "Please sign in again to submit your report.",
+    }
+  }
+  const user = current
+  console.log(
+    "[v0] submitReport: user",
+    user.id.slice(0, 8),
+    "content",
+    input.contentType,
+    input.contentId,
+  )
 
   const contentType = String(input.contentType ?? "")
   const contentId = String(input.contentId ?? "")
@@ -84,6 +98,7 @@ export async function submitReport(input: {
       reason: String(input.reason),
       details,
     })
+    console.log("[v0] submitReport: inserted report OK")
   } catch (err) {
     // 23505 = unique_violation: this user already reported this content, which
     // is an idempotent success. ANY OTHER error is a real failure — log the
@@ -105,7 +120,12 @@ export async function submitReport(input: {
 
 /** Blocks another user. Idempotent. Their UGC disappears from the blocker's views. */
 export async function blockUser(blockedId: string) {
-  const user = await requireUser()
+  const current = await getCurrentUser()
+  if (!current) {
+    console.error("[v0] blockUser: no session (Unauthorized)")
+    return { error: "Please sign in again to block this user." }
+  }
+  const user = current
   const target = String(blockedId ?? "")
   if (!target || target === user.id) {
     return { error: "You can't block yourself." }
@@ -121,6 +141,12 @@ export async function blockUser(blockedId: string) {
     .insert(userBlock)
     .values({ blockerId: user.id, blockedId: target })
     .onConflictDoNothing()
+  console.log(
+    "[v0] blockUser: user",
+    user.id.slice(0, 8),
+    "blocked",
+    target.slice(0, 8),
+  )
 
   revalidatePath("/app/profile/blocked")
   return { ok: true as const }
