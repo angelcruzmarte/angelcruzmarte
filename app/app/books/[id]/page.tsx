@@ -9,6 +9,7 @@ import {
   isBookFavorited,
   ownsBook,
 } from "@/app/actions/books"
+import { getBookReviews } from "@/app/actions/reviews"
 import { formatPrice } from "@/lib/plans"
 import { estimateReadingStats } from "@/lib/reading-time"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
@@ -24,6 +25,7 @@ import {
   BookDetailEnrichmentSkeleton,
 } from "@/components/book-detail-enrichment"
 import { BookRating } from "@/components/book-rating"
+import { BookReviews } from "@/components/book-reviews"
 import { SimilarBooks } from "@/components/similar-books"
 import { BuyBookButton } from "@/components/buy-book-button"
 import { AmazonBuyFormats } from "@/components/amazon-buy-formats"
@@ -71,11 +73,12 @@ export default async function BookDetailPage({
     await confirmBookCheckout(session_id)
   }
 
-  const [owned, favorited, user, ratingSummary] = await Promise.all([
+  const [owned, favorited, user, ratingSummary, reviews] = await Promise.all([
     ownsBook(bookId),
     isBookFavorited(bookId),
     getCurrentUser(),
     getBookRating(bookId),
+    getBookReviews(bookId),
   ])
 
   // Reading/listening estimate from the fullest text we have. For affiliate
@@ -212,6 +215,15 @@ export default async function BookDetailPage({
       {/* VOXYFI's own ratings — for every book, including affiliate titles.
           Amazon stays purchase-only; ratings never link out to Amazon. */}
       <BookRating bookId={book.id} initial={ratingSummary} />
+
+      {/* User-generated written reviews with Report/Block controls (Apple UGC
+          safety). Author identity is public display info only, never email. */}
+      <BookReviews
+        bookId={book.id}
+        initialReviews={reviews}
+        viewer={user ? { id: user.id, canPost: user.status === "active" } : null}
+        initialMyStars={ratingSummary.mine}
+      />
 
       {/* Similar Books rail (same category first). Streamed independently. */}
       <Suspense fallback={null}>
