@@ -27,7 +27,12 @@ import { submitReview } from "@/app/actions/reviews"
 import { CONTENT_TYPE_BOOK_REVIEW, type PublicReview } from "@/lib/moderation"
 import { cn } from "@/lib/utils"
 
-type Viewer = { id: string; canPost: boolean }
+type Viewer = {
+  id: string
+  canPost: boolean
+  name?: string | null
+  username?: string | null
+}
 
 /**
  * Written book reviews — Voxyfi's user-generated content surface. Renders every
@@ -90,9 +95,24 @@ export function BookReviews({
 
   return (
     <section aria-labelledby="reviews-heading" className="mt-8">
-      <h2 id="reviews-heading" className="mb-3 text-lg font-semibold">
+      <h2 id="reviews-heading" className="mb-1 text-lg font-semibold">
         Reader reviews
       </h2>
+
+      {/* Which account is acting. The session cookie is shared across the whole
+          voxyfi.com domain (incl. admin.voxyfi.com), so this makes it obvious
+          when you're signed in as, e.g., the admin — a common cause of
+          "reporting my own review" confusion during testing. */}
+      {viewer ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Signed in as{" "}
+          <span className="font-medium text-foreground">
+            {viewer.username
+              ? `@${viewer.username}`
+              : (viewer.name ?? "your account")}
+          </span>
+        </p>
+      ) : null}
 
       {/* Write your own review — ONLY when you haven't posted one yet. Reviews
           are final and can't be edited after submitting; a moderator handles

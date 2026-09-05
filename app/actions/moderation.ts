@@ -86,7 +86,17 @@ export async function submitReport(input: {
   const author = await resolveContentAuthor(contentType, contentId)
   if (!author) return { error: "That content no longer exists." }
   if (author.authorId === user.id) {
-    return { error: "You can't report your own content." }
+    // Common testing gotcha: the session is shared across voxyfi.com and
+    // admin.voxyfi.com, so if you signed into the admin panel you're now that
+    // same account here — and this is that account's own review.
+    console.log(
+      "[v0] submitReport: rejected self-report by",
+      user.id.slice(0, 8),
+    )
+    return {
+      error:
+        "You can't report your own review. You're signed in as its author — sign in with a different account to report it.",
+    }
   }
 
   try {
@@ -128,7 +138,11 @@ export async function blockUser(blockedId: string) {
   const user = current
   const target = String(blockedId ?? "")
   if (!target || target === user.id) {
-    return { error: "You can't block yourself." }
+    console.log("[v0] blockUser: rejected self-block by", user.id.slice(0, 8))
+    return {
+      error:
+        "You can't block yourself. You're signed in as this account — sign in with a different account to block it.",
+    }
   }
   const [exists] = await db
     .select({ id: userTable.id })

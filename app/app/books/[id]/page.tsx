@@ -221,7 +221,16 @@ export default async function BookDetailPage({
       <BookReviews
         bookId={book.id}
         initialReviews={reviews}
-        viewer={user ? { id: user.id, canPost: user.status === "active" } : null}
+        viewer={
+          user
+            ? {
+                id: user.id,
+                canPost: user.status === "active",
+                name: user.name,
+                username: user.username,
+              }
+            : null
+        }
         initialMyStars={ratingSummary.mine}
       />
 
