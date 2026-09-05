@@ -112,7 +112,9 @@ export function BookReviews({
 
       {/* Everyone else's reviews */}
       <div className="mt-4 space-y-4">
-        {others.length === 0 ? (
+        {reviews.length === 0 ? (
+          // Empty state shows ONLY when there are genuinely zero reviews —
+          // not when the sole review is the viewer's own (rendered above).
           <p className="text-sm text-muted-foreground">
             No reviews yet. Be the first to share your thoughts.
           </p>
@@ -316,13 +318,16 @@ function ReviewCard({
             </div>
             {showMenu ? (
               <DropdownMenu>
+                {/* Always-visible, touch-sized (44x44) trigger so the Report /
+                    Block menu is reliably tappable on mobile — not a
+                    hover-only icon. */}
                 <DropdownMenuTrigger
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-accent"
                   aria-label={`Options for ${review.authorName}'s review`}
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <MoreVertical className="h-5 w-5" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-44">
                   <DropdownMenuItem onSelect={() => onReport?.()}>
                     Report Review
                   </DropdownMenuItem>
