@@ -94,21 +94,103 @@ const THREAT_PATTERNS: RegExp[] = [
   /\bhope +you +die\b/,
 ]
 
+// Demeaning words used to insult a PERSON. Matched only when aimed at the
+// reader/another person (see HARASSMENT_PATTERNS), never on their own — this is
+// what lets legitimate book criticism through: "this book is garbage/trash",
+// "the plot is stupid", "a disgusting villain" all stay allowed, while
+// "you are garbage", "you're a disgusting idiot" are rejected.
+const INSULT_WORDS = [
+  "idiot",
+  "idiots",
+  "moron",
+  "morons",
+  "imbecile",
+  "imbeciles",
+  "stupid",
+  "dumb",
+  "dumbass",
+  "dumbasses",
+  "jackass",
+  "loser",
+  "losers",
+  "pathetic",
+  "worthless",
+  "useless",
+  "disgusting",
+  "repulsive",
+  "revolting",
+  "ugly",
+  "hideous",
+  "freak",
+  "freaks",
+  "creep",
+  "creepy",
+  "scum",
+  "scumbag",
+  "trash",
+  "garbage",
+  "filth",
+  "vermin",
+  "clown",
+  "clowns",
+  "coward",
+  "cowards",
+  "nobody",
+  "nothing",
+  "waste",
+  "disgrace",
+  "embarrassment",
+  "failure",
+  "dimwit",
+  "nitwit",
+  "brainless",
+  "spineless",
+  "despicable",
+  "vile",
+  "worst",
+]
+const INSULT = INSULT_WORDS.join("|")
+
+// Targeted harassment / abuse aimed at a person. These are PHRASE patterns
+// anchored on second-person address ("you"/"you're") or "nobody/everyone …
+// you", so ordinary book/plot criticism is unaffected. This is what catches
+// insults that contain no slur or profanity, e.g.
+// "You are a disgusting idiot and nobody wants you here."
+const HARASSMENT_PATTERNS: RegExp[] = [
+  // "you are / you're / you r (a|an|such a|so|the) <insult>"
+  new RegExp(
+    `\\byou(?:'?re| +are| +r) +(?:a +|an +|such +a +|so +|the +|a +bunch +of +)?(?:${INSULT})\\b`,
+  ),
+  // direct address stacking two demeaning words: "you stupid idiot",
+  // "you disgusting freak"
+  new RegExp(`\\byou +(?:${INSULT}) +(?:${INSULT})\\b`),
+  // "nobody / no one / everyone (wants|likes|needs|loves|cares about) you"
+  /\b(?:nobody|no +one|noone|everyone|everybody) +(?:wants|likes|needs|loves|cares +about|misses) +you\b/,
+  // "everyone hates/despises you"
+  /\b(?:everyone|everybody|nobody|no +one) +(?:hates|despises|detests) +you\b/,
+  // dismissive "you don't belong (here)" / "you should be ashamed"
+  /\byou +(?:do +not|don'?t) +belong\b/,
+  /\byou +should +be +ashamed\b/,
+  // "you suck" (targeted; book criticism uses "this/it sucks", not "you suck")
+  /\byou +suck\b/,
+]
+
 /**
  * Returns `{ ok: true }` when the text is acceptable, or `{ ok: false, reason }`
  * with a user-facing message when it contains disallowed content. Screens for
- * slurs/abusive language and for direct threats/targeted harassment.
+ * slurs/abusive language, direct threats, and targeted harassment/abuse.
  */
 export function screenContent(text: string): { ok: boolean; reason?: string } {
   const normalized = normalize(text)
   const blocked =
     BANNED_PATTERNS.some((p) => p.test(normalized)) ||
-    THREAT_PATTERNS.some((p) => p.test(normalized))
+    THREAT_PATTERNS.some((p) => p.test(normalized)) ||
+    HARASSMENT_PATTERNS.some((p) => p.test(normalized))
   if (blocked) {
     return {
       ok: false,
       reason:
-        "Your review contains language that isn't allowed. Please revise it and try again.",
+        "This review contains inappropriate or offensive language. Please revise your review before posting.",
     }
   }
   return { ok: true }
