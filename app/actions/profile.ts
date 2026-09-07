@@ -11,6 +11,8 @@ import {
   bookPurchase,
   bookFavorite,
   bookRating,
+  bookEvent,
+  pricingView,
   contentReport,
   userBlock,
   session as sessionTable,
@@ -103,6 +105,25 @@ export async function deleteAccount(): Promise<{ ok: boolean }> {
       .where(
         or(eq(userBlock.blockerId, userId), eq(userBlock.blockedId, userId)),
       )
+
+    // Financial / funnel analytics (revenue events, pricing-page views): these
+    // are legitimately retained for revenue/audit and aggregate funnel metrics,
+    // but the personal link is severed — set the snapshotted userId to NULL so
+    // the retained rows are no longer tied to the deleted account (Apple: keep
+    // only what must remain, and unlink it from the personal account).
+    await tx
+      .update(bookEvent)
+      .set({ userId: null })
+      .where(eq(bookEvent.userId, userId))
+    await tx
+      .update(pricingView)
+      .set({ userId: null })
+      .where(eq(pricingView.userId, userId))
+
+    // Legacy per-user AI usage counters (table predates ai_quota and is not in
+    // the ORM schema). Deleted defensively via raw SQL so no personal usage row
+    // can be orphaned if any legacy path ever wrote here.
+    await tx.execute(sql`DELETE FROM ai_usage WHERE "userId" = ${userId}`)
 
     // Auth rows, then the user record itself.
     await tx.delete(sessionTable).where(eq(sessionTable.userId, userId))
