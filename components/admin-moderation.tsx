@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { EyeOff, Eye, Loader2 } from "lucide-react"
@@ -126,11 +126,31 @@ export function AdminModeration({
 function ReportCard({ report }: { report: ModerationReport }) {
   const router = useRouter()
   const [pending, start] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
+  // Every admin action returns { ok } or { error }. Previously the result was
+  // ignored, so a rejected action (e.g. an admin trying to change their OWN
+  // account status — which happens whenever the reported review is the admin's
+  // own, a side effect of the shared voxyfi.com session) looked like a silent
+  // no-op. Surface the error so admins always get feedback.
   function run(fn: () => Promise<unknown>) {
+    setError(null)
     start(async () => {
-      await fn()
-      router.refresh()
+      try {
+        const res = await fn()
+        if (
+          res &&
+          typeof res === "object" &&
+          "error" in res &&
+          typeof (res as { error?: unknown }).error === "string"
+        ) {
+          setError((res as { error: string }).error)
+          return
+        }
+        router.refresh()
+      } catch {
+        setError("That action couldn't be completed. Please try again.")
+      }
     })
   }
 
@@ -301,6 +321,15 @@ function ReportCard({ report }: { report: ModerationReport }) {
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : null}
       </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
     </li>
   )
 }
