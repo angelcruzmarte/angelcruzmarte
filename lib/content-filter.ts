@@ -51,14 +51,34 @@ function normalize(input: string): string {
     .replace(/7/g, "t")
 }
 
+// Profanity roots that commonly take inflectional suffixes and never form an
+// innocent English word when suffixed. For these we allow a trailing suffix so
+// "fucking"/"fucked"/"bitches"/"assholes"/"retarded" are caught, not just the
+// bare root. Ethnicity/identity slurs are deliberately NOT in this set: a
+// blanket suffix there would create false positives on legitimate words like
+// "spicy" or "chinks (in the armor)", so those stay whole-word only.
+const INFLECTABLE = new Set([
+  "fuck",
+  "motherfucker",
+  "bitch",
+  "cunt",
+  "asshole",
+  "whore",
+  "slut",
+  "faggot",
+  "retard",
+])
+const INFLECTION_SUFFIX = "(?:ing|ed|er|ers|in|s|es|y|ah)?"
+
 // A banned term becomes a whole-word pattern where each letter may repeat, so
 // stretched spellings ("fuuuck", "asssshole") are caught without a global
 // character-collapse pass that would corrupt other words. Word boundaries keep
 // matching to whole words, so "class" never matches "ass".
-const BANNED_PATTERNS = BANNED_TERMS.map(
-  (term) =>
-    new RegExp(`\\b${term.split("").map((c) => `${c}+`).join("")}\\b`),
-)
+const BANNED_PATTERNS = BANNED_TERMS.map((term) => {
+  const body = term.split("").map((c) => `${c}+`).join("")
+  const tail = INFLECTABLE.has(term) ? INFLECTION_SUFFIX : ""
+  return new RegExp(`\\b${body}${tail}\\b`)
+})
 
 // Direct threats of violence and targeted self-harm harassment. These are
 // PHRASE patterns (a violent verb aimed at "you"/"yourself"), not bare words,
