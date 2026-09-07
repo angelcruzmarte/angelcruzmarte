@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import {
   user as userTable,
   document,
+  documentTranslation,
   listeningStat,
   aiQuota,
   userInterest,
@@ -70,6 +71,11 @@ export async function deleteAccount(): Promise<{ ok: boolean }> {
   await db.transaction(async (tx) => {
     // App data that references the user by id (no ON DELETE CASCADE on all).
     await tx.delete(document).where(eq(document.userId, userId))
+    // Per-user cached document translations — user-owned data derived from the
+    // documents deleted above; removed so no personal content is orphaned.
+    await tx
+      .delete(documentTranslation)
+      .where(eq(documentTranslation.userId, userId))
     await tx.delete(listeningStat).where(eq(listeningStat.userId, userId))
     await tx.delete(aiQuota).where(eq(aiQuota.userId, userId))
     await tx.delete(userInterest).where(eq(userInterest.userId, userId))
