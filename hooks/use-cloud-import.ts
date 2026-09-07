@@ -244,17 +244,34 @@ async function openGooglePicker(token: string): Promise<string | null> {
   const developerKey = await fetchPickerApiKey()
   const picker = await loadPicker()
   return new Promise((resolve) => {
-    const view = new picker.DocsView(picker.ViewId.DOCS)
+    // Primary view: the user's own "My Drive", rooted at its top-level folder
+    // via setParent("root"). This is the important fix: a DocsView(DOCS) with NO
+    // explicit parent defaults to a blended "recent / all locations" listing
+    // that pulls in shared-with-me items and shared-drive folders — the
+    // unrelated folders (e.g. "blocks", "issuing", "dist") users were seeing
+    // instead of their real documents. Rooting at "root" makes the Picker open
+    // on the My Drive files people actually recognize. Folders remain navigable
+    // but not selectable; only importable document types are pickable.
+    const myDrive = new picker.DocsView(picker.ViewId.DOCS)
+      .setParent("root")
       .setMimeTypes(GOOGLE_DRIVE_MIME_TYPES.join(","))
       .setIncludeFolders(true)
       .setSelectFolderEnabled(false)
+      .setMode(picker.DocsViewMode.LIST)
+    // Secondary view: documents others have shared with the user. These live
+    // OUTSIDE My Drive, so without this tab a shared file would be unreachable
+    // now that the primary view is correctly scoped to My Drive.
+    const sharedWithMe = new picker.DocsView(picker.ViewId.DOCS)
+      .setOwnedByMe(false)
+      .setMimeTypes(GOOGLE_DRIVE_MIME_TYPES.join(","))
       .setMode(picker.DocsViewMode.LIST)
     const builder = new picker.PickerBuilder()
       .setAppId(googleAppId())
       .setOAuthToken(token)
       .setDeveloperKey(developerKey)
       .setOrigin(window.location.protocol + "//" + window.location.host)
-      .addView(view)
+      .addView(myDrive)
+      .addView(sharedWithMe)
       .setTitle("Select a document to import")
       .setCallback((data: any) => {
         const action = data[picker.Response.ACTION]
