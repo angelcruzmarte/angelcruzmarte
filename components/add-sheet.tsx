@@ -58,8 +58,8 @@ const createItems: Item[] = [
 
 const appItems: AppItem[] = [
   { id: "google-drive", label: "Google Drive", icon: HardDrive },
-  { id: "dropbox", label: "Dropbox", icon: Cloud },
-  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog },
+  { id: "dropbox", label: "Dropbox", icon: Cloud, comingSoon: true },
+  { id: "onedrive", label: "Microsoft OneDrive", icon: CloudCog, comingSoon: true },
 ]
 
 export function AddSheet({
