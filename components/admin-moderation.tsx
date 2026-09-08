@@ -25,11 +25,13 @@ export function AdminModeration({
   counts,
   activeStatus,
   log,
+  currentUserId,
 }: {
   reports: ModerationReport[]
   counts: Record<string, number>
   activeStatus: string
   log: ModerationLogRow[]
+  currentUserId: string | null
 }) {
   return (
     <div className="space-y-10">
@@ -68,7 +70,7 @@ export function AdminModeration({
       ) : (
         <ul className="space-y-4">
           {reports.map((r) => (
-            <ReportCard key={r.id} report={r} />
+            <ReportCard key={r.id} report={r} currentUserId={currentUserId} />
           ))}
         </ul>
       )}
@@ -123,10 +125,23 @@ export function AdminModeration({
   )
 }
 
-function ReportCard({ report }: { report: ModerationReport }) {
+function ReportCard({
+  report,
+  currentUserId,
+}: {
+  report: ModerationReport
+  currentUserId: string | null
+}) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // The reported author is the admin viewing this page. Account actions
+  // (restrict/suspend/reinstate) can't target your own account, so instead of
+  // showing buttons that will always refuse, explain why. This is common while
+  // testing because the voxyfi.com session is shared across subdomains.
+  const authorIsSelf =
+    !!currentUserId && report.reportedUser?.id === currentUserId
 
   // Every admin action returns { ok } or { error }. Previously the result was
   // ignored, so a rejected action (e.g. an admin trying to change their OWN
@@ -277,7 +292,15 @@ function ReportCard({ report }: { report: ModerationReport }) {
           </button>
         ) : null}
 
-        {report.reportedUser ? (
+        {report.reportedUser && authorIsSelf ? (
+          <span className="text-xs text-muted-foreground">
+            This review&apos;s author is your own account, so it can&apos;t be
+            restricted or suspended. To test these actions, report a review
+            written by a different (non-admin) user from a separate browser.
+          </span>
+        ) : null}
+
+        {report.reportedUser && !authorIsSelf ? (
           <>
             <span className="ml-1 text-xs font-medium text-muted-foreground">
               Author:

@@ -3,6 +3,7 @@ import {
   queryReports,
 } from "@/app/actions/admin-moderation"
 import { AdminModeration } from "@/components/admin-moderation"
+import { getCurrentUser } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 
@@ -18,9 +19,10 @@ export default async function AdminModerationPage({
   const sp = await searchParams
   const status = first(sp.status) ?? "all"
 
-  const [{ rows, counts }, log] = await Promise.all([
+  const [{ rows, counts }, log, currentUser] = await Promise.all([
     queryReports({ status }),
     queryModerationLog(),
+    getCurrentUser(),
   ])
 
   return (
@@ -38,6 +40,7 @@ export default async function AdminModerationPage({
           counts={counts}
           activeStatus={status}
           log={log}
+          currentUserId={currentUser?.id ?? null}
         />
       </div>
     </div>
