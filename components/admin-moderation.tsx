@@ -294,9 +294,12 @@ function ReportCard({
 
         {report.reportedUser && authorIsSelf ? (
           <span className="text-xs text-muted-foreground">
-            This review&apos;s author is your own account, so it can&apos;t be
-            restricted or suspended. To test these actions, report a review
-            written by a different (non-admin) user from a separate browser.
+            Use{" "}
+            <span className="font-medium text-foreground">Hide content</span> to
+            remove this review from all readers — that resolves the report. The
+            author here is your own admin account, so account suspension
+            isn&apos;t available on it; to exercise Restrict/Suspend, report a
+            review by a different (non-admin) user from a separate browser.
           </span>
         ) : null}
 
