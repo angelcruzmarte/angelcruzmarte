@@ -20,7 +20,7 @@ import { getBaseUrl } from "@/lib/urls"
 import { and, count, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
-import { MIN_RATINGS_TO_SHOW, type BookRatingSummary } from "@/lib/ratings"
+import { type BookRatingSummary } from "@/lib/ratings"
 import type { BookCard } from "@/lib/db/schema"
 
 // Columns needed to render book cards / the storefront. The whole published
@@ -1107,10 +1107,11 @@ export async function confirmCartCheckout(sessionId: string) {
 // ----- VOXYFI ratings & reviews (our own, for EVERY book) -----
 
 /**
- * VOXYFI's own rating summary for a book. Works for EVERY book (in-app AND
- * affiliate) — these are our ratings, never sourced from Amazon. The aggregate
- * is only meaningful once `count >= MIN_RATINGS_TO_SHOW`; below that the UI
- * shows "Not enough ratings yet" rather than a misleading number.
+ * VOXYFI's own 1-5 star rating summary for a book. Works for EVERY book (in-app
+ * AND affiliate) — these are our ratings, never sourced from Amazon. Returns the
+ * ACTUAL average and count computed from real rows; the aggregate is shown as
+ * soon as there is at least one rating (`hasEnough`), and below that the UI
+ * shows the "No ratings yet" empty state.
  */
 export async function getBookRating(bookId: number): Promise<BookRatingSummary> {
   const user = await getCurrentUser()
@@ -1124,7 +1125,7 @@ export async function getBookRating(bookId: number): Promise<BookRatingSummary> 
 
   const total = Number(agg?.count ?? 0)
   const sum = Number(agg?.sum ?? 0)
-  const hasEnough = total >= MIN_RATINGS_TO_SHOW
+  const hasEnough = total > 0
   const average = total > 0 ? Math.round((sum / total) * 10) / 10 : 0
 
   let mine = 0
@@ -1138,7 +1139,7 @@ export async function getBookRating(bookId: number): Promise<BookRatingSummary> 
   }
 
   return {
-    average: hasEnough ? average : 0,
+    average,
     count: total,
     mine,
     hasEnough,

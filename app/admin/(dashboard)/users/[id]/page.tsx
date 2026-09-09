@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/session"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { AdminUserRoleToggle } from "@/components/admin-user-role-toggle"
+import { AdminUserStatusControls } from "@/components/admin-user-status-controls"
 
 function money(cents: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", {
@@ -138,6 +139,11 @@ export default async function AdminUserDetailPage({
                 {statusLabel}
               </Badge>
               {user.role === "admin" && <Badge variant="outline">Admin</Badge>}
+              {user.status !== "active" && (
+                <Badge variant="destructive" className="capitalize">
+                  {user.status}
+                </Badge>
+              )}
               {billing.cancelAtPeriodEnd && (
                 <Badge variant="outline">Cancels at period end</Badge>
               )}
@@ -147,6 +153,17 @@ export default async function AdminUserDetailPage({
         <AdminUserRoleToggle
           userId={user.id}
           role={user.role}
+          disabled={user.id === current?.id}
+        />
+      </div>
+
+      {/* Account standing: general user-management controls (Restrict /
+          Suspend / Reinstate), recorded in the moderation audit trail. */}
+      <div className="mt-6">
+        <AdminUserStatusControls
+          userId={user.id}
+          status={user.status}
+          statusReason={user.statusReason}
           disabled={user.id === current?.id}
         />
       </div>
