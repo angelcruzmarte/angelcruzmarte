@@ -36,6 +36,16 @@ export const user = pgTable("user", {
   cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").notNull().default(false),
   // Whether this account has already used its one-time free trial.
   hasUsedTrial: boolean("hasUsedTrial").notNull().default(false),
+  // ----- Payment source & Apple IAP (alongside the Stripe fields above) -----
+  // Which payment system currently owns this account's Premium entitlement.
+  // Defaults to 'stripe' for every existing/web subscriber; set to 'apple' only
+  // after a server-verified Apple In-App Purchase.
+  paymentProvider: text("paymentProvider").notNull().default("stripe"),
+  // Apple's originalTransactionId — the stable id for an auto-renewable
+  // subscription across renewals. Null unless the entitlement came from Apple.
+  appleOriginalTransactionId: text("appleOriginalTransactionId"),
+  // The Apple product identifier that granted Premium (maps to a plan).
+  appleProductId: text("appleProductId"),
   // Whether the user has completed the first-run onboarding flow.
   onboardingComplete: boolean("onboardingComplete").notNull().default(false),
   // Shareable referral code (generated on demand).
@@ -290,6 +300,10 @@ export const bookPurchase = pgTable(
     // Resume position (word index) for the purchased book.
     lastWord: integer("lastWord").notNull().default(0),
     stripeSessionId: text("stripeSessionId"),
+    // Payment source: 'stripe' (web, default) or 'apple' (server-verified IAP).
+    paymentProvider: text("paymentProvider").notNull().default("stripe"),
+    // Apple transactionId for this purchase (null for Stripe purchases).
+    appleTransactionId: text("appleTransactionId"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
   },
   (t) => ({

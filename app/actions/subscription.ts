@@ -369,6 +369,7 @@ export async function refreshSubscriptionFor(userId: string | null) {
   await db
     .update(userTable)
     .set({
+      paymentProvider: "stripe",
       stripeSubscriptionId: sub.id,
       subscriptionStatus: sub.status,
       plan: planId,
