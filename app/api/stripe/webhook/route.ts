@@ -16,6 +16,7 @@ async function applySubscription(sub: Stripe.Subscription) {
   await db
     .update(userTable)
     .set({
+      paymentProvider: "stripe",
       stripeSubscriptionId: sub.id,
       subscriptionStatus: sub.status,
       plan: planId,

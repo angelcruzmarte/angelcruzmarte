@@ -22,6 +22,7 @@ import { revalidatePath } from "next/cache"
 import { getMyInterests } from "./interests"
 import { type BookRatingSummary } from "@/lib/ratings"
 import type { BookCard } from "@/lib/db/schema"
+import type { PaymentProvider } from "@/lib/entitlements"
 
 // Columns needed to render book cards / the storefront. The whole published
 // catalog is shipped to the client, so we blank the fields the store never
@@ -410,10 +411,17 @@ export async function grantBookPurchase(
   userId: string,
   bookId: number,
   stripeSessionId?: string,
+  options?: { provider?: PaymentProvider; appleTransactionId?: string },
 ) {
   const inserted = await db
     .insert(bookPurchase)
-    .values({ userId, bookId, stripeSessionId })
+    .values({
+      userId,
+      bookId,
+      stripeSessionId,
+      paymentProvider: options?.provider ?? "stripe",
+      appleTransactionId: options?.appleTransactionId ?? null,
+    })
     .onConflictDoNothing({
       target: [bookPurchase.userId, bookPurchase.bookId],
     })
@@ -1071,10 +1079,11 @@ export async function grantCartPurchase(
   userId: string,
   bookIds: number[],
   stripeSessionId?: string,
+  options?: { provider?: PaymentProvider; appleTransactionId?: string },
 ) {
   for (const bookId of bookIds) {
     if (Number.isFinite(bookId) && bookId > 0) {
-      await grantBookPurchase(userId, bookId, stripeSessionId)
+      await grantBookPurchase(userId, bookId, stripeSessionId, options)
     }
   }
 }
