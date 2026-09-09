@@ -13,7 +13,6 @@ import {
   bookRating,
   bookEvent,
   pricingView,
-  contentReport,
   userBlock,
   session as sessionTable,
   account as accountTable,
@@ -84,22 +83,13 @@ export async function deleteAccount(): Promise<{ ok: boolean }> {
     await tx.delete(bookPurchase).where(eq(bookPurchase.userId, userId))
     await tx.delete(bookFavorite).where(eq(bookFavorite.userId, userId))
 
-    // User-generated content + moderation rows (Apple account-deletion): their
-    // book reviews, any reports they filed or that named them, and any blocks
-    // in either direction. This guarantees no deleted user's review remains
-    // publicly visible and leaves no dangling report/block references. The
-    // admin-only moderation_log audit trail is intentionally retained (it holds
-    // no personal data beyond a snapshotted actor label and is required for
-    // moderation-audit purposes).
+    // User-generated data + safety rows (account-deletion): their book star
+    // ratings, and any blocks in either direction. This removes the user's
+    // ratings (so aggregates recompute without them) and leaves no dangling
+    // block references. The admin-only moderation_log audit trail is
+    // intentionally retained (it holds no personal data beyond a snapshotted
+    // actor label and is required for moderation-audit purposes).
     await tx.delete(bookRating).where(eq(bookRating.userId, userId))
-    await tx
-      .delete(contentReport)
-      .where(
-        or(
-          eq(contentReport.reporterId, userId),
-          eq(contentReport.reportedUserId, userId),
-        ),
-      )
     await tx
       .delete(userBlock)
       .where(

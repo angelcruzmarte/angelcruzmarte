@@ -7,6 +7,7 @@ import {
   Library,
   Repeat,
   ShoppingBag,
+  Star,
   Tag,
   TrendingUp,
   Users,
@@ -65,6 +66,13 @@ export default async function AdminOverviewPage() {
     { label: "Book purchases", value: stats.totalPurchases, icon: ShoppingBag },
     { label: "User documents", value: stats.totalDocuments, icon: FileText },
     { label: "Published titles", value: stats.publishedItems, icon: Library },
+    { label: "Total ratings", value: stats.totalRatings, icon: Star },
+    { label: "Books rated", value: stats.booksRated, icon: Star },
+    {
+      label: "Average rating",
+      value: stats.totalRatings > 0 ? stats.averageRating.toFixed(1) : "—",
+      icon: Star,
+    },
   ]
 
   return (

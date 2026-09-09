@@ -5,6 +5,7 @@ import {
   book,
   bookAuditLog,
   bookPurchase,
+  bookRating,
   document as documentTable,
   readingItem,
   user as userTable,
@@ -127,6 +128,17 @@ export async function getAdminStats() {
   const [totalPurchases] = await db
     .select({ value: count() })
     .from(bookPurchase)
+  // Real rating aggregates (replaces the former review stats): total number of
+  // ratings, how many distinct books have been rated, and the overall mean.
+  const [ratingAgg] = await db
+    .select({
+      total: count(),
+      books: sql<number>`count(distinct ${bookRating.bookId})::int`,
+      avg: sql<number>`coalesce(avg(${bookRating.stars}), 0)`,
+    })
+    .from(bookRating)
+
+  const totalRatings = Number(ratingAgg?.total ?? 0)
 
   return {
     totalUsers: totalUsers?.value ?? 0,
@@ -136,6 +148,10 @@ export async function getAdminStats() {
     totalBooks: totalBooks?.value ?? 0,
     totalDocuments: totalDocuments?.value ?? 0,
     totalPurchases: totalPurchases?.value ?? 0,
+    totalRatings,
+    booksRated: Number(ratingAgg?.books ?? 0),
+    averageRating:
+      totalRatings > 0 ? Math.round(Number(ratingAgg?.avg ?? 0) * 10) / 10 : 0,
   }
 }
 
@@ -295,6 +311,8 @@ export type AdminUser = {
   email: string
   username: string | null
   role: string
+  status: string
+  statusReason: string | null
   plan: string | null
   subscriptionStatus: string | null
   currentPeriodEnd: Date | null
@@ -320,6 +338,8 @@ export async function getUsers(): Promise<AdminUser[]> {
       email: userTable.email,
       username: userTable.username,
       role: userTable.role,
+      status: userTable.status,
+      statusReason: userTable.statusReason,
       plan: userTable.plan,
       subscriptionStatus: userTable.subscriptionStatus,
       currentPeriodEnd: userTable.currentPeriodEnd,
@@ -351,6 +371,8 @@ export async function getUserById(userId: string): Promise<AdminUser | null> {
       email: userTable.email,
       username: userTable.username,
       role: userTable.role,
+      status: userTable.status,
+      statusReason: userTable.statusReason,
       plan: userTable.plan,
       subscriptionStatus: userTable.subscriptionStatus,
       currentPeriodEnd: userTable.currentPeriodEnd,

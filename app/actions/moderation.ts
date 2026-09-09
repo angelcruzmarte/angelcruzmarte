@@ -1,18 +1,8 @@
 "use server"
 
 import { db } from "@/lib/db"
-import {
-  bookRating,
-  contentReport,
-  user as userTable,
-  userBlock,
-} from "@/lib/db/schema"
+import { user as userTable, userBlock } from "@/lib/db/schema"
 import { getCurrentUser } from "@/lib/session"
-import {
-  CONTENT_TYPE_BOOK_REVIEW,
-  MAX_REPORT_DETAILS,
-  REPORT_REASON_VALUES,
-} from "@/lib/moderation"
 import { and, desc, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
@@ -23,114 +13,11 @@ async function requireUser() {
 }
 
 /**
- * Resolves the author of a piece of reportable content, validating that it
- * exists. The reported user is derived server-side from the content itself —
- * never trusted from the client — so a reporter cannot mis-attribute a report.
+ * Blocks another user. Idempotent. This is part of Voxyfi's general
+ * user-safety system (independent of the removed written-review feature): a
+ * blocked user cannot interact with the blocker and is filtered out of the
+ * blocker's views wherever people are surfaced.
  */
-async function resolveContentAuthor(
-  contentType: string,
-  contentId: string,
-): Promise<{ authorId: string } | null> {
-  if (contentType === CONTENT_TYPE_BOOK_REVIEW) {
-    const id = Number(contentId)
-    if (!Number.isInteger(id) || id <= 0) return null
-    const [row] = await db
-      .select({ userId: bookRating.userId })
-      .from(bookRating)
-      .where(eq(bookRating.id, id))
-      .limit(1)
-    return row ? { authorId: row.userId } : null
-  }
-  return null
-}
-
-/**
- * Files a report against a piece of UGC. Stores reporter, reported user
- * (resolved server-side), content ref, reason, optional details, timestamp and
- * a `pending` status. A DB unique constraint on (reporter, contentType,
- * contentId) prevents duplicate reports from the same user for the same item.
- */
-export async function submitReport(input: {
-  contentType: string
-  contentId: string
-  reason: string
-  details?: string
-}) {
-  const current = await getCurrentUser()
-  if (!current) {
-    console.error("[v0] submitReport: no session (Unauthorized)")
-    return {
-      error: "Please sign in again to submit your report.",
-    }
-  }
-  const user = current
-  console.log(
-    "[v0] submitReport: user",
-    user.id.slice(0, 8),
-    "content",
-    input.contentType,
-    input.contentId,
-  )
-
-  const contentType = String(input.contentType ?? "")
-  const contentId = String(input.contentId ?? "")
-  if (contentType !== CONTENT_TYPE_BOOK_REVIEW) {
-    return { error: "Unsupported content type." }
-  }
-  if (!REPORT_REASON_VALUES.includes(String(input.reason))) {
-    return { error: "Please choose a valid reason." }
-  }
-  const details =
-    (input.details ?? "").trim().slice(0, MAX_REPORT_DETAILS) || null
-
-  const author = await resolveContentAuthor(contentType, contentId)
-  if (!author) return { error: "That content no longer exists." }
-  if (author.authorId === user.id) {
-    // Common testing gotcha: the session is shared across voxyfi.com and
-    // admin.voxyfi.com, so if you signed into the admin panel you're now that
-    // same account here — and this is that account's own review.
-    console.log(
-      "[v0] submitReport: rejected self-report by",
-      user.id.slice(0, 8),
-    )
-    return {
-      error:
-        "You can't report your own review. You're signed in as its author — sign in with a different account to report it.",
-    }
-  }
-
-  const actingAs = user.username ? `@${user.username}` : user.name
-
-  try {
-    await db.insert(contentReport).values({
-      reporterId: user.id,
-      reportedUserId: author.authorId,
-      contentType,
-      contentId,
-      reason: String(input.reason),
-      details,
-    })
-    console.log("[v0] submitReport: inserted report OK for", user.id.slice(0, 8))
-  } catch (err) {
-    // 23505 = unique_violation: this user already reported this content, which
-    // is an idempotent success. ANY OTHER error is a real failure — log the
-    // actual error and report it, so the UI never shows "submitted" when
-    // nothing was persisted.
-    const code =
-      err && typeof err === "object" && "code" in err
-        ? (err as { code?: string }).code
-        : undefined
-    if (code === "23505") {
-      return { ok: true as const, duplicate: true as const, actingAs }
-    }
-    console.error("[v0] submitReport: failed to insert content_report:", err)
-    return { error: "We couldn't submit your report. Please try again." }
-  }
-
-  return { ok: true as const, actingAs }
-}
-
-/** Blocks another user. Idempotent. Their UGC disappears from the blocker's views. */
 export async function blockUser(blockedId: string) {
   const current = await getCurrentUser()
   if (!current) {
@@ -140,7 +27,6 @@ export async function blockUser(blockedId: string) {
   const user = current
   const target = String(blockedId ?? "")
   if (!target || target === user.id) {
-    console.log("[v0] blockUser: rejected self-block by", user.id.slice(0, 8))
     return {
       error:
         "You can't block yourself. You're signed in as this account — sign in with a different account to block it.",
@@ -157,12 +43,6 @@ export async function blockUser(blockedId: string) {
     .insert(userBlock)
     .values({ blockerId: user.id, blockedId: target })
     .onConflictDoNothing()
-  console.log(
-    "[v0] blockUser: user",
-    user.id.slice(0, 8),
-    "blocked",
-    target.slice(0, 8),
-  )
 
   revalidatePath("/app/profile/blocked")
   return { ok: true as const }
