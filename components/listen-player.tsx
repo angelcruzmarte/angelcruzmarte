@@ -513,7 +513,10 @@ export function ListenPlayer({
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-6 sm:px-6">
         <Link
           href={backHref}
-          className={buttonVariants({ variant: "ghost", size: "sm" }) + " gap-1.5"}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "h-9 gap-1.5 rounded-full border-border/70 bg-card px-4 font-medium shadow-sm transition-all hover:-translate-y-px hover:bg-secondary hover:shadow-md",
+          )}
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
