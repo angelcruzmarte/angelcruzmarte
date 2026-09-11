@@ -68,10 +68,14 @@ function formatSleep(ms: number): string {
   const s = total % 60
   return `${m}:${String(s).padStart(2, "0")}`
 }
-// Upper bound on how many sections we pre-translate in the background. Sections
-// beyond this are still translated on demand the moment they are played, so
-// playback is never blocked — this only caps background work on huge documents.
-const BACKGROUND_TRANSLATE_CAP = 40
+// How many sections ahead of the current position we pre-translate in the
+// background. Kept small (a reading look-ahead, not the whole document) on
+// purpose: firing dozens of translation requests at once trips the AI Gateway
+// rate limit and makes EVERY section fail. A small look-ahead translates at
+// reading pace, stays within limits, and still keeps the next pages ready.
+// Sections beyond it are translated on demand the moment they are played, and
+// every result is cached durably so it is only ever translated once.
+const BACKGROUND_TRANSLATE_CAP = 6
 
 function countWords(s: string) {
   return s.match(/\S+/g)?.length ?? 0
@@ -371,7 +375,10 @@ export function PremiumNarration({
         }
       }
       try {
-        await Promise.all([worker(), worker()])
+        // Single worker (serial) rather than parallel: translation is the
+        // rate-limited resource, so a gentle one-at-a-time cadence is far less
+        // likely to trip the gateway limit than bursting concurrent requests.
+        await worker()
         if (hadError && langRef.current === targetLang) {
           setError(
             "Some sections couldn't be translated due to high demand — showing the original text for those. Playback still works.",
