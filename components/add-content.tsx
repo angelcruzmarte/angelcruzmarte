@@ -454,9 +454,24 @@ function FileImport({
         method: "POST",
         body,
       })
-      const data = (await res.json()) as { id?: number; error?: string }
+      // The response may not be JSON when the platform (not our handler)
+      // rejects the request — e.g. a 413 for an over-limit body or a 504 when
+      // processing runs long. Parse defensively so those surface a useful
+      // message instead of throwing into the generic "Upload failed" catch.
+      let data: { id?: number; error?: string } = {}
+      try {
+        data = (await res.json()) as { id?: number; error?: string }
+      } catch {
+        data = {}
+      }
       if (!res.ok || !data.id) {
-        onError(data.error ?? "Could not process that file.")
+        const fallback =
+          res.status === 413
+            ? "That file is too large to upload. Please try a smaller file."
+            : res.status >= 500
+              ? "That file took too long to process. Please try again, or use a smaller file."
+              : "Could not process that file."
+        onError(data.error ?? fallback)
         setUploading(false)
         return
       }

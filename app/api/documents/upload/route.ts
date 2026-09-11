@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
 import { generateAndStoreDocumentThumbnail } from "@/lib/document-thumbnail"
 import { put } from "@vercel/blob"
-import { NextResponse } from "next/server"
+import { after, NextResponse } from "next/server"
 
 // Parsing large PDFs/EPUBs can take a moment.
 export const maxDuration = 60
@@ -131,14 +131,19 @@ export async function POST(req: Request) {
     // Same shared thumbnail pipeline as every other import source: render a
     // cover from the PDF's first page (or downscale the uploaded image itself)
     // so the document has a consistent preview server-side, no matter how it
-    // was added. Best-effort, idempotent, and non-blocking to the response
-    // contract — the client self-heal path becomes a redundant safety net.
-    await generateAndStoreDocumentThumbnail({
-      userId: user.id,
-      docId: doc.id,
-      buffer,
-      name: file.name,
-      mimeType: file.type,
+    // was added. Best-effort, idempotent, and — via `after()` — run AFTER the
+    // response is sent so this comparatively heavy step (a second PDF parse +
+    // native canvas rasterize + Blob upload) never inflates upload latency or
+    // tips the request over a gateway timeout. The client self-heal path and
+    // the player's on-load backfill remain redundant safety nets.
+    after(async () => {
+      await generateAndStoreDocumentThumbnail({
+        userId: user.id,
+        docId: doc.id,
+        buffer,
+        name: file.name,
+        mimeType: file.type,
+      })
     })
 
     return NextResponse.json({ id: doc.id })
