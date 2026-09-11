@@ -61,7 +61,10 @@ export function DownloadAudioButton({
     return (
       <Link
         href="/subscribe"
-        className={buttonVariants({ variant: "outline", size: "sm" }) + " gap-1.5"}
+        className={
+          buttonVariants({ variant: "outline", size: "sm" }) +
+          " h-9 gap-1.5 rounded-full border-border/70 bg-card px-4 font-medium shadow-sm transition-all hover:-translate-y-px hover:shadow-md"
+        }
       >
         <Lock className="h-4 w-4" />
         Download
@@ -95,7 +98,10 @@ export function DownloadAudioButton({
   return (
     <Popover>
       <PopoverTrigger
-        className={buttonVariants({ variant: "outline", size: "sm" }) + " gap-1.5"}
+        className={
+          buttonVariants({ variant: "outline", size: "sm" }) +
+          " h-9 gap-1.5 rounded-full border-border/70 bg-card px-4 font-medium shadow-sm transition-all hover:-translate-y-px hover:shadow-md"
+        }
       >
         <Download className="h-4 w-4" />
         Download
