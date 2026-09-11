@@ -11,6 +11,7 @@ import {
   ScanLine,
   Type,
 } from "lucide-react"
+import { upload } from "@vercel/blob/client"
 import { createDocument, importFromUrl } from "@/app/actions/documents"
 import { DocumentScanner } from "@/components/document-scanner"
 import { DictationRecorder } from "@/components/dictation-recorder"
@@ -446,18 +447,28 @@ function FileImport({
     onError("")
     haptic("light")
     try {
-      // Binary formats (PDF/DOCX/EPUB) must be parsed server-side, so we send
-      // the raw file to the upload endpoint which extracts the text.
-      const body = new FormData()
-      body.append("file", file)
-      const res = await fetch("/api/documents/upload", {
-        method: "POST",
-        body,
+      // Stream the file DIRECTLY to Vercel Blob from the browser. A normal POST
+      // to a serverless route caps the body at ~4.5MB, so anything larger would
+      // be rejected by the platform before our code ran. A client upload sends
+      // the bytes straight to Blob storage and bypasses that limit entirely,
+      // giving us the full advertised 15MB.
+      const blob = await upload(`documents/uploads/${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/documents/blob-upload",
+        contentType: file.type || undefined,
       })
-      // The response may not be JSON when the platform (not our handler)
-      // rejects the request — e.g. a 413 for an over-limit body or a 504 when
-      // processing runs long. Parse defensively so those surface a useful
-      // message instead of throwing into the generic "Upload failed" catch.
+
+      // Now hand the (small) Blob URL to the processor, which reads the file
+      // back server-side and extracts the text. This request body is just a
+      // URL, so it never hits the 4.5MB limit either.
+      const res = await fetch("/api/documents/process", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: blob.url, name: file.name, type: file.type }),
+      })
+      // Parse defensively: a platform-level error (e.g. a 504 when processing
+      // runs long) may not return JSON, so surface a useful message instead of
+      // throwing into the generic catch below.
       let data: { id?: number; error?: string } = {}
       try {
         data = (await res.json()) as { id?: number; error?: string }
@@ -466,11 +477,9 @@ function FileImport({
       }
       if (!res.ok || !data.id) {
         const fallback =
-          res.status === 413
-            ? "That file is too large to upload. Please try a smaller file."
-            : res.status >= 500
-              ? "That file took too long to process. Please try again, or use a smaller file."
-              : "Could not process that file."
+          res.status >= 500
+            ? "That file took too long to process. Please try again, or use a smaller file."
+            : "Could not process that file."
         onError(data.error ?? fallback)
         setUploading(false)
         return
@@ -481,8 +490,14 @@ function FileImport({
       await generateUploadThumbnail(data.id, file)
       haptic("success")
       onDone(data.id)
-    } catch {
-      onError("Upload failed. Please try again.")
+    } catch (err) {
+      // A rejected client upload (e.g. Blob refusing an over-limit file) lands
+      // here; prefer its message when present over the opaque generic one.
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Upload failed. Please try again."
+      onError(message)
       setUploading(false)
     }
   }
