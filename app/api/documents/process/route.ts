@@ -3,13 +3,12 @@ import { extractTextFromImage } from "@/app/actions/ai"
 import { getCurrentUser } from "@/lib/session"
 import { parseDocumentBuffer } from "@/lib/parse-document"
 import { generateAndStoreDocumentThumbnail } from "@/lib/document-thumbnail"
-import { put } from "@vercel/blob"
+import { del } from "@vercel/blob"
 import { after, NextResponse } from "next/server"
 
-// Parsing large PDFs/EPUBs can take a moment.
+// Reading the file back from Blob and parsing a large PDF/EPUB can take a
+// moment; keep the same generous budget the old direct-upload route used.
 export const maxDuration = 60
-
-const MAX_BYTES = 15 * 1024 * 1024 // 15MB
 
 // File types whose original bytes we preserve so the reader can render the
 // real pages/scan alongside the extracted text.
@@ -51,71 +50,93 @@ function mimeFromExt(ext: string): string | null {
   }
 }
 
+/**
+ * Only accept URLs that live in our own Blob store. The browser hands us the
+ * URL it just uploaded to, so pinning the host prevents the route from being
+ * coerced into fetching an arbitrary server (SSRF).
+ */
+function isOwnBlobUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    return (
+      u.protocol === "https:" &&
+      u.hostname.endsWith(".blob.vercel-storage.com")
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: Request) {
   const user = await getCurrentUser()
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let form: FormData
+  let payload: { url?: string; name?: string; type?: string }
   try {
-    form = await req.formData()
+    payload = (await req.json()) as {
+      url?: string
+      name?: string
+      type?: string
+    }
   } catch {
-    return NextResponse.json({ error: "Invalid upload." }, { status: 400 })
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 })
   }
 
-  const file = form.get("file")
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "No file provided." }, { status: 400 })
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json(
-      { error: "File is too large. Please use a file under 15MB." },
-      { status: 400 },
-    )
+  const url = payload.url ?? ""
+  const name = payload.name ?? "document"
+  const type = payload.type ?? ""
+
+  if (!isOwnBlobUrl(url)) {
+    return NextResponse.json({ error: "Invalid file reference." }, { status: 400 })
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer())
+    // Pull the uploaded bytes back from Blob. This request body is a URL, not
+    // the file, so the ~4.5MB serverless limit never applies here.
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new Error("Could not read the uploaded file.")
+    }
+    const buffer = Buffer.from(await res.arrayBuffer())
 
     let title: string
     let text: string
-    if (isImage(file.name, file.type)) {
+    if (isImage(name, type)) {
       // Scanned page / photo: run OCR via the multimodal model.
-      const mime = file.type || "image/png"
+      const mime = type || "image/png"
       const dataUrl = `data:${mime};base64,${buffer.toString("base64")}`
       text = await extractTextFromImage(dataUrl)
-      title = file.name.replace(/\.[^.]+$/, "") || "Scanned document"
+      title = name.replace(/\.[^.]+$/, "") || "Scanned document"
       if (!text || text.trim().split(/\s+/).filter(Boolean).length < 3) {
         throw new Error(
           "Couldn't read any text from that image. Try a clearer photo or scan.",
         )
       }
     } else {
-      const parsed = await parseDocumentBuffer(file.name, file.type, buffer)
+      const parsed = await parseDocumentBuffer(name, type, buffer)
       title = parsed.title
       text = parsed.text
     }
 
-    // Preserve the original file (PDF/scan) so the reader can show real pages.
+    // Viewable originals (PDF/image) stay in Blob so the reader can render the
+    // real pages. Non-viewable formats (DOCX/EPUB/TXT/MD) were only needed for
+    // text extraction, so delete the now-redundant upload to avoid orphans.
     let originalUrl: string | null = null
     let originalMime: string | null = null
-    if (isViewable(file.name, file.type)) {
-      const ext = file.name.split(".").pop() || "bin"
-      const blob = await put(
-        `documents/${user.id}/${Date.now()}.${ext}`,
-        buffer,
-        {
-          access: "public",
-          addRandomSuffix: true,
-          contentType: file.type || undefined,
-        },
-      )
-      // Public blob URL is directly renderable in the reader. Fall back to the
-      // extension when the browser doesn't report a MIME type so the reader can
-      // still recognize (and render) the original pages.
-      originalUrl = blob.url
-      originalMime = file.type || mimeFromExt(ext)
+    if (isViewable(name, type)) {
+      const ext = name.split(".").pop() || "bin"
+      originalUrl = url
+      originalMime = type || mimeFromExt(ext)
+    } else {
+      after(async () => {
+        try {
+          await del(url)
+        } catch {
+          // Best-effort cleanup; an orphaned temp blob is harmless.
+        }
+      })
     }
 
     // Language is auto-detected inside createDocument so playback can
@@ -128,21 +149,17 @@ export async function POST(req: Request) {
       originalMime,
     })
 
-    // Same shared thumbnail pipeline as every other import source: render a
-    // cover from the PDF's first page (or downscale the uploaded image itself)
-    // so the document has a consistent preview server-side, no matter how it
-    // was added. Best-effort, idempotent, and — via `after()` — run AFTER the
-    // response is sent so this comparatively heavy step (a second PDF parse +
-    // native canvas rasterize + Blob upload) never inflates upload latency or
-    // tips the request over a gateway timeout. The client self-heal path and
-    // the player's on-load backfill remain redundant safety nets.
+    // Same shared thumbnail pipeline as every other import source, run AFTER
+    // the response is sent so this heavy step (PDF parse + native canvas
+    // rasterize + Blob upload) never inflates latency. Best-effort/idempotent;
+    // the client self-heal and the player's on-load backfill remain safety nets.
     after(async () => {
       await generateAndStoreDocumentThumbnail({
         userId: user.id,
         docId: doc.id,
         buffer,
-        name: file.name,
-        mimeType: file.type,
+        name,
+        mimeType: type,
       })
     })
 
@@ -150,7 +167,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Could not process that file."
-    console.log("[v0] document upload error:", message)
+    console.log("[v0] document process error:", message)
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }
