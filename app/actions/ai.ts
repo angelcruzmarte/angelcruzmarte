@@ -16,13 +16,21 @@ import { and, eq } from "drizzle-orm"
 import { z } from "zod"
 
 const MODEL = "openai/gpt-5.4-mini"
-// Translation is the highest-volume workload, so we run it on a DIFFERENT
-// provider than MODEL (OpenAI). Google's Gemini Flash is fast, zero-config, and
-// accessible on the free tier, and using a separate provider means translation
-// draws from its own rate-limit bucket instead of competing with summaries/
-// quizzes/chat. If it fails, translateChunkOnce falls back to MODEL.
-// (Note: anthropic/* is NOT available to free-tier gateway users.)
+// Translation is the highest-volume workload, so it runs on Google's Gemini
+// Flash, which is fast and — unlike OpenAI models on this gateway's free tier —
+// is NOT rate-limited. The fallback stays on Google (Flash-Lite) for the same
+// reason: falling back to an OpenAI model would hit GatewayRateLimitError and
+// fail the whole section, so OpenAI is deliberately kept OUT of the translation
+// path. (anthropic/* is also unavailable to free-tier gateway users.)
 const TRANSLATE_MODEL = "google/gemini-2.5-flash"
+const TRANSLATE_FALLBACK_MODEL = "google/gemini-2.5-flash-lite"
+// Gemini 2.5 Flash runs a "thinking" pass by default, which roughly doubles
+// latency (5s+ per chunk) and token cost for what is a mechanical task. Under
+// the concurrency the reader drives, that slowness caused sections to stall and
+// fail. Disabling thinking makes translation fast and reliable.
+const GEMINI_NO_THINKING = {
+  google: { thinkingConfig: { thinkingBudget: 0 } },
+} as const
 const MAX_INPUT = 16000
 // Upper bound on how much text we translate to keep latency/cost reasonable.
 const MAX_TRANSLATE = 24000
@@ -395,13 +403,22 @@ async function translateChunkOnce(chunk: string, language: string) {
     `Do not add notes, explanations, or quotation marks — output only the translation.\n\n` +
     chunk
   try {
-    const { text } = await generateText({ model: TRANSLATE_MODEL, prompt })
+    const { text } = await generateText({
+      model: TRANSLATE_MODEL,
+      prompt,
+      providerOptions: GEMINI_NO_THINKING,
+    })
     return stripAccents(text.trim())
   } catch {
-    // Cross-provider fallback: if the primary translation model is rate-limited
-    // or unavailable, retry once on the main OpenAI model (separate provider
-    // bucket) so a single provider hiccup doesn't break translation.
-    const { text } = await generateText({ model: MODEL, prompt })
+    // Same-provider fallback: Gemini Flash-Lite is even faster and shares
+    // Google's (non-rate-limited) free-tier bucket. We do NOT fall back to an
+    // OpenAI model here — those are rate-limited on this gateway's free tier and
+    // would fail the section outright, which is exactly what broke translation.
+    const { text } = await generateText({
+      model: TRANSLATE_FALLBACK_MODEL,
+      prompt,
+      providerOptions: GEMINI_NO_THINKING,
+    })
     return stripAccents(text.trim())
   }
 }
@@ -599,6 +616,7 @@ export async function detectLanguage(input: string): Promise<string | null> {
   try {
     const { object } = await generateObject({
       model: TRANSLATE_MODEL,
+      providerOptions: GEMINI_NO_THINKING,
       schema: z.object({
         code: z
           .string()
