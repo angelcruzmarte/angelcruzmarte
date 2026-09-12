@@ -117,7 +117,7 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     // loop recomputes the pixel target from this LIVE each frame, so when a
     // page's canvas finishes rendering and shifts layout, the scroll eases to
     // the new position smoothly instead of snapping/jumping.
-    const scrollAimRef = useRef<{ wordIdx: number; page: number } | null>(null)
+    const scrollAimRef = useRef<{ page: number; intra: number } | null>(null)
     // Monotonic scroll floor. During continuous playback the follow-along goal
     // is never allowed to drift backward by a small amount — that backward
     // noise (the approximate premium word->page mapping, lazy-render layout
@@ -463,68 +463,58 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       if (!container) return
 
       const total = pdfDocRef.current?.numPages ?? numPages
-      const idx = activeWordRef.current
-      const word = wordsRef.current[idx]
+      if (total <= 0) return
 
-      // Figure out the target page: prefer the real page of the active word;
-      // fall back to a uniform fraction only if the word list isn't ready yet.
-      let targetPage: number
-      if (word) {
-        targetPage = word.page
-      } else {
-        const frac = Math.min(1, Math.max(0, scrollFraction as number))
-        targetPage = Math.min(total, Math.floor(frac * total) + 1)
-      }
-      // Ensure the target page (and the next) are rendered for real heights, so
-      // the word's span exists before we arrive — this prevents the small jump
-      // when crossing from one page to the next.
+      // Drive the follow-along scroll from the premium voice's GLOBAL audio
+      // progress (0..1) mapped onto a continuous PAGE position — NOT from the
+      // PDF word list. The audio word stream (which may be translated) and the
+      // PDF's extracted word stream don't line up on real documents, and
+      // mapping one onto the other made the view stall on word-sparse cover
+      // pages (the "stuck on page 3" bug). Progress→page always advances
+      // steadily and lands on the last content page exactly as narration ends.
+      const words = wordsRef.current
+      const firstPage = words.length ? words[0].page : 1
+      const lastPage = words.length ? words[words.length - 1].page : total
+      const pageSpan = Math.max(0, lastPage - firstPage)
+      const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
+      const exact = firstPage + frac * pageSpan
+      const targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
+      const intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
+
+      // Render the target page (and the next) so the real page height is in
+      // place before we glide there.
       renderPage(targetPage)
       if (targetPage + 1 <= total) renderPage(targetPage + 1)
 
       // Record what we're aiming at; the loop recomputes the pixel target from
       // this live each frame so layout shifts (a page finishing render) are
       // eased out rather than snapped.
-      scrollAimRef.current = { wordIdx: idx, page: targetPage }
+      scrollAimRef.current = { page: targetPage, intra }
 
       // Kick the easing loop if it isn't already running.
       if (rafRef.current == null) {
         const scroller =
           document.scrollingElement || document.documentElement
-        // Compute the current pixel target from the live position of the aim
-        // element (exact word span if available, otherwise the target page).
+        // Pixel target = top of the aimed page + a slice of its height
+        // proportional to intra-page audio progress, kept ~30% down the
+        // viewport. Reserved aspect-ratio placeholders give every page a stable
+        // height up front, so this is correct even before the page's canvas
+        // has rendered.
         const computeGoal = (): number | null => {
           const c = containerRef.current
           if (!c) return null
           const vh = viewportHRef.current || window.innerHeight
           const maxTop = document.documentElement.scrollHeight - vh
-          // Always follow the WORD currently being read so the page keeps the
-          // highlighted word in view. The premium word index is estimated from
-          // section audio progress, but it still points at a real span/page in
-          // the PDF text layer, so cover pages and word-sparse pages are handled
-          // correctly — word N is scrolled to wherever it actually sits, instead
-          // of a uniform height fraction that pins the view near the top when the
-          // real text starts several pages in. Keep the reading line ~35% down
-          // the viewport.
           const aim = scrollAimRef.current
-          if (aim) {
-            const span = spanMap.current.get(aim.wordIdx)
-            const host = c.querySelector<HTMLElement>(
-              `[data-page="${aim.page}"]`,
-            )
-            const aimEl = span ?? host
-            if (aimEl) {
-              const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
-              const target = aimTop - vh * 0.35
-              return Math.max(0, Math.min(target, maxTop))
-            }
-          }
-          // The word's page hasn't rendered yet — fall back to a fraction of the
-          // document height from playback progress so we still glide toward it
-          // until the real span exists on the next frame.
-          const rawFrac = scrollFractionRef.current
-          if (rawFrac < 0) return null
-          const frac = Math.min(1, Math.max(0, rawFrac))
-          return Math.max(0, Math.min(frac * maxTop, maxTop))
+          if (!aim) return null
+          const host = c.querySelector<HTMLElement>(
+            `[data-page="${aim.page}"]`,
+          )
+          if (!host) return null
+          const rect = host.getBoundingClientRect()
+          const hostTop = rect.top + window.scrollY
+          const target = hostTop + aim.intra * rect.height - vh * 0.3
+          return Math.max(0, Math.min(target, maxTop))
         }
         const step = () => {
           // Stop the loop if the user just scrolled manually.
