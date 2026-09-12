@@ -739,6 +739,21 @@ export function PremiumNarration({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <div className="min-w-0 flex-1">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
+              <Sparkles className="h-3 w-3 text-primary" />
+              {status === "loading"
+                ? `${selectedVoice.name} · Preparing audio…`
+                : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+            </p>
+          </div>
+
           <Button
             onClick={() => player.play(Math.max(0, index - 1))}
             variant="ghost"
@@ -776,21 +791,6 @@ export function PremiumNarration({
           >
             <SkipForward className="h-5 w-5" />
           </Button>
-
-          <div className="min-w-0 flex-1">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
-              <Sparkles className="h-3 w-3 text-primary" />
-              {status === "loading"
-                ? `${selectedVoice.name} · Preparing audio…`
-                : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
-            </p>
-          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -866,10 +866,22 @@ export function PremiumNarration({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-[120px] flex-1">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              {`Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+            </p>
+          </div>
+
           <Button
             onClick={handlePlayPause}
             size="lg"
-            className="h-12 w-12 rounded-full p-0"
+            className="h-12 w-12 shrink-0 rounded-full p-0"
             aria-label={status === "playing" ? "Pause" : "Play"}
             disabled={busy}
           >
@@ -886,24 +898,12 @@ export function PremiumNarration({
             onClick={() => player.stop()}
             variant="secondary"
             size="lg"
-            className="h-12 w-12 rounded-full p-0"
+            className="h-12 w-12 shrink-0 rounded-full p-0"
             aria-label="Stop"
             disabled={status === "idle"}
           >
             <Square className="h-4 w-4" />
           </Button>
-
-          <div className="min-w-[120px] flex-1">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-              {`Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
-            </p>
-          </div>
 
           <Select value={voice} onValueChange={handleVoiceChange}>
             <SelectTrigger
@@ -1086,6 +1086,20 @@ export function PremiumNarration({
               size={44}
               ring
             />
+            <div className="min-w-0 flex-1">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-1 truncate text-xs text-muted-foreground tabular-nums">
+                {status === "loading"
+                  ? "Loading…"
+                  : `Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+              </p>
+            </div>
+
             <Button
               onClick={handlePlayPause}
               size="icon"
@@ -1111,20 +1125,6 @@ export function PremiumNarration({
             >
               <Square className="h-4 w-4" />
             </Button>
-
-            <div className="min-w-0 flex-1">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="mt-1 truncate text-xs text-muted-foreground tabular-nums">
-                {status === "loading"
-                  ? "Loading…"
-                  : `Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
-              </p>
-            </div>
           </div>
         </div>
       )}
