@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Pause,
   Play,
+  ScrollText,
   Send,
   Sparkles,
   X,
@@ -35,7 +36,7 @@ type Tool = "chat" | "summary" | "podcast" | "quiz"
 
 const TOOLS: { id: Tool; label: string; Icon: typeof Sparkles }[] = [
   { id: "chat", label: "Chat", Icon: MessageSquare },
-  { id: "summary", label: "Summary", Icon: Sparkles },
+  { id: "summary", label: "Summary", Icon: ScrollText },
   { id: "podcast", label: "Podcast", Icon: AudioLines },
   { id: "quiz", label: "Quiz", Icon: HelpCircle },
 ]
