@@ -118,6 +118,18 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     // page's canvas finishes rendering and shifts layout, the scroll eases to
     // the new position smoothly instead of snapping/jumping.
     const scrollAimRef = useRef<{ wordIdx: number; page: number } | null>(null)
+    // Monotonic scroll floor. During continuous playback the follow-along goal
+    // is never allowed to drift backward by a small amount — that backward
+    // noise (the approximate premium word->page mapping, lazy-render layout
+    // shifts, or the iOS toolbar resizing the viewport) is exactly what makes
+    // the page appear to jerk up and down. Only a large backward delta (a real
+    // seek) resets it. Cleared whenever playback stops.
+    const lastGoalRef = useRef<number | null>(null)
+    // Cached viewport height, refreshed on resize/orientation only. Reading
+    // window.innerHeight every frame picks up the iOS Safari toolbar show/hide,
+    // which makes the scroll target oscillate; a stable value keeps the glide
+    // steady.
+    const viewportHRef = useRef(0)
 
     useImperativeHandle(ref, () => ({
       scrollToPage: (page: number) => {
@@ -482,11 +494,11 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           )
           const aimEl = span ?? host
           if (!aimEl) return null
+          const vh = viewportHRef.current || window.innerHeight
           const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
           // Keep the reading line ~35% down the viewport (Speechify-style).
-          const target = aimTop - window.innerHeight * 0.35
-          const maxTop =
-            document.documentElement.scrollHeight - window.innerHeight
+          const target = aimTop - vh * 0.35
+          const maxTop = document.documentElement.scrollHeight - vh
           return Math.max(0, Math.min(target, maxTop))
         }
         const step = () => {
@@ -498,13 +510,25 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
             rafRef.current = null
             return
           }
-          const goal = computeGoal()
-          if (goal == null) {
+          const raw = computeGoal()
+          if (raw == null) {
             // Aim element not ready yet (page still rendering) — keep the loop
             // alive and try again next frame instead of bailing.
             rafRef.current = requestAnimationFrame(step)
             return
           }
+          // Monotonic clamp: while playing, only ever glide forward. Suppress
+          // small backward targets (approximate premium word->page mapping,
+          // lazy-render layout shifts, iOS toolbar resize) that would read as
+          // the page jerking up and down. A large backward delta is a genuine
+          // seek and is honored, re-anchoring the floor lower.
+          let goal = raw
+          const floor = lastGoalRef.current
+          const vh = viewportHRef.current || window.innerHeight
+          if (floor != null && raw < floor && floor - raw < vh * 1.25) {
+            goal = floor
+          }
+          lastGoalRef.current = goal
           const current = window.scrollY || scroller.scrollTop
           const delta = goal - current
           if (Math.abs(delta) <= 1.5) {
@@ -530,6 +554,20 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     useEffect(() => {
       return () => {
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      }
+    }, [])
+
+    // Keep the cached viewport height in sync (see viewportHRef).
+    useEffect(() => {
+      const update = () => {
+        viewportHRef.current = window.innerHeight
+      }
+      update()
+      window.addEventListener("resize", update)
+      window.addEventListener("orientationchange", update)
+      return () => {
+        window.removeEventListener("resize", update)
+        window.removeEventListener("orientationchange", update)
       }
     }, [])
 
