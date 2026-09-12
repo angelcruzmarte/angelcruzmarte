@@ -907,10 +907,10 @@ export function PremiumNarration({
 
           <Select value={voice} onValueChange={handleVoiceChange}>
             <SelectTrigger
-              className="h-14 w-full gap-2 rounded-xl border-primary/30 bg-background px-3 shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 sm:w-[240px]"
+              className="h-auto min-h-14 w-full items-center gap-2 rounded-xl border-primary/30 bg-background px-3 py-2.5 shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/5 sm:w-[240px]"
               aria-label={`Narrator: ${selectedVoice.name}. Tap to change voice.`}
             >
-              <span className="flex min-w-0 items-center gap-3">
+              <span className="flex min-w-0 flex-1 items-center gap-3">
                 <VoiceAvatar
                   name={selectedVoice.name}
                   image={selectedVoice.image}
@@ -920,7 +920,7 @@ export function PremiumNarration({
                 />
                 <span className="flex min-w-0 flex-col text-left leading-tight">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                    Narrator · tap to change
+                    Tap to change
                   </span>
                   <span className="truncate text-sm font-semibold">
                     {selectedVoice.name}
