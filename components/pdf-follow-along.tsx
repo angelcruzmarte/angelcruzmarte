@@ -472,12 +472,17 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       // mapping one onto the other made the view stall on word-sparse cover
       // pages (the "stuck on page 3" bug). Progress→page always advances
       // steadily and lands on the last content page exactly as narration ends.
-      const words = wordsRef.current
-      const firstPage = words.length ? words[0].page : 1
-      const lastPage = words.length ? words[words.length - 1].page : total
-      const pageSpan = Math.max(0, lastPage - firstPage)
+      // Map the fraction across the PDF's FULL, known page count (available as
+      // soon as the document loads) — NOT across the rendered word list. The
+      // word list only contains words from pages that have already lazily
+      // rendered, so at the start it only knows about page 1. Deriving the page
+      // span from it made firstPage === lastPage === 1 (pageSpan 0), pinning the
+      // target to page 1 forever: a deadlock where the view can't scroll down
+      // until later pages render, but they can't render until the view scrolls
+      // down. Using the total page count breaks that cycle and always advances.
+      const pageSpan = Math.max(0, total - 1)
       const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
-      const exact = firstPage + frac * pageSpan
+      const exact = 1 + frac * pageSpan
       const targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
       const intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
 
