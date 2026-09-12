@@ -395,8 +395,18 @@ export function ListenPlayer({
   // Overall playback progress (0..1) for the robust, word-independent scroll
   // engine. This guarantees the document scrolls through to the end as the
   // premium voice plays, even if the two word lists don't align perfectly.
+  //
+  // IMPORTANT: this must NOT depend on `premiumPlaying`. The premium provider
+  // briefly reports "not playing" during every section handoff (loading/decoding
+  // the next section's audio), and with many short sections that happens
+  // constantly. If the fraction dropped to -1 on each gap, the follow-along view
+  // would tear down its smooth easing loop AND re-enable its fallback
+  // scrollIntoView on every boundary — two scroll systems fighting, which reads
+  // as the page jerking up and down. Keeping the fraction live whenever there is
+  // a real position lets the premium voice own scrolling continuously and glide
+  // smoothly straight through the section boundaries.
   const premiumFraction =
-    premium && mode === "premium" && premiumPlaying && premiumPos.total > 0
+    premium && mode === "premium" && premiumPos.total > 0 && premiumPos.word >= 0
       ? Math.min(1, premiumPos.word / premiumPos.total)
       : -1
 
