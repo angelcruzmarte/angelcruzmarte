@@ -333,6 +333,11 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     const fractionDrivenRef = useRef(fractionDriven)
     fractionDrivenRef.current = fractionDriven
 
+    // Latest playback fraction (0..1), kept in a ref so the rAF loop reads the
+    // current value every frame without restarting.
+    const scrollFractionRef = useRef(scrollFraction ?? -1)
+    scrollFractionRef.current = scrollFraction ?? -1
+
     const applyHighlight = useCallback(
       (idx: number) => {
         // Clear previous.
@@ -449,6 +454,9 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       if (status !== "ready" || !fractionDriven) {
         scrollAimRef.current = null
         scrollTargetRef.current = null
+        // Reset the monotonic floor so the next play session anchors fresh
+        // (a seek or a new document must not be blocked by an old floor).
+        lastGoalRef.current = null
         return
       }
       const container = containerRef.current
@@ -485,20 +493,32 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
         // Compute the current pixel target from the live position of the aim
         // element (exact word span if available, otherwise the target page).
         const computeGoal = (): number | null => {
-          const aim = scrollAimRef.current
           const c = containerRef.current
-          if (!aim || !c) return null
+          if (!c) return null
+          const vh = viewportHRef.current || window.innerHeight
+          const maxTop = document.documentElement.scrollHeight - vh
+          // Premium voice: no per-word timing exists, so scroll to a pure
+          // fraction of the whole document height. This is continuous and
+          // strictly increasing with playback, so the page glides straight
+          // down and reaches the end exactly as the audio finishes — no noisy
+          // word->page mapping to make it hop around.
+          if (fractionDrivenRef.current) {
+            const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
+            return Math.max(0, Math.min(frac * maxTop, maxTop))
+          }
+          // Device voice: the active word index maps 1:1 to a rendered span, so
+          // track that exact word (fall back to its page host before the span
+          // exists). Keep the reading line ~35% down the viewport.
+          const aim = scrollAimRef.current
+          if (!aim) return null
           const span = spanMap.current.get(aim.wordIdx)
           const host = c.querySelector<HTMLElement>(
             `[data-page="${aim.page}"]`,
           )
           const aimEl = span ?? host
           if (!aimEl) return null
-          const vh = viewportHRef.current || window.innerHeight
           const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
-          // Keep the reading line ~35% down the viewport (Speechify-style).
           const target = aimTop - vh * 0.35
-          const maxTop = document.documentElement.scrollHeight - vh
           return Math.max(0, Math.min(target, maxTop))
         }
         const step = () => {
