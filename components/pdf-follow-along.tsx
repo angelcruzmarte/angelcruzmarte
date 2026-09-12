@@ -497,29 +497,34 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           if (!c) return null
           const vh = viewportHRef.current || window.innerHeight
           const maxTop = document.documentElement.scrollHeight - vh
-          // Premium voice: no per-word timing exists, so scroll to a pure
-          // fraction of the whole document height. This is continuous and
-          // strictly increasing with playback, so the page glides straight
-          // down and reaches the end exactly as the audio finishes — no noisy
-          // word->page mapping to make it hop around.
-          if (fractionDrivenRef.current) {
-            const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
-            return Math.max(0, Math.min(frac * maxTop, maxTop))
-          }
-          // Device voice: the active word index maps 1:1 to a rendered span, so
-          // track that exact word (fall back to its page host before the span
-          // exists). Keep the reading line ~35% down the viewport.
+          // Always follow the WORD currently being read so the page keeps the
+          // highlighted word in view. The premium word index is estimated from
+          // section audio progress, but it still points at a real span/page in
+          // the PDF text layer, so cover pages and word-sparse pages are handled
+          // correctly — word N is scrolled to wherever it actually sits, instead
+          // of a uniform height fraction that pins the view near the top when the
+          // real text starts several pages in. Keep the reading line ~35% down
+          // the viewport.
           const aim = scrollAimRef.current
-          if (!aim) return null
-          const span = spanMap.current.get(aim.wordIdx)
-          const host = c.querySelector<HTMLElement>(
-            `[data-page="${aim.page}"]`,
-          )
-          const aimEl = span ?? host
-          if (!aimEl) return null
-          const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
-          const target = aimTop - vh * 0.35
-          return Math.max(0, Math.min(target, maxTop))
+          if (aim) {
+            const span = spanMap.current.get(aim.wordIdx)
+            const host = c.querySelector<HTMLElement>(
+              `[data-page="${aim.page}"]`,
+            )
+            const aimEl = span ?? host
+            if (aimEl) {
+              const aimTop = aimEl.getBoundingClientRect().top + window.scrollY
+              const target = aimTop - vh * 0.35
+              return Math.max(0, Math.min(target, maxTop))
+            }
+          }
+          // The word's page hasn't rendered yet — fall back to a fraction of the
+          // document height from playback progress so we still glide toward it
+          // until the real span exists on the next frame.
+          const rawFrac = scrollFractionRef.current
+          if (rawFrac < 0) return null
+          const frac = Math.min(1, Math.max(0, rawFrac))
+          return Math.max(0, Math.min(frac * maxTop, maxTop))
         }
         const step = () => {
           // Stop the loop if the user just scrolled manually.
