@@ -879,6 +879,17 @@ export function PremiumNarration({
           </div>
 
           <Button
+            onClick={() => player.stop()}
+            variant="secondary"
+            size="lg"
+            className="h-12 w-12 shrink-0 rounded-full p-0"
+            aria-label="Stop"
+            disabled={status === "idle"}
+          >
+            <Square className="h-4 w-4" />
+          </Button>
+
+          <Button
             onClick={handlePlayPause}
             size="lg"
             className="h-12 w-12 shrink-0 rounded-full p-0"
@@ -892,17 +903,6 @@ export function PremiumNarration({
             ) : (
               <Play className="h-5 w-5" />
             )}
-          </Button>
-
-          <Button
-            onClick={() => player.stop()}
-            variant="secondary"
-            size="lg"
-            className="h-12 w-12 shrink-0 rounded-full p-0"
-            aria-label="Stop"
-            disabled={status === "idle"}
-          >
-            <Square className="h-4 w-4" />
           </Button>
 
           <Select value={voice} onValueChange={handleVoiceChange}>
@@ -1101,6 +1101,16 @@ export function PremiumNarration({
             </div>
 
             <Button
+              onClick={() => player.stop()}
+              variant="secondary"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-full"
+              aria-label="Stop"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+
+            <Button
               onClick={handlePlayPause}
               size="icon"
               className="h-11 w-11 shrink-0 rounded-full"
@@ -1114,16 +1124,6 @@ export function PremiumNarration({
               ) : (
                 <Play className="h-5 w-5 translate-x-0.5" />
               )}
-            </Button>
-
-            <Button
-              onClick={() => player.stop()}
-              variant="secondary"
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-full"
-              aria-label="Stop"
-            >
-              <Square className="h-4 w-4" />
             </Button>
           </div>
         </div>
