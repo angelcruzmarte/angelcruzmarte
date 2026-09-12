@@ -866,7 +866,34 @@ export function PremiumNarration({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="order-2 min-w-[120px] flex-1 sm:order-1">
+          <Button
+            onClick={handlePlayPause}
+            size="lg"
+            className="h-12 w-12 rounded-full p-0"
+            aria-label={status === "playing" ? "Pause" : "Play"}
+            disabled={busy}
+          >
+            {busy ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : status === "playing" ? (
+              <Pause className="h-5 w-5" />
+            ) : (
+              <Play className="h-5 w-5" />
+            )}
+          </Button>
+
+          <Button
+            onClick={() => player.stop()}
+            variant="secondary"
+            size="lg"
+            className="h-12 w-12 rounded-full p-0"
+            aria-label="Stop"
+            disabled={status === "idle"}
+          >
+            <Square className="h-4 w-4" />
+          </Button>
+
+          <div className="min-w-[120px] flex-1">
             <div className="h-2 w-full overflow-hidden rounded-full bg-primary/15">
               <div
                 className="h-full rounded-full bg-primary transition-all"
@@ -876,35 +903,6 @@ export function PremiumNarration({
             <p className="mt-1 text-xs text-muted-foreground tabular-nums">
               {`Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
             </p>
-          </div>
-
-          <div className="order-1 flex shrink-0 items-center gap-3 sm:order-2">
-            <Button
-              onClick={handlePlayPause}
-              size="lg"
-              className="h-12 w-12 rounded-full p-0"
-              aria-label={status === "playing" ? "Pause" : "Play"}
-              disabled={busy}
-            >
-              {busy ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : status === "playing" ? (
-                <Pause className="h-5 w-5" />
-              ) : (
-                <Play className="h-5 w-5" />
-              )}
-            </Button>
-
-            <Button
-              onClick={() => player.stop()}
-              variant="secondary"
-              size="lg"
-              className="h-12 w-12 rounded-full p-0"
-              aria-label="Stop"
-              disabled={status === "idle"}
-            >
-              <Square className="h-4 w-4" />
-            </Button>
           </div>
 
           <Select value={voice} onValueChange={handleVoiceChange}>
