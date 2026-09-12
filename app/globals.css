@@ -403,8 +403,10 @@
   background-color: color-mix(in oklch, var(--primary) 16%, transparent);
 }
 .pdf-word-active {
-  background-color: color-mix(in oklch, var(--primary) 34%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
+  background-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  border-radius: 2px;
+  color: var(--primary-foreground) !important;
 }
 
 /* When the docked mini-player is visible (flagged on <body> by PlayerProvider)
