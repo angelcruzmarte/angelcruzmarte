@@ -519,7 +519,7 @@ export function ListenPlayer({
   }
 
   return (
-    <div>
+    <div className="pb-44">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 pt-6 sm:px-6">
         <Link
           href={backHref}

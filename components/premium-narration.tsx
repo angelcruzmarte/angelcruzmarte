@@ -1058,12 +1058,15 @@ export function PremiumNarration({
         />
       )}
 
-      {/* Floating controls so the user can always pause/stop without scrolling
-          back up to the card on long documents. On screens that also show the
-          global bottom tab bar (everything except the immersive /app/listen
+      {/* Floating controls so the user can always play/pause/stop and see
+          progress without scrolling back up to the card. Persistent whenever the
+          reader is shown (not just while playing) so text documents get the same
+          always-on mini-player that PDF/image documents already have — the play
+          button starts narration from here when idle. On screens that also show
+          the global bottom tab bar (everything except the immersive /app/listen
           routes, where it's hidden), lift the bar above the tab bar so the two
           never overlap. */}
-      {status !== "idle" && (
+      {showReader && (
         <div
           className={cn(
             "fixed inset-x-0 z-40 px-4 sm:px-6",
