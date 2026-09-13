@@ -523,6 +523,21 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           if (!c) return null
           const vh = viewportHRef.current || window.innerHeight
           const maxTop = document.documentElement.scrollHeight - vh
+          // PREFER the actual highlighted word element. The highlight is what the
+          // user watches, so scrolling to it guarantees scroll and highlight can
+          // never diverge (the old page-fraction estimate could point somewhere
+          // the highlighted word wasn't, so the page appeared not to follow). The
+          // highlight effect renders the active word's page and marks it, so this
+          // element exists a frame or two after the word becomes active.
+          const active = c.querySelector<HTMLElement>(".pdf-word-active")
+          if (active) {
+            const rect = active.getBoundingClientRect()
+            const top = rect.top + window.scrollY
+            // Keep the read word ~40% down the viewport.
+            return Math.max(0, Math.min(top - vh * 0.4, maxTop))
+          }
+          // Fallback: page-fraction estimate until the word's page has rendered
+          // and its highlight span exists in the DOM.
           const aim = scrollAimRef.current
           if (!aim) return null
           const host = c.querySelector<HTMLElement>(
