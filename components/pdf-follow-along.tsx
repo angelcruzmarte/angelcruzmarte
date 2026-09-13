@@ -124,7 +124,11 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     // loop recomputes the pixel target from this LIVE each frame, so when a
     // page's canvas finishes rendering and shifts layout, the scroll eases to
     // the new position smoothly instead of snapping/jumping.
-    const scrollAimRef = useRef<{ page: number; intra: number } | null>(null)
+    const scrollAimRef = useRef<{
+    word: number
+    page: number
+    intra: number
+  } | null>(null)
     // Monotonic scroll floor. During continuous playback the follow-along goal
     // is never allowed to drift backward by a small amount — that backward
     // noise (the approximate premium word->page mapping, lazy-render layout
@@ -478,68 +482,68 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       const total = pdfDocRef.current?.numPages ?? numPages
       if (total <= 0) return
 
-      // Drive the follow-along scroll from the premium voice's GLOBAL audio
-      // progress (0..1) mapped onto a continuous PAGE position — NOT from the
-      // PDF word list. The audio word stream (which may be translated) and the
-      // PDF's extracted word stream don't line up on real documents, and
-      // mapping one onto the other made the view stall on word-sparse cover
-      // pages (the "stuck on page 3" bug). Progress→page always advances
-      // steadily and lands on the last content page exactly as narration ends.
-      // Map the fraction across the PDF's FULL, known page count (available as
-      // soon as the document loads) — NOT across the rendered word list. The
-      // word list only contains words from pages that have already lazily
-      // rendered, so at the start it only knows about page 1. Deriving the page
-      // span from it made firstPage === lastPage === 1 (pageSpan 0), pinning the
-      // target to page 1 forever: a deadlock where the view can't scroll down
-      // until later pages render, but they can't render until the view scrolls
-      // down. Using the total page count breaks that cycle and always advances.
-      const pageSpan = Math.max(0, total - 1)
-      const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
-      const exact = 1 + frac * pageSpan
-      const targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
-      const intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
+      // Two ways to know where the reading is, in order of reliability:
+      //
+      // 1. The ACTIVE WORD (reading in the original language). We scroll to the
+      //    exact word the highlight marks, so scroll and highlight can never
+      //    diverge. Crucially we resolve the word's span through the stable
+      //    `spanMap` — NOT a `.pdf-word-active` DOM query. `applyHighlight`
+      //    clears that class from every span and re-adds it on each word change,
+      //    so for the frames in between the query returns null and the old code
+      //    fell back to the page-fraction estimate (a different page). The
+      //    monotonic clamp then locked in that forward jump — exactly the
+      //    "first page is fine, then it jumps" bug. The spanMap lookup is
+      //    immune to that class churn.
+      //
+      // 2. The AUDIO FRACTION → page estimate (reading a TRANSLATED language,
+      //    where activeWord is -1 because translated words can't be mapped onto
+      //    the original PDF's text layer). Approximate but always advances.
+      const idx = activeWordRef.current
+      const activeWordObj = idx >= 0 ? wordsRef.current[idx] : undefined
 
-      // Render the target page (and the next) so the real page height is in
-      // place before we glide there.
-      renderPage(targetPage)
-      if (targetPage + 1 <= total) renderPage(targetPage + 1)
-
-      // Record what we're aiming at; the loop recomputes the pixel target from
-      // this live each frame so layout shifts (a page finishing render) are
-      // eased out rather than snapped.
-      scrollAimRef.current = { page: targetPage, intra }
+      if (activeWordObj) {
+        // Render the active word's page (and the next) so we can glide to it and
+        // stay ahead of the reading position.
+        renderPage(activeWordObj.page)
+        if (activeWordObj.page + 1 <= total) renderPage(activeWordObj.page + 1)
+        scrollAimRef.current = { word: idx, page: activeWordObj.page, intra: 0 }
+      } else {
+        // Translated reading: map the global audio progress onto a continuous
+        // page position across the PDF's full, known page count.
+        const pageSpan = Math.max(0, total - 1)
+        const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
+        const exact = 1 + frac * pageSpan
+        const targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
+        const intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
+        renderPage(targetPage)
+        if (targetPage + 1 <= total) renderPage(targetPage + 1)
+        scrollAimRef.current = { word: -1, page: targetPage, intra }
+      }
 
       // Kick the easing loop if it isn't already running.
       if (rafRef.current == null) {
         const scroller =
           document.scrollingElement || document.documentElement
-        // Pixel target = top of the aimed page + a slice of its height
-        // proportional to intra-page audio progress, kept ~30% down the
-        // viewport. Reserved aspect-ratio placeholders give every page a stable
-        // height up front, so this is correct even before the page's canvas
-        // has rendered.
         const computeGoal = (): number | null => {
           const c = containerRef.current
           if (!c) return null
           const vh = viewportHRef.current || window.innerHeight
           const maxTop = document.documentElement.scrollHeight - vh
-          // PREFER the actual highlighted word element. The highlight is what the
-          // user watches, so scrolling to it guarantees scroll and highlight can
-          // never diverge (the old page-fraction estimate could point somewhere
-          // the highlighted word wasn't, so the page appeared not to follow). The
-          // highlight effect renders the active word's page and marks it, so this
-          // element exists a frame or two after the word becomes active.
-          const active = c.querySelector<HTMLElement>(".pdf-word-active")
-          if (active) {
-            const rect = active.getBoundingClientRect()
-            const top = rect.top + window.scrollY
-            // Keep the read word ~40% down the viewport.
-            return Math.max(0, Math.min(top - vh * 0.4, maxTop))
-          }
-          // Fallback: page-fraction estimate until the word's page has rendered
-          // and its highlight span exists in the DOM.
           const aim = scrollAimRef.current
           if (!aim) return null
+          // Prefer the exact word span (resolved via the stable spanMap so class
+          // churn from re-highlighting can never blank it out mid-frame).
+          if (aim.word >= 0) {
+            const span = spanMap.current.get(aim.word)
+            if (span && c.contains(span)) {
+              const rect = span.getBoundingClientRect()
+              const top = rect.top + window.scrollY
+              // Keep the read word ~40% down the viewport.
+              return Math.max(0, Math.min(top - vh * 0.4, maxTop))
+            }
+          }
+          // Fallback: the word's (or fraction-estimated) page host, until the
+          // page's canvas + text layer have rendered and the span exists.
           const host = c.querySelector<HTMLElement>(
             `[data-page="${aim.page}"]`,
           )
