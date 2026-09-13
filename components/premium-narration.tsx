@@ -747,9 +747,10 @@ export function PremiumNarration({
               />
             </div>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-              <Sparkles className="h-3 w-3 shrink-0 text-primary" />
-              <span className="shrink-0 font-medium">{selectedVoice.name}</span>
-              <span className="truncate">
+              <span className="shrink-0 whitespace-nowrap font-medium text-foreground">
+                {selectedVoice.name}
+              </span>
+              <span className="min-w-0 truncate">
                 {status === "loading"
                   ? "· Preparing audio…"
                   : `· Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
