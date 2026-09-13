@@ -235,14 +235,54 @@ async function loadPicker(): Promise<any> {
   return (window as any).google.picker
 }
 
+// Rejects if a promise doesn't settle within `ms`, so a blocked sign-in popup
+// or a script that never loads can't leave the UI stuck on "Opening…" forever.
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
+
+// Loads the Picker library and the developer key CONCURRENTLY (both are
+// independent of the OAuth token), so opening the Picker doesn't wait on three
+// sequential network/script fetches.
+async function preparePicker(): Promise<{ developerKey: string; picker: any }> {
+  const [developerKey, picker] = await Promise.all([
+    fetchPickerApiKey(),
+    loadPicker(),
+  ])
+  return { developerKey, picker }
+}
+
+// Warms the Google sign-in script, the Picker library, and the developer key
+// ahead of the user tapping Google Drive, so the picker appears promptly
+// instead of loading everything on click. Safe to call repeatedly — every step
+// dedupes and failures are ignored (the real click path reports errors).
+export function preloadGoogleImport() {
+  if (!cloudConfig.googleClientId) return
+  void loadScript("https://accounts.google.com/gsi/client").catch(() => {})
+  void loadPicker().catch(() => {})
+  void fetchPickerApiKey().catch(() => {})
+}
+
 // Opens the Google Picker filtered to importable document types and resolves
-// with the chosen file id (or null if the user cancels/closes it).
-async function openGooglePicker(token: string): Promise<string | null> {
-  // Pull the developer key from the server at runtime; never pass an empty
-  // value to the Picker (that surfaces Google's generic "API developer key is
-  // invalid" message) — fetchPickerApiKey throws with a clear reason instead.
-  const developerKey = await fetchPickerApiKey()
-  const picker = await loadPicker()
+// with the chosen file id (or null if the user cancels/closes it). Takes the
+// already-loaded developer key + picker library so it can show instantly.
+async function openGooglePicker(
+  token: string,
+  developerKey: string,
+  picker: any,
+): Promise<string | null> {
   return new Promise((resolve) => {
     // Primary view: the user's own "My Drive", rooted at its top-level folder
     // via setParent("root"). This is the important fix: a DocsView(DOCS) with NO
@@ -429,11 +469,24 @@ export function useCloudImport(
         busyRef.current = true
         setStatus("picking")
         try {
-          let token = await getGoogleToken()
+          // Start loading the Picker library + developer key immediately, in
+          // parallel with sign-in, so they're ready the moment we have a token.
+          const pickerReady = preparePicker()
+          let token = await withTimeout(
+            getGoogleToken(),
+            90_000,
+            "Google sign-in timed out. Please try again.",
+          )
           tokenRef.current = token
-          // Background delta-sync for previously-imported Drive files.
+          const { developerKey, picker } = await withTimeout(
+            pickerReady,
+            30_000,
+            "Google Drive took too long to open. Please try again.",
+          )
+          const fileId = await openGooglePicker(token, developerKey, picker)
+          // Background delta-sync AFTER the picker is up, so it never competes
+          // for bandwidth while the picker is opening.
           void reconcileDrive(token)
-          const fileId = await openGooglePicker(token)
           if (!fileId) {
             // User closed/cancelled the Picker: stop here. Do NOT re-auth or
             // make any further Google API call automatically.
