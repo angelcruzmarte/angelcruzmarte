@@ -95,6 +95,13 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       "loading",
     )
     const [numPages, setNumPages] = useState(0)
+    // Per-page intrinsic size (PDF user units) captured up front so each page
+    // host can reserve its TRUE aspect ratio before the canvas renders. Without
+    // this, every host used a hardcoded US-Letter box (8.5:11); the moment a
+    // page whose real size differs (A4, legal, a scanned image) rendered, its
+    // height snapped to the real value and shoved all following pages up/down —
+    // the visible "jumping" during follow-along scroll.
+    const [pageSizes, setPageSizes] = useState<{ w: number; h: number }[]>([])
 
     // Map global word index -> its span element (populated as pages render).
     const spanMap = useRef<Map<number, HTMLElement>>(new Map())
@@ -160,9 +167,14 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
 
           // Build the ordered word list from every page's text content.
           const words: WordEntry[] = []
+          const sizes: { w: number; h: number }[] = []
           for (let p = 1; p <= doc.numPages; p++) {
             const page = await doc.getPage(p)
             if (cancelled) return
+            // Capture the page's intrinsic size so its host can reserve the
+            // correct height before render (prevents the on-render height snap).
+            const vp = page.getViewport({ scale: 1 })
+            sizes[p - 1] = { w: vp.width, h: vp.height }
             const tc = await page.getTextContent()
             const pageText = tc.items
               .map((it) => ("str" in it ? it.str : ""))
@@ -193,6 +205,7 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
           }
           wordsRef.current = words
           if (cancelled) return
+          setPageSizes(sizes)
           onWords?.(words.map((w) => w.text).join(" "), words.length)
           setStatus("ready")
         } catch (err) {
@@ -619,22 +632,27 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
 
     const pageHosts = useMemo(
       () =>
-        Array.from({ length: numPages }, (_, i) => (
-          <div
-            key={i + 1}
-            data-page={i + 1}
-            // Reserve a full US-Letter-sized box (aspect 8.5:11) so the total
-            // document height is stable and correct BEFORE each page's canvas
-            // renders. Without this, unrendered placeholders would be far
-            // shorter than rendered pages, making the follow-along scroll
-            // mapping wrong (it would barely move / appear stuck near the top).
-            // On render, host.style.height is set to the page's exact height.
-            className="relative mx-auto mb-3 flex aspect-[8.5/11] w-full max-w-2xl items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border"
-          >
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        )),
-      [numPages],
+        Array.from({ length: numPages }, (_, i) => {
+          // Reserve each page's TRUE aspect ratio up front (from the intrinsic
+          // size captured at load) so the total document height is stable and
+          // correct BEFORE any canvas renders. This prevents the height snap
+          // (and the resulting scroll "jump") when a page whose real size
+          // differs from US-Letter finally renders. Fall back to 8.5:11 until
+          // the sizes are known. On render, host.style.height is set exactly.
+          const size = pageSizes[i]
+          const ratio = size ? `${size.w} / ${size.h}` : "8.5 / 11"
+          return (
+            <div
+              key={i + 1}
+              data-page={i + 1}
+              style={{ aspectRatio: ratio }}
+              className="relative mx-auto mb-3 flex w-full max-w-2xl items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-border"
+            >
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )
+        }),
+      [numPages, pageSizes],
     )
 
     return (
