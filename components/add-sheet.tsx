@@ -20,7 +20,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useCloudImport } from "@/hooks/use-cloud-import"
+import { useCloudImport, preloadGoogleImport } from "@/hooks/use-cloud-import"
 import {
   isCloudProviderConfigured,
   type CloudProviderId,
@@ -87,6 +87,9 @@ export function AddSheet({
   useEffect(() => {
     if (open) {
       setMounted(true)
+      // Warm the Google sign-in + Picker scripts so tapping Google Drive opens
+      // promptly instead of loading everything on click.
+      if (isCloudProviderConfigured("google-drive")) preloadGoogleImport()
     } else {
       const t = setTimeout(() => setMounted(false), 250)
       return () => clearTimeout(t)
