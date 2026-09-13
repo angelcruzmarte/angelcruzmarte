@@ -746,11 +746,14 @@ export function PremiumNarration({
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums">
-              <Sparkles className="h-3 w-3 text-primary" />
-              {status === "loading"
-                ? `${selectedVoice.name} · Preparing audio…`
-                : `${selectedVoice.name} · Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+              <Sparkles className="h-3 w-3 shrink-0 text-primary" />
+              <span className="shrink-0 font-medium">{selectedVoice.name}</span>
+              <span className="truncate">
+                {status === "loading"
+                  ? "· Preparing audio…"
+                  : `· Section ${Math.min(index + 1, chunks.length)} of ${chunks.length}`}
+              </span>
             </p>
           </div>
 
