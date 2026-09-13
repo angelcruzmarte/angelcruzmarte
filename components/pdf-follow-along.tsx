@@ -107,6 +107,12 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
     const spanMap = useRef<Map<number, HTMLElement>>(new Map())
     // Ordered word metadata for the whole document.
     const wordsRef = useRef<WordEntry[]>([])
+  // Cumulative content weight per page (length numPages+1, cum[0]=0). Used to
+  // map the premium audio progress fraction onto a page position that dwells on
+  // each page proportionally to its spoken content, WITH a per-page floor so an
+  // image-only page (no extractable text layer) still gets real dwell time and
+  // is never skipped by the follow-along scroll.
+  const pageCumRef = useRef<number[]>([])
     // Per-page rendered flag to support lazy rendering.
     const renderedPages = useRef<Set<number>>(new Set())
     const pdfDocRef = useRef<Awaited<
@@ -208,6 +214,20 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
             }
           }
           wordsRef.current = words
+          // Build cumulative per-page content weights. Each page's weight is its
+          // extractable word count, floored so an image-only page (0 words) still
+          // gets meaningful dwell — this is what stops the follow-along scroll from
+          // jumping straight over a text-less page.
+          {
+            const PAGE_WEIGHT_FLOOR = 14
+            const counts = new Array(doc.numPages + 1).fill(0)
+            for (const w of words) counts[w.page] += 1
+            const cum = new Array(doc.numPages + 1).fill(0)
+            for (let p = 1; p <= doc.numPages; p++) {
+              cum[p] = cum[p - 1] + Math.max(PAGE_WEIGHT_FLOOR, counts[p])
+            }
+            pageCumRef.current = cum
+          }
           if (cancelled) return
           setPageSizes(sizes)
           onWords?.(words.map((w) => w.text).join(" "), words.length)
@@ -498,27 +518,39 @@ export const PdfFollowAlong = forwardRef<PdfFollowAlongHandle, Props>(
       // 2. The AUDIO FRACTION → page estimate (reading a TRANSLATED language,
       //    where activeWord is -1 because translated words can't be mapped onto
       //    the original PDF's text layer). Approximate but always advances.
-      const idx = activeWordRef.current
-      const activeWordObj = idx >= 0 ? wordsRef.current[idx] : undefined
-
-      if (activeWordObj) {
-        // Render the active word's page (and the next) so we can glide to it and
-        // stay ahead of the reading position.
-        renderPage(activeWordObj.page)
-        if (activeWordObj.page + 1 <= total) renderPage(activeWordObj.page + 1)
-        scrollAimRef.current = { word: idx, page: activeWordObj.page, intra: 0 }
+      // Drive the scroll purely from the continuous premium audio progress
+      // (0..1) mapped onto a CONTENT-WEIGHTED page position. Because this walks
+      // page-space continuously it visits EVERY page in order and can never skip
+      // one — including image-only pages that contribute no words to the text
+      // layer (they still get a floored dwell via pageCumRef).
+      //
+      // We deliberately do NOT follow the active word's span here. That was the
+      // "a page is being skipped" bug: the word list has no entries for a
+      // text-less page, so gliding word-to-word jumped straight over it while the
+      // voice was still narrating it. The word highlight (a separate effect)
+      // still marks the word wherever the text layer has one.
+      const cum = pageCumRef.current
+      const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
+      let targetPage = 1
+      let intra = 0
+      if (cum.length > total && cum[total] > 0) {
+        const target = frac * cum[total]
+        // Find the page whose cumulative weight window contains `target`.
+        let p = 1
+        while (p < total && cum[p] <= target) p++
+        const pageStart = cum[p - 1]
+        const pageWeight = Math.max(1, cum[p] - pageStart)
+        targetPage = p
+        intra = Math.min(1, Math.max(0, (target - pageStart) / pageWeight))
       } else {
-        // Translated reading: map the global audio progress onto a continuous
-        // page position across the PDF's full, known page count.
-        const pageSpan = Math.max(0, total - 1)
-        const frac = Math.min(1, Math.max(0, scrollFractionRef.current))
-        const exact = 1 + frac * pageSpan
-        const targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
-        const intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
-        renderPage(targetPage)
-        if (targetPage + 1 <= total) renderPage(targetPage + 1)
-        scrollAimRef.current = { word: -1, page: targetPage, intra }
+        // Fallback before weights are ready: uniform page mapping.
+        const exact = 1 + frac * Math.max(0, total - 1)
+        targetPage = Math.min(total, Math.max(1, Math.floor(exact)))
+        intra = Math.min(1, Math.max(0, exact - Math.floor(exact)))
       }
+      renderPage(targetPage)
+      if (targetPage + 1 <= total) renderPage(targetPage + 1)
+      scrollAimRef.current = { word: -1, page: targetPage, intra }
 
       // Kick the easing loop if it isn't already running.
       if (rafRef.current == null) {
