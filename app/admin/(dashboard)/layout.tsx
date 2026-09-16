@@ -1,4 +1,5 @@
 import type React from "react"
+import type { Metadata } from "next"
 import Link from "next/link"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
@@ -8,6 +9,12 @@ import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import { AdminNav } from "@/components/admin-nav"
 import { BrandLogo } from "@/components/brand-logo"
 import { getReviewCount } from "@/app/actions/admin"
+
+// The entire admin portal is private. Keep it out of search indexes
+// (robots.txt also disallows /admin/ as the primary crawl guard).
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default async function AdminLayout({
   children,

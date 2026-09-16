@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "VOXYFI — Logo Options",
   description:
     "Unique logo concepts for VOXYFI, keeping the green voice-and-reading theme.",
+  // Internal brand-exploration page — publicly reachable but never meant for
+  // search. Explicit noindex (this route is not covered by robots.txt).
+  robots: { index: false, follow: false },
 }
 
 /* -------------------------------------------------------------------------- */

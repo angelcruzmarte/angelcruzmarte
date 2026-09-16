@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import {
@@ -13,6 +14,11 @@ import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ManageBillingButton } from "@/components/manage-billing-button"
 import { CancelSubscriptionButton } from "@/components/cancel-subscription-button"
+
+// Private, per-user account page — not for search.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default async function AccountPage() {
   // Reconcile with Stripe on load so status is correct even without webhooks.
