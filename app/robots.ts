@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
       // Keep private, authenticated, and transactional areas out of the index.
-      disallow: ["/app/", "/admin/", "/api/", "/account/", "/onboarding/", "/reset-password/", "/verify-email/", "/offline"],
+      disallow: ["/app/", "/admin/", "/api/", "/account/", "/onboarding/", "/reset-password/", "/verify-email/", "/forgot-password", "/offline"],
     },
     sitemap: `${BASE_URL}/sitemap.xml`,
     host: BASE_URL,

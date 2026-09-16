@@ -4,6 +4,7 @@ import { LegalTitle, LegalSection } from "@/components/legal"
 export const metadata: Metadata = {
   title: "Terms of Service — VOXYFI",
   description: "The terms that govern your use of VOXYFI.",
+  alternates: { canonical: "/legal/terms" },
 }
 
 export default function TermsPage() {

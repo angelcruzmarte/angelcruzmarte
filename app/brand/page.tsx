@@ -15,6 +15,7 @@ export const metadata: Metadata = {
   title: "Brand Guidelines — VOXYFI",
   description:
     "The VOXYFI brand system: logo, two-tone green palette, typography, app icons, and downloadable assets.",
+  alternates: { canonical: "/brand" },
 }
 
 const DEEP = "#123f2e"

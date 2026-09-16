@@ -4,6 +4,7 @@ import { LegalTitle, LegalSection } from "@/components/legal"
 export const metadata: Metadata = {
   title: "Privacy Policy — VOXYFI",
   description: "How VOXYFI collects, uses, and protects your data.",
+  alternates: { canonical: "/legal/privacy" },
 }
 
 export default function PrivacyPage() {

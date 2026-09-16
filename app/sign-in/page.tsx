@@ -1,7 +1,14 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { AuthForm } from "@/components/auth-form"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
+
+// Auth page — kept out of search results.
+export const metadata: Metadata = {
+  title: "Sign in — VOXYFI",
+  robots: { index: false, follow: false },
+}
 
 export default async function SignInPage({
   searchParams,

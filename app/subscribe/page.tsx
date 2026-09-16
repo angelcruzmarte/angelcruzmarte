@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import {
@@ -10,6 +11,12 @@ import { SiteHeader } from "@/components/site-header"
 import { SubscribePlans } from "@/components/subscribe-plans"
 import { PricingViewTracker } from "@/components/pricing-view-tracker"
 import { WebOnly } from "@/components/web-only"
+
+// Transactional/paywall page — kept out of search results.
+export const metadata: Metadata = {
+  title: "Subscribe — VOXYFI",
+  robots: { index: false, follow: false },
+}
 
 export default async function SubscribePage({
   searchParams,

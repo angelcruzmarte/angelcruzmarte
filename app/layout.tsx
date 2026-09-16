@@ -65,6 +65,20 @@ export const metadata: Metadata = {
     apple: '/apple-icon.png?v=8',
   },
   manifest: '/manifest.webmanifest',
+  // Public pages are indexable by default. Private/auth routes override this
+  // with `robots: { index: false }`, and the /app, /admin, /account areas are
+  // disallowed from crawling in app/robots.ts.
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
 }
 
 export const viewport: Viewport = {
