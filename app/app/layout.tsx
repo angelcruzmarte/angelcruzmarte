@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
@@ -13,6 +14,13 @@ import { Badge } from "@/components/ui/badge"
 import { BrandLogo } from "@/components/brand-logo"
 import { PremiumBadge } from "@/components/premium-badge"
 import { ArrowUp } from "lucide-react"
+
+// Every route under /app is authenticated, application-only surface — never
+// meant for Google. Declaring noindex here keeps the whole subtree out of the
+// index (robots.txt also disallows /app/ as the primary crawl guard).
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default async function AppLayout({
   children,

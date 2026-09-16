@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   title: "Press & Media Kit — VOXYFI",
   description:
     "Company facts, boilerplate, logos, screenshots, and brand assets for journalists and partners covering VOXYFI.",
+  alternates: { canonical: "/press" },
 }
 
 const DEEP = "#123f2e"

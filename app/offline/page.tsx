@@ -4,6 +4,8 @@ import { LogoMark } from "@/components/logo-mark"
 export const metadata: Metadata = {
   title: "Offline — VOXYFI",
   description: "You are currently offline.",
+  // PWA offline fallback — never a search landing page.
+  robots: { index: false, follow: false },
 }
 
 export default function OfflinePage() {

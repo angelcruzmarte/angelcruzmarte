@@ -4,6 +4,7 @@ import { LegalTitle, LegalSection } from "@/components/legal"
 export const metadata: Metadata = {
   title: "Refund Policy — VOXYFI",
   description: "VOXYFI's policy on subscription cancellations and refunds.",
+  alternates: { canonical: "/legal/refund" },
 }
 
 export default function RefundPage() {

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { BookOpen, Gauge, Headphones, Sparkles } from "lucide-react"
@@ -9,6 +10,10 @@ import { LogoMark } from "@/components/logo-mark"
 import { PromoCountdown } from "@/components/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+}
 
 export default async function HomePage() {
   const user = await getCurrentUser()

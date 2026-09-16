@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: "Affiliate Disclosure — VOXYFI",
   description:
     "How VOXYFI uses Amazon affiliate links and what that means for you.",
+  alternates: { canonical: "/legal/affiliate-disclosure" },
 }
 
 export default function AffiliateDisclosurePage() {
