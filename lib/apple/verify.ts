@@ -48,13 +48,26 @@ export class AppleIapVerificationError extends Error {
  * Environment variables the real verification requires. These must be added
  * (by the project owner / SWING2APP) from App Store Connect before Apple
  * purchases can be verified:
- *  - APPLE_IAP_BUNDLE_ID       the app bundle id (e.g. com.voxyfi.app)
+ *  - APPLE_IAP_BUNDLE_ID       the bundle id that SIGNS the StoreKit
+ *                              transactions. For this app that is the
+ *                              Swing2App wrapper bundle id
+ *                              "com.swing2app.v3.dc6a9e3d28fbd42039467641b6da1ff9d",
+ *                              NOT "com.voxyfi.app". It must match the
+ *                              `bundleId` inside Apple's signed transaction.
  *  - APPLE_IAP_ISSUER_ID       App Store Connect API issuer id
  *  - APPLE_IAP_KEY_ID          the App Store Server API key id
  *  - APPLE_IAP_PRIVATE_KEY     the .p8 private key contents
  *
  * Optional:
- *  - APPLE_IAP_ENVIRONMENT     "Sandbox" | "Production" (default "Production")
+ *  - APPLE_IAP_ENVIRONMENT     "Sandbox" | "Production" — the environment tried
+ *                              FIRST (default "Production"). Verification always
+ *                              falls back to the other environment on an
+ *                              environment mismatch, so a single deployment
+ *                              handles both TestFlight (Sandbox-signed) and
+ *                              live App Store (Production-signed) transactions.
+ *                              TestFlight builds — even production-signed ones
+ *                              with beta-reports-active — emit Sandbox
+ *                              transactions.
  *  - APPLE_IAP_APP_APPLE_ID    numeric App Store app id (required to verify
  *                              Production App Store Server Notifications)
  */
@@ -104,29 +117,72 @@ export type VerifiedAppleTransaction = {
   appAccountToken: string | null
 }
 
-let cachedVerifier: SignedDataVerifier | null = null
+const verifierCache = new Map<Environment, SignedDataVerifier>()
 
-function getVerifier(): SignedDataVerifier {
-  if (!isAppleIapConfigured()) {
-    throw new AppleIapNotConfiguredError(
-      "Apple IAP credentials are not set; refusing to trust any transaction data.",
-    )
-  }
-  if (cachedVerifier) return cachedVerifier
+function buildVerifier(environment: Environment): SignedDataVerifier {
+  const cached = verifierCache.get(environment)
+  if (cached) return cached
 
   const bundleId = process.env.APPLE_IAP_BUNDLE_ID!.trim()
-  const environment = resolveEnvironment()
   const appAppleId = resolveAppAppleId()
   // Enable online checks so revoked certificates and expired signing keys are
   // rejected using the current date rather than trusted blindly.
-  cachedVerifier = new SignedDataVerifier(
+  const verifier = new SignedDataVerifier(
     appleRootCertificates,
     true,
     environment,
     bundleId,
     appAppleId,
   )
-  return cachedVerifier
+  verifierCache.set(environment, verifier)
+  return verifier
+}
+
+/**
+ * The order of environments to attempt. The configured environment is tried
+ * first; the other is the fallback. A SignedDataVerifier is bound to a single
+ * environment and rejects transactions signed in the other with an environment
+ * mismatch — so to accept both TestFlight (Sandbox) and live App Store
+ * (Production) traffic from one deployment, we try both.
+ */
+function environmentAttemptOrder(): Environment[] {
+  const primary = resolveEnvironment()
+  const secondary =
+    primary === Environment.PRODUCTION ? Environment.SANDBOX : Environment.PRODUCTION
+  return [primary, secondary]
+}
+
+function ensureConfigured(): void {
+  if (!isAppleIapConfigured()) {
+    throw new AppleIapNotConfiguredError(
+      "Apple IAP credentials are not set; refusing to trust any transaction data.",
+    )
+  }
+}
+
+/**
+ * Run a verifier operation against each candidate environment in turn,
+ * returning the first success. Only if EVERY environment rejects the data do we
+ * throw — so forged or truly invalid data still fails closed, while a genuine
+ * transaction signed in the non-primary environment is accepted.
+ */
+async function verifyAcrossEnvironments<T>(
+  run: (verifier: SignedDataVerifier) => Promise<T>,
+): Promise<T> {
+  ensureConfigured()
+  let lastError: unknown
+  for (const environment of environmentAttemptOrder()) {
+    try {
+      return await run(buildVerifier(environment))
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw new AppleIapVerificationError(
+    `Verification failed in all environments: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  )
 }
 
 function mapDecodedTransaction(
@@ -167,21 +223,10 @@ export async function verifySignedTransaction(
   if (!signedTransactionInfo?.trim()) {
     throw new AppleIapVerificationError("Missing signedTransactionInfo.")
   }
-  const verifier = getVerifier()
-  try {
+  return verifyAcrossEnvironments(async (verifier) => {
     const decoded = await verifier.verifyAndDecodeTransaction(signedTransactionInfo)
     return mapDecodedTransaction(decoded)
-  } catch (error) {
-    if (
-      error instanceof AppleIapNotConfiguredError ||
-      error instanceof AppleIapVerificationError
-    ) {
-      throw error
-    }
-    throw new AppleIapVerificationError(
-      `Transaction verification failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
+  })
 }
 
 /**
@@ -198,8 +243,7 @@ export async function verifyNotificationPayload(
   if (!signedPayload?.trim()) {
     throw new AppleIapVerificationError("Missing notification signedPayload.")
   }
-  const verifier = getVerifier()
-  try {
+  return verifyAcrossEnvironments(async (verifier) => {
     const notification = await verifier.verifyAndDecodeNotification(signedPayload)
     const signedTransactionInfo = notification.data?.signedTransactionInfo
     if (!signedTransactionInfo) {
@@ -209,15 +253,5 @@ export async function verifyNotificationPayload(
     }
     const decoded = await verifier.verifyAndDecodeTransaction(signedTransactionInfo)
     return mapDecodedTransaction(decoded)
-  } catch (error) {
-    if (
-      error instanceof AppleIapNotConfiguredError ||
-      error instanceof AppleIapVerificationError
-    ) {
-      throw error
-    }
-    throw new AppleIapVerificationError(
-      `Notification verification failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
+  })
 }
