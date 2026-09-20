@@ -124,6 +124,48 @@ function makeCallback(
   }
 }
 
+/**
+ * Human-readable explanation of a native purchase failure, mapped from the
+ * error codes documented in the SWING2APP iOS IAP guide (page 5). The guide
+ * warns this list is NOT authoritative ("do not build a definitive code map
+ * from this list"), so we always append the raw code — that lets a failing
+ * TestFlight purchase be diagnosed from a screenshot instead of guessed at, and
+ * unknown codes fall back to a generic message. This only describes a failure;
+ * it never grants access.
+ *
+ * Note on code 5 ("product unavailable in the current storefront"): StoreKit
+ * does not return a product whose App Store Connect metadata is incomplete
+ * ("Prepare for Submission") or whose first auto-renewable subscription has not
+ * yet been submitted with an app version — so a not-yet-finished product
+ * surfaces here even in Sandbox.
+ */
+export function describeApplePurchaseError(err: AppleNativePurchaseError): string {
+  const base = (() => {
+    switch (err.code) {
+      case 0:
+        return "Something went wrong with the App Store. Please try again."
+      case 1:
+      case 3:
+        return "Payments aren't allowed on this Apple Account."
+      case 4:
+        return "This device isn't allowed to make payments."
+      case 5:
+        return "This subscription isn't available from the App Store yet. It may still be pending setup or review in App Store Connect."
+      case 6:
+        return "Access to your Apple Account information was denied."
+      case 7:
+        return "Couldn't reach the App Store. Check your connection and try again."
+      case 8:
+        return "Apple Account permission was revoked."
+      case -1:
+        return "In-app purchases aren't available in this app."
+      default:
+        return "The purchase didn't complete."
+    }
+  })()
+  return `${base} (code ${err.code}) Your access is unchanged.`
+}
+
 /** Starts a native subscription purchase for the given Apple product id. */
 export function subscribeViaApple(productId: string): Promise<AppleNativePurchase> {
   return new Promise((resolve, reject) => {
