@@ -193,11 +193,12 @@ export default async function BookDetailPage({
           <AffiliateDisclosure className="px-1" />
         </div>
       ) : (
-        !owned && (
+        !owned &&
+        !subscribed && (
           <div className="mb-4 flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary">
             <Sparkles className="h-4 w-4 shrink-0" />
-            Buy this book to unlock the full text-to-speech audio and save it to
-            your library.
+            Unlock the full text-to-speech audio and save this book to your
+            library.
           </div>
         )
       )}
