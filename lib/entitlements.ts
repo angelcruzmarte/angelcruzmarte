@@ -52,6 +52,22 @@ export type PremiumEntitlementInput = {
  * The existing Stripe code writes the same user columns directly and additionally
  * tags `paymentProvider: "stripe"`, so both sources remain consistent.
  */
+/**
+ * Reads the Apple original transaction id recorded for a user at purchase time,
+ * or null if none. Used by the server-driven "Restore Purchases" flow to
+ * re-query Apple for the current subscription status of that transaction.
+ */
+export async function getAppleOriginalTransactionId(
+  userId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ id: userTable.appleOriginalTransactionId })
+    .from(userTable)
+    .where(eq(userTable.id, userId))
+    .limit(1)
+  return rows[0]?.id?.trim() || null
+}
+
 export async function setPremiumEntitlement(
   userId: string,
   input: PremiumEntitlementInput,

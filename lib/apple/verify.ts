@@ -2,7 +2,9 @@ import "server-only"
 
 import {
   SignedDataVerifier,
+  AppStoreServerAPIClient,
   Environment,
+  Status,
   type JWSTransactionDecodedPayload,
 } from "@apple/app-store-server-library"
 
@@ -254,4 +256,104 @@ export async function verifyNotificationPayload(
     const decoded = await verifier.verifyAndDecodeTransaction(signedTransactionInfo)
     return mapDecodedTransaction(decoded)
   })
+}
+
+const apiClientCache = new Map<Environment, AppStoreServerAPIClient>()
+
+function buildApiClient(environment: Environment): AppStoreServerAPIClient {
+  const cached = apiClientCache.get(environment)
+  if (cached) return cached
+
+  const signingKey = process.env.APPLE_IAP_PRIVATE_KEY!.trim()
+  const keyId = process.env.APPLE_IAP_KEY_ID!.trim()
+  const issuerId = process.env.APPLE_IAP_ISSUER_ID!.trim()
+  const bundleId = process.env.APPLE_IAP_BUNDLE_ID!.trim()
+
+  const client = new AppStoreServerAPIClient(
+    signingKey,
+    keyId,
+    issuerId,
+    bundleId,
+    environment,
+  )
+  apiClientCache.set(environment, client)
+  return client
+}
+
+/**
+ * Server-driven "Restore Purchases" for iOS.
+ *
+ * The SWING2APP module documents no client restore method, so we restore on the
+ * server: given the original transaction id we recorded for the signed-in user
+ * at purchase time, re-query Apple's App Store Server API for the CURRENT
+ * subscription status, verify the signed transaction Apple returns, and return
+ * the verified state. The caller re-grants only if Apple still reports an
+ * active (or otherwise valid) subscription — a client claim is never trusted.
+ *
+ * Returns the verified transaction plus whether Apple considers it currently
+ * entitled, or null if Apple has no record of it in either environment. Throws
+ * (fail closed) when credentials are absent.
+ */
+export type RestoredAppleSubscription = {
+  transaction: VerifiedAppleTransaction
+  /** True when Apple's current status is ACTIVE or in a billing-grace period. */
+  entitled: boolean
+}
+
+export async function restoreByOriginalTransactionId(
+  originalTransactionId: string,
+): Promise<RestoredAppleSubscription | null> {
+  ensureConfigured()
+  const id = originalTransactionId?.trim()
+  if (!id) return null
+
+  let lastError: unknown
+  for (const environment of environmentAttemptOrder()) {
+    try {
+      const client = buildApiClient(environment)
+      const response = await client.getAllSubscriptionStatuses(id)
+      const verifier = buildVerifier(environment)
+
+      // Prefer the entry that is currently active; otherwise fall back to any
+      // last transaction so an expired/canceled result is reported truthfully.
+      let bestActive: RestoredAppleSubscription | null = null
+      let bestAny: RestoredAppleSubscription | null = null
+
+      for (const group of response.data ?? []) {
+        for (const last of group.lastTransactions ?? []) {
+          const signed = last.signedTransactionInfo
+          if (!signed) continue
+          let decoded: JWSTransactionDecodedPayload
+          try {
+            decoded = await verifier.verifyAndDecodeTransaction(signed)
+          } catch {
+            // Signed by the other environment; let the outer loop retry there.
+            continue
+          }
+          const transaction = mapDecodedTransaction(decoded)
+          const entitled =
+            last.status === Status.ACTIVE ||
+            last.status === Status.BILLING_GRACE_PERIOD
+          const candidate: RestoredAppleSubscription = { transaction, entitled }
+          if (entitled && !bestActive) bestActive = candidate
+          if (!bestAny) bestAny = candidate
+        }
+      }
+
+      const result = bestActive ?? bestAny
+      if (result) return result
+      // No verifiable transaction in this environment; try the other.
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  if (lastError) {
+    throw new AppleIapVerificationError(
+      `Restore lookup failed: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    )
+  }
+  return null
 }
