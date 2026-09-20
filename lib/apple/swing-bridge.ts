@@ -74,6 +74,67 @@ export function isSwingIapAvailable(): boolean {
   return Boolean(inapp && typeof inapp.subscribe === "function")
 }
 
+/**
+ * The SWING2APP common JavaScript library. Per the iOS IAP guide, this script
+ * MUST be loaded on any page that calls the bridge — it is what defines
+ * `window.swingWebViewPlugin`. Inside the module-enabled iOS app it wires up to
+ * the native StoreKit module; in a plain browser it loads harmlessly and never
+ * exposes a payment module (so the web build keeps using Stripe). The version
+ * pinned here is the one published in the guide.
+ */
+const SWING_LIBRARY_SRC =
+  "https://pcdn2.swing2app.co.kr/swing_public_src/v3/2026_02_04_001/js/swing_app_on_web.js"
+
+let libraryRequested = false
+
+/**
+ * Inject the SWING2APP library once (client only). Safe to call repeatedly and
+ * from multiple components; the script is added at most once per document.
+ */
+export function ensureSwingLibrary(): void {
+  if (typeof document === "undefined") return
+  // Already present (bridge injected or script tag added by a prior call).
+  if (isSwingIapAvailable()) return
+  if (libraryRequested || document.querySelector("script[data-swing-iap]")) {
+    libraryRequested = true
+    return
+  }
+  libraryRequested = true
+  const script = document.createElement("script")
+  script.src = SWING_LIBRARY_SRC
+  script.async = true
+  script.setAttribute("data-swing-iap", "")
+  document.head.appendChild(script)
+}
+
+/**
+ * Resolve once the native IAP bridge is available, or false after `timeoutMs`.
+ *
+ * The native module injects `window.swingWebViewPlugin` asynchronously (after
+ * the library loads / the WebView wires it up), so a single synchronous check
+ * at mount races that injection and wrongly falls back to Stripe. This ensures
+ * the library is loaded, then polls until the bridge appears or the timeout
+ * elapses. On the web the bridge never appears and this resolves false, so the
+ * Stripe path runs — nothing is hidden, only the payment rail differs.
+ */
+export function waitForSwingIap(timeoutMs = 4000, intervalMs = 150): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false)
+  if (isSwingIapAvailable()) return Promise.resolve(true)
+  ensureSwingLibrary()
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const timer = setInterval(() => {
+      if (isSwingIapAvailable()) {
+        clearInterval(timer)
+        resolve(true)
+      } else if (Date.now() - start >= timeoutMs) {
+        clearInterval(timer)
+        resolve(false)
+      }
+    }, intervalMs)
+  })
+}
+
 // Builds the shared success/failure parser used by buy() and subscribe(). The
 // guide notes the callback contract is under-specified (responseCode 1 appears
 // as both "success" in the examples and "payment error" in the error list), so
