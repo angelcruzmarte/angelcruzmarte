@@ -88,6 +88,11 @@ export default async function BookDetailPage({
   // purchased yet. Book *ownership* still separately controls access to the
   // full text and offline downloads.
   const subscribed = hasActiveSubscription(user)
+  // Full access to a book's complete text + downloads is granted by owning it
+  // OR by an active Premium subscription ("Unlimited access to the full
+  // library"). Affiliate titles never have full in-app text, so Premium only
+  // ever unlocks in-app (non-affiliate) books.
+  const fullAccess = !isAffiliate && (owned || subscribed)
   const premiumNarration = owned || subscribed
   // Owners and subscribers listen with unlimited access; the free preview for
   // everyone else counts toward the daily listening cap.
@@ -127,6 +132,11 @@ export default async function BookDetailPage({
               <BadgeCheck className="h-4 w-4" />
               In your library
             </p>
+          ) : subscribed ? (
+            <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
+              <BadgeCheck className="h-4 w-4" />
+              Included with Premium
+            </p>
           ) : (
             <p className="mt-3 text-lg font-bold">
               {formatPrice(book.priceInCents)}
@@ -151,6 +161,7 @@ export default async function BookDetailPage({
               bookId={book.id}
               priceInCents={book.priceInCents}
               owned={owned}
+              subscribed={subscribed}
               className="mt-3 gap-2"
             />
           )}

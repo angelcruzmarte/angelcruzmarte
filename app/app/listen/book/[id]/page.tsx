@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { book, bookPurchase } from "@/lib/db/schema"
-import { getCurrentUser } from "@/lib/session"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { and, eq } from "drizzle-orm"
 import { ListenPlayer } from "@/components/listen-player"
 
@@ -20,7 +20,9 @@ export default async function BookListenPage({
   const user = await getCurrentUser()
   if (!user) redirect("/sign-in")
 
-  // Only owners can reach the full-book player.
+  // Full-book access requires owning the book OR an active Premium
+  // subscription ("Unlimited access to the full library"). Owners resume from
+  // their saved position; subscribers who don't own it start at the beginning.
   const [purchase] = await db
     .select()
     .from(bookPurchase)
@@ -28,7 +30,7 @@ export default async function BookListenPage({
       and(eq(bookPurchase.userId, user.id), eq(bookPurchase.bookId, bookId)),
     )
     .limit(1)
-  if (!purchase) redirect(`/app/books/${bookId}`)
+  if (!purchase && !hasActiveSubscription(user)) redirect(`/app/books/${bookId}`)
 
   const [row] = await db.select().from(book).where(eq(book.id, bookId)).limit(1)
   if (!row) notFound()
