@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Check, Loader2 } from "lucide-react"
 import { createSubscriptionCheckout } from "@/app/actions/subscription"
@@ -8,7 +8,7 @@ import { PLANS, formatPrice } from "@/lib/plans"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
-  isSwingIapAvailable,
+  waitForSwingIap,
   subscribeViaApple,
   AppleNativePurchaseError,
 } from "@/lib/apple/swing-bridge"
@@ -24,6 +24,8 @@ export function SubscribePlans({
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
   const router = useRouter()
 
   // Detect the SWING2APP native In-App Purchase module at runtime. When present
@@ -32,9 +34,24 @@ export function SubscribePlans({
   // flow runs. This is capability detection, not URL-based platform hiding: the
   // same plans, prices, and buttons render either way — only the payment rail
   // differs, so nothing is hidden from App Review.
+  //
+  // The bridge is injected asynchronously after the SWING2APP library loads, so
+  // we load the library and POLL for it rather than checking once at mount — a
+  // one-shot check races the injection and would wrongly fall back to Stripe
+  // inside the app. `detectedRef` records the final result so the click handler
+  // can close the race for a tap that lands before detection settles.
   const [iapAvailable, setIapAvailable] = useState(false)
+  const detectedRef = useRef<boolean | null>(null)
   useEffect(() => {
-    setIapAvailable(isSwingIapAvailable())
+    let active = true
+    waitForSwingIap().then((available) => {
+      if (!active) return
+      detectedRef.current = available
+      setIapAvailable(available)
+    })
+    return () => {
+      active = false
+    }
   }, [])
 
   // Apple offers (introductory free trials, promo discounts) are configured
@@ -78,11 +95,48 @@ export function SubscribePlans({
     }
   }
 
+  // Restore Purchases (iOS). The SWING2APP guide is explicit that the module
+  // documents no client restore method and that isSubscribed() is only a status
+  // hint — so restoration is done on the SERVER: we re-query Apple for the
+  // signed-in user's recorded original transaction and re-grant only if Apple
+  // still reports an active, verified subscription. A native "true" is never
+  // trusted on its own, and nothing is granted when Apple IAP is unconfigured
+  // (the endpoint fails closed).
+  async function handleRestore() {
+    setError(null)
+    setRestoreMessage(null)
+    setRestoring(true)
+    try {
+      const res = await fetch("/api/apple/restore", { method: "POST" })
+      const data = (await res.json().catch(() => ({}))) as {
+        restored?: boolean
+        reason?: string
+      }
+      if (res.ok && data.restored) {
+        router.refresh()
+        router.push("/app")
+        return
+      }
+      setRestoreMessage(
+        "We couldn't find an active purchase to restore for this account. If you subscribed with a different Apple ID or account, sign in with that account.",
+      )
+    } catch {
+      setRestoreMessage("Could not restore purchases right now. Please try again.")
+    } finally {
+      setRestoring(false)
+    }
+  }
+
   async function handleSubscribe(planId: string) {
     setError(null)
     setLoadingId(planId)
     try {
-      if (iapAvailable) {
+      // Close the mount-time race: if detection hasn't settled yet, give the
+      // native bridge a brief chance before deciding the payment rail. Once
+      // detection has resolved we trust that result and don't re-wait.
+      const useApple =
+        detectedRef.current === null ? await waitForSwingIap(2000) : iapAvailable
+      if (useApple) {
         await completeApplePurchase(planId)
         return
       }
@@ -150,7 +204,7 @@ export function SubscribePlans({
                 {promo!.percentOff}% off applied
               </p>
             )}
-            {trialEligible && (
+            {effectiveTrialEligible && (
               <p className="mt-1.5 text-sm font-medium text-primary">
                 7 days free, then {formatPrice(discounted ?? plan.priceInCents)}/
                 {plan.interval}
@@ -175,7 +229,7 @@ export function SubscribePlans({
               {loadingId === plan.id && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
-              {trialEligible ? "Start free trial" : "Subscribe"}
+              {effectiveTrialEligible ? "Start free trial" : "Subscribe"}
             </Button>
           </Card>
           )
@@ -186,6 +240,29 @@ export function SubscribePlans({
         <p className="mt-5 rounded-lg bg-destructive/10 px-4 py-2.5 text-center text-sm text-destructive">
           {error}
         </p>
+      )}
+
+      {iapAvailable && (
+        <div className="mt-6 text-center">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleRestore}
+            disabled={restoring || loadingId !== null}
+            className="gap-2"
+          >
+            {restoring && <Loader2 className="h-4 w-4 animate-spin" />}
+            Restore purchases
+          </Button>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Already subscribed on this Apple ID? Restore your access.
+          </p>
+          {restoreMessage && (
+            <p className="mx-auto mt-3 max-w-md text-pretty text-sm text-muted-foreground">
+              {restoreMessage}
+            </p>
+          )}
+        </div>
       )}
     </div>
   )
