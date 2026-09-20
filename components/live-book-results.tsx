@@ -15,6 +15,7 @@ import {
   coverFrom,
   type BookCardAction,
 } from "@/components/store/book-card"
+import { useIsIosNativeApp } from "@/hooks/use-ios-native-app"
 
 type StoreResult = {
   key: string
@@ -154,6 +155,7 @@ function ResultsSkeleton() {
 
 function LiveBookCard({ result }: { result: StoreResult }) {
   const router = useRouter()
+  const iosApp = useIsIosNativeApp()
   const [pending, startTransition] = useTransition()
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -216,12 +218,17 @@ function LiveBookCard({ result }: { result: StoreResult }) {
 
   const action: BookCardAction = result.listenable
     ? { kind: "read-free", onClick: handleAddAndListen, pending }
-    : {
-        kind: "buy",
-        href: result.buyUrl,
-        onClick: () =>
-          trackAffiliateClick({ title: result.title, author: result.author }),
-      }
+    : iosApp
+      ? // App Store Guideline 3.1.1: no external digital-purchase CTA for a
+        // copyrighted title inside the native iOS app. The result stays fully
+        // browsable and importable; buying happens on the web.
+        { kind: "web-only" }
+      : {
+          kind: "buy",
+          href: result.buyUrl,
+          onClick: () =>
+            trackAffiliateClick({ title: result.title, author: result.author }),
+        }
 
   return (
     <BookCard
