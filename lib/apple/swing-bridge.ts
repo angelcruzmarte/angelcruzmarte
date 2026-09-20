@@ -64,14 +64,117 @@ function getInApp(): SwingInApp | null {
 }
 
 /**
- * True only when the SWING2APP native IAP module is present (i.e. we are inside
- * the module-enabled iOS app). Detected at runtime from the injected bridge
- * object, NOT from a URL flag — so the web build is never affected and no UI is
- * conditionally hidden from review.
+ * True ONLY inside the SWING2APP-generated native app WebView (iOS WKWebView or
+ * Android), false in every ordinary browser — including mobile Safari.
+ *
+ * These markers are injected by the native app shell itself, NOT by the swing
+ * JS library, so they distinguish "inside the app" from "plain web" *before*
+ * and *independently of* loading the library. This mirrors the exact test the
+ * library's own `getCurrentPlatform()` uses:
+ *   - Android: `window.SwingJavascriptInterface` is defined
+ *   - iOS:     the WKWebView message handler `observe` is present
+ *
+ * This check is the crux of the web-vs-app split. The swing "on web" library
+ * defines `window.swingWebViewPlugin.app.inapp.subscribe` as a function on
+ * EVERY platform, but on plain web that function silently no-ops (it only calls
+ * StoreKit when the platform is ios/android) and NEVER invokes its callback.
+ * So "is subscribe a function" is a false positive on the web that would route
+ * the browser into a native purchase which hangs forever. We must confirm the
+ * real native WebView instead.
+ */
+function isNativeAppWebView(): boolean {
+  if (typeof window === "undefined") return false
+  const w = window as unknown as {
+    SwingJavascriptInterface?: unknown
+    webkit?: { messageHandlers?: { observe?: unknown } }
+  }
+  if (typeof w.SwingJavascriptInterface !== "undefined") return true
+  if (w.webkit?.messageHandlers?.observe != null) return true
+  return false
+}
+
+/**
+ * True only when we are inside the native app WebView AND the native IAP bridge
+ * is wired up. On the web this is always false, so callers fall back to Stripe.
+ * Detection is runtime capability + native-environment based, NOT a URL flag —
+ * the same plans/prices/buttons render either way; only the payment rail
+ * differs, so nothing is hidden from App Review.
  */
 export function isSwingIapAvailable(): boolean {
+  if (!isNativeAppWebView()) return false
   const inapp = getInApp()
   return Boolean(inapp && typeof inapp.subscribe === "function")
+}
+
+/**
+ * The SWING2APP common JavaScript library. Per the iOS IAP guide, this script
+ * MUST be loaded on any page that calls the bridge — it is what defines
+ * `window.swingWebViewPlugin`. Inside the module-enabled iOS app it wires up to
+ * the native StoreKit module; in a plain browser it loads harmlessly and never
+ * exposes a payment module (so the web build keeps using Stripe). The version
+ * pinned here is the one published in the guide.
+ */
+const SWING_LIBRARY_SRC =
+  "https://pcdn2.swing2app.co.kr/swing_public_src/v3/2026_02_04_001/js/swing_app_on_web.js"
+
+let libraryRequested = false
+
+/**
+ * Inject the SWING2APP library once (client only). Safe to call repeatedly and
+ * from multiple components; the script is added at most once per document.
+ */
+export function ensureSwingLibrary(): void {
+  if (typeof document === "undefined") return
+  // Only load the native bridge library inside the app WebView. On the plain
+  // web the library is unnecessary (checkout uses Stripe) AND has side effects
+  // — it injects `window.swingWebViewPlugin` stubs (whose IAP methods no-op and
+  // never call back) plus an app-promotion dialog — so we never inject it in a
+  // browser. This is also what keeps web detection from ever turning true.
+  if (!isNativeAppWebView()) return
+  // Already present (bridge injected or script tag added by a prior call).
+  if (isSwingIapAvailable()) return
+  if (libraryRequested || document.querySelector("script[data-swing-iap]")) {
+    libraryRequested = true
+    return
+  }
+  libraryRequested = true
+  const script = document.createElement("script")
+  script.src = SWING_LIBRARY_SRC
+  script.async = true
+  script.setAttribute("data-swing-iap", "")
+  document.head.appendChild(script)
+}
+
+/**
+ * Resolve once the native IAP bridge is available, or false after `timeoutMs`.
+ *
+ * The native module injects `window.swingWebViewPlugin` asynchronously (after
+ * the library loads / the WebView wires it up), so a single synchronous check
+ * at mount races that injection and wrongly falls back to Stripe. This ensures
+ * the library is loaded, then polls until the bridge appears or the timeout
+ * elapses. On the web the bridge never appears and this resolves false, so the
+ * Stripe path runs — nothing is hidden, only the payment rail differs.
+ */
+export function waitForSwingIap(timeoutMs = 4000, intervalMs = 150): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false)
+  // Not inside the native app → this is a plain browser → checkout uses Stripe.
+  // Resolve immediately (no polling, no library injection) so the web subscribe
+  // button never stalls waiting for a native bridge that will never appear.
+  if (!isNativeAppWebView()) return Promise.resolve(false)
+  if (isSwingIapAvailable()) return Promise.resolve(true)
+  ensureSwingLibrary()
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const timer = setInterval(() => {
+      if (isSwingIapAvailable()) {
+        clearInterval(timer)
+        resolve(true)
+      } else if (Date.now() - start >= timeoutMs) {
+        clearInterval(timer)
+        resolve(false)
+      }
+    }, intervalMs)
+  })
 }
 
 // Builds the shared success/failure parser used by buy() and subscribe(). The
