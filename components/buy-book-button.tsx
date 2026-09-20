@@ -1,28 +1,45 @@
 "use client"
 
-import { useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Headphones, Loader2, Plus, ShoppingCart } from "lucide-react"
+import { Check, Crown, Headphones, Loader2, Plus, ShoppingCart } from "lucide-react"
 import { createBookCheckout } from "@/app/actions/books"
 import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
-import { usePlatform } from "@/hooks/use-platform"
+import { isSwingIapAvailable } from "@/lib/apple/swing-bridge"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/plans"
 
 /**
- * Book detail actions: "Listen now" when owned, otherwise "Buy now" (one-tap
- * Stripe Checkout) plus an "Add to cart" button for multi-book purchases.
+ * Book detail actions.
+ *
+ * Access to a book's full text/audio is granted by EITHER owning the book
+ * (a one-time purchase) OR an active Premium subscription — Premium is
+ * "Unlimited access to the full library", so a subscriber can open any book
+ * without buying it individually.
+ *
+ * Payment rail by platform (Apple Guideline 3.1.1):
+ *  - Inside the iOS app (SWING2APP native IAP module present) we must NOT run an
+ *    external card/Stripe checkout for digital goods. Books are acquired by
+ *    subscribing to Premium via Apple In-App Purchase, so the buy action routes
+ *    to the Premium paywall (which runs the native StoreKit sheet). This is a
+ *    payment-rail switch, not hidden functionality — the book is still fully
+ *    acquirable in-app.
+ *  - On the web (and any non-module build) the existing Stripe one-time
+ *    purchase + cart flow renders unchanged.
  */
 export function BuyBookButton({
   bookId,
   priceInCents,
   owned,
+  subscribed = false,
   cartItem,
   className,
 }: {
   bookId: number
   priceInCents: number
   owned: boolean
+  /** True when the current user has an active Premium subscription. */
+  subscribed?: boolean
   /** Minimal book info used to add this book to the cart. */
   cartItem?: CartItem
   className?: string
@@ -31,8 +48,14 @@ export function BuyBookButton({
   const [pending, startTransition] = useTransition()
   const { has, add } = useCart()
   const { setOpen } = useCartUI()
-  const { isIOS } = usePlatform()
   const inCart = has(bookId)
+
+  // Runtime capability detection for the native Apple IAP module. Matches the
+  // paywall's approach: never a URL flag, so the web build is never affected.
+  const [iapAvailable, setIapAvailable] = useState(false)
+  useEffect(() => {
+    setIapAvailable(isSwingIapAvailable())
+  }, [])
 
   function handleBuy() {
     startTransition(async () => {
@@ -43,7 +66,9 @@ export function BuyBookButton({
     })
   }
 
-  if (owned) {
+  // Owned outright, or unlocked through Premium — either way the book is
+  // playable, so the primary action is to listen.
+  if (owned || subscribed) {
     return (
       <Button
         size="lg"
@@ -56,19 +81,27 @@ export function BuyBookButton({
     )
   }
 
-  // Apple Guideline 3.1.1: inside the iOS app we cannot present an external
-  // (non-IAP) purchase flow for this digital title. Show a neutral note instead
-  // of the Buy / Add-to-cart controls. On web and Android the full flow renders.
-  if (isIOS) {
+  // Inside the iOS app: acquire the book by subscribing to Premium via Apple
+  // In-App Purchase (StoreKit). No external checkout is presented.
+  if (iapAvailable) {
     return (
-      <p className={"text-sm text-muted-foreground " + (className ?? "")}>
-        Get this book on{" "}
-        <span className="font-medium text-foreground">voxyfi.com</span>. Once you
-        own it, it&apos;s ready to listen here.
-      </p>
+      <div className={"flex flex-col gap-2 " + (className ?? "")}>
+        <Button
+          size="lg"
+          className="gap-2"
+          onClick={() => router.push("/subscribe")}
+        >
+          <Crown className="h-4 w-4" />
+          Unlock with Premium
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Premium unlocks this and every book in the library.
+        </p>
+      </div>
     )
   }
 
+  // Web / non-iOS: the existing Stripe one-time purchase and cart flow.
   return (
     <div className={"flex flex-col gap-2 sm:flex-row " + (className ?? "")}>
       <Button size="lg" className="gap-2" onClick={handleBuy} disabled={pending}>

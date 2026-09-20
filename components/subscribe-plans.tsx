@@ -11,6 +11,7 @@ import {
   waitForSwingIap,
   subscribeViaApple,
   AppleNativePurchaseError,
+  describeApplePurchaseError,
 } from "@/lib/apple/swing-bridge"
 
 type PromoInfo = { percentOff: number; planScope: string }
@@ -86,9 +87,11 @@ export function SubscribePlans({
       router.refresh()
       router.push("/app")
     } catch (err) {
-      // A user cancellation or any non-success leaves access unchanged.
+      // A user cancellation or any non-success leaves access unchanged. Surface
+      // the specific native error code (mapped to a readable reason) so a
+      // failing purchase is diagnosable instead of an opaque generic message.
       if (err instanceof AppleNativePurchaseError) {
-        setError("The purchase didn't complete. Your access is unchanged.")
+        setError(describeApplePurchaseError(err))
       } else {
         setError("Could not start the purchase. Please try again.")
       }
