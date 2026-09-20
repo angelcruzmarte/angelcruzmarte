@@ -94,6 +94,27 @@ function isNativeAppWebView(): boolean {
 }
 
 /**
+ * True ONLY inside the genuine native iOS app WebView (WKWebView), false in
+ * every browser (including mobile Safari) and in the Android app. It reads the
+ * same WKWebView message-handler marker the SWING library's own platform check
+ * uses, so it reports the real runtime environment.
+ *
+ * This is NOT the old `?platform=ios` URL flag (which Apple rejected under
+ * Guideline 5.6 for hiding whole features from review). It exists solely so the
+ * iOS build can withhold EXTERNAL purchase links for DIGITAL books
+ * (Kindle/Audible) to satisfy Guideline 3.1.1, while the website keeps its full
+ * Amazon affiliate experience. It must never be used to hide unrelated
+ * functionality — only to restrict digital-purchase payment links.
+ */
+export function isIosNativeApp(): boolean {
+  if (typeof window === "undefined") return false
+  const w = window as unknown as {
+    webkit?: { messageHandlers?: { observe?: unknown } }
+  }
+  return w.webkit?.messageHandlers?.observe != null
+}
+
+/**
  * True only when we are inside the native app WebView AND the native IAP bridge
  * is wired up. On the web this is always false, so callers fall back to Stripe.
  * Detection is runtime capability + native-environment based, NOT a URL flag —

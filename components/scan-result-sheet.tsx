@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button"
 import { trackAffiliateClick } from "@/lib/affiliate-track"
 import { browserAmazonLink, type AmazonFormatLink } from "@/lib/affiliate"
 import { haptic } from "@/lib/haptics"
+import { useIsIosNativeApp } from "@/hooks/use-ios-native-app"
 import { cn } from "@/lib/utils"
 
 const FORMAT_ICON: Record<AmazonFormatLink["id"], typeof BookOpen> = {
@@ -157,7 +158,15 @@ export function ScanResultSheet({
     router.push("/app/new?mode=file")
   }
 
-  const [primaryFormat, ...otherFormats] = match.amazonFormats
+  const iosApp = useIsIosNativeApp()
+  // App Store Guideline 3.1.1: inside the native iOS app, hide external
+  // purchase links for DIGITAL books (Kindle, Audible). Physical print is
+  // exempt and stays. The book info, cover, and free public-domain listening
+  // are untouched.
+  const availableFormats = iosApp
+    ? match.amazonFormats.filter((f) => !f.digital)
+    : match.amazonFormats
+  const [primaryFormat, ...otherFormats] = availableFormats
   const busy = pending !== null
 
   return (
@@ -281,7 +290,13 @@ export function ScanResultSheet({
               ) : (
                 <ShoppingCart className="h-4 w-4" />
               )}
-              {primaryFormat.exact ? `Buy ${primaryFormat.label}` : "Shop Kindle Edition"}
+              {primaryFormat.exact
+                ? `Buy ${primaryFormat.label}`
+                : primaryFormat.id === "kindle"
+                  ? "Shop Kindle Edition"
+                  : primaryFormat.id === "audible"
+                    ? "Shop on Audible"
+                    : "Shop Print Editions"}
             </Button>
           )
         )}

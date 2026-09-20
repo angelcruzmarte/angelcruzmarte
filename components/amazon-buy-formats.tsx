@@ -16,6 +16,7 @@ import {
   type AmazonFormatId,
   type AmazonFormatLink,
 } from "@/lib/affiliate"
+import { useIsIosNativeApp } from "@/hooks/use-ios-native-app"
 
 const FORMAT_ICON: Record<AmazonFormatId, typeof BookOpen> = {
   kindle: BookOpen,
@@ -54,14 +55,28 @@ export function AmazonBuyFormats({
   author?: string | null
 }) {
   const [open, setOpen] = useState(false)
+  const iosApp = useIsIosNativeApp()
   if (formats.length === 0) return null
 
-  const [primary, ...others] = formats
-  // "Buy Kindle eBook" when we can link the exact product; "Shop Kindle
-  // edition" when it is a Kindle-Store search (we can't assert it exists).
+  // App Store Guideline 3.1.1: inside the native iOS app we must not surface
+  // external purchase links for DIGITAL books (Kindle, Audible). Physical print
+  // is exempt (and must NOT use IAP), so it stays. On the web every format
+  // shows. This is a payment-link restriction only — the cover, description,
+  // ratings, sample and listening features are untouched.
+  const visibleFormats = iosApp ? formats.filter((f) => !f.digital) : formats
+  if (visibleFormats.length === 0) return null
+
+  const [primary, ...others] = visibleFormats
+  const PrimaryIcon = FORMAT_ICON[primary.id]
+  // "Buy <format>" when we can link the exact product; a format-appropriate
+  // "Shop …" when it is a department search (we can't assert a product exists).
   const primaryLabel = primary.exact
     ? `Buy ${primary.label}`
-    : "Shop Kindle edition"
+    : primary.id === "kindle"
+      ? "Shop Kindle edition"
+      : primary.id === "audible"
+        ? "Shop on Audible"
+        : "Shop print editions"
 
   const track = () => trackAffiliateClick({ bookId, title, author })
 
