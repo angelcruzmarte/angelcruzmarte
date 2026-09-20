@@ -25,7 +25,7 @@ export const PLANS: Plan[] = [
     description: "Unlimited listening, billed monthly.",
     priceInCents: 1200,
     interval: "month",
-    appleProductId: "com.voxyfi.app.premium.monthly",
+    appleProductId: "com.voxyfi.premium.monthly",
     features: [
       "Unlimited access to the full library",
       "Natural word-by-word highlighting",
@@ -39,7 +39,7 @@ export const PLANS: Plan[] = [
     description: "Unlimited listening, billed yearly. Save 30%.",
     priceInCents: 9900,
     interval: "year",
-    appleProductId: "com.voxyfi.app.premium.annual",
+    appleProductId: "com.voxyfi.premium.annual",
     features: [
       "Everything in Premium",
       "Two months free vs. monthly",
