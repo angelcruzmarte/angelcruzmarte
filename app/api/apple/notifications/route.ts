@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server"
+import { eq } from "drizzle-orm"
+import { db } from "@/lib/db"
+import { user as userTable } from "@/lib/db/schema"
+import { getPlanByAppleProductId } from "@/lib/plans"
+import { setPremiumEntitlement } from "@/lib/entitlements"
 import {
   AppleIapNotConfiguredError,
   isAppleIapConfigured,
@@ -28,15 +33,51 @@ import {
  * (mapping Apple product ids -> plans/books and notification types -> status).
  */
 async function applyVerifiedNotification(
-  _verified: VerifiedAppleTransaction,
+  verified: VerifiedAppleTransaction,
 ): Promise<void> {
-  // Intentionally not implemented until verification is live. When it is:
-  //  - auto-renewable product  -> setPremiumEntitlement(userId, { provider: "apple", ... })
-  //  - non-consumable book     -> grantBookPurchase(userId, bookId, undefined, { provider: "apple", appleTransactionId })
-  // The userId is resolved from the transaction's appAccountToken.
-  throw new AppleIapNotConfiguredError(
-    "applyVerifiedNotification() mapping is not implemented yet.",
-  )
+  // Map the verified Apple product to a Premium plan. Unknown products (e.g. a
+  // book id not registered as a plan) are ignored — we never guess.
+  const plan = getPlanByAppleProductId(verified.productId)
+  if (!plan) {
+    console.log(
+      "[v0] Apple notification for unrecognized product; ignoring:",
+      verified.productId,
+    )
+    return
+  }
+
+  // Resolve the VOXYFI user from the stable subscription id recorded when the
+  // purchase was first verified (POST /api/apple/purchase). If no user owns
+  // this originalTransactionId yet, there is nothing to update — the purchase
+  // callback path will bind it. We never create or guess a user here.
+  const rows = await db
+    .select({ id: userTable.id })
+    .from(userTable)
+    .where(
+      eq(userTable.appleOriginalTransactionId, verified.originalTransactionId),
+    )
+    .limit(1)
+  const target = rows[0]
+  if (!target) {
+    console.log(
+      "[v0] Apple notification has no matching user for originalTransactionId; skipping.",
+    )
+    return
+  }
+
+  // Derive status from the verified expiry. Renewals push `expiresAt` forward
+  // (active); a lapsed/expired subscription has a past expiry.
+  const expired =
+    verified.expiresAt !== null && verified.expiresAt.getTime() <= Date.now()
+
+  await setPremiumEntitlement(target.id, {
+    provider: "apple",
+    status: expired ? "expired" : "active",
+    plan: plan.id,
+    currentPeriodEnd: verified.expiresAt,
+    appleOriginalTransactionId: verified.originalTransactionId,
+    appleProductId: verified.productId,
+  })
 }
 
 export async function POST(req: Request) {

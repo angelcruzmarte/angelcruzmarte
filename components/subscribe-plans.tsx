@@ -1,12 +1,17 @@
 "use client"
 
-import { useState } from "react"
-import { Check, Loader2, Sparkles } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { Check, Loader2 } from "lucide-react"
 import { createSubscriptionCheckout } from "@/app/actions/subscription"
 import { PLANS, formatPrice } from "@/lib/plans"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { usePlatform } from "@/hooks/use-platform"
+import {
+  isSwingIapAvailable,
+  subscribeViaApple,
+  AppleNativePurchaseError,
+} from "@/lib/apple/swing-bridge"
 
 type PromoInfo = { percentOff: number; planScope: string }
 
@@ -19,43 +24,68 @@ export function SubscribePlans({
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { isIOS } = usePlatform()
+  const router = useRouter()
 
-  // Apple Guideline 3.1.1: inside the native iOS app we must not present an
-  // external (non-IAP) purchase flow, prices, or links to buy elsewhere. Show
-  // the Premium value and the feature list, but no pricing or checkout button.
-  // On the web (and Android) the full paywall renders unchanged.
-  if (isIOS) {
-    const premiumFeatures = Array.from(
-      new Set(PLANS.flatMap((plan) => plan.features)),
-    )
-    return (
-      <Card className="mx-auto max-w-lg overflow-hidden p-7 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-          <Sparkles className="h-6 w-6 text-primary" aria-hidden="true" />
-        </div>
-        <h3 className="mt-4 text-xl font-semibold">VOXYFI Premium</h3>
-        <p className="mt-2 text-pretty text-sm text-muted-foreground">
-          Premium unlocks the entire library with natural narration and
-          word-by-word highlighting. If you already have VOXYFI Premium, it is
-          active on this account&mdash;just sign in.
-        </p>
-        <ul className="mx-auto mt-6 flex max-w-sm flex-col gap-3 text-left">
-          {premiumFeatures.map((feature) => (
-            <li key={feature} className="flex items-start gap-2.5 text-sm">
-              <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-              <span>{feature}</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
-    )
+  // Detect the SWING2APP native In-App Purchase module at runtime. When present
+  // (i.e. inside the module-enabled iOS app) subscribe buttons route to Apple
+  // IAP as Apple requires; on the web this stays false and the existing Stripe
+  // flow runs. This is capability detection, not URL-based platform hiding: the
+  // same plans, prices, and buttons render either way — only the payment rail
+  // differs, so nothing is hidden from App Review.
+  const [iapAvailable, setIapAvailable] = useState(false)
+  useEffect(() => {
+    setIapAvailable(isSwingIapAvailable())
+  }, [])
+
+  // Apple offers (introductory free trials, promo discounts) are configured
+  // separately in App Store Connect and are NOT the same as our web trial/promo
+  // pricing. Until those Apple offers exist we don't advertise them in the IAP
+  // paywall — the native purchase sheet shows the authoritative price/terms.
+  const showWebOffers = !iapAvailable
+  const effectiveTrialEligible = trialEligible && showWebOffers
+
+  // Verify a completed native purchase on our backend before granting access.
+  async function completeApplePurchase(planId: string) {
+    const plan = PLANS.find((p) => p.id === planId)
+    if (!plan) return
+    try {
+      const purchase = await subscribeViaApple(plan.appleProductId)
+      const res = await fetch("/api/apple/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: purchase.productId,
+          transactionId: purchase.transactionId,
+          receipt: purchase.receipt,
+        }),
+      })
+      if (!res.ok) {
+        setError(
+          "We couldn't confirm your purchase yet. If you were charged, it will unlock shortly.",
+        )
+        return
+      }
+      // Verified and granted — the subscribe page sends subscribers to the app.
+      router.refresh()
+      router.push("/app")
+    } catch (err) {
+      // A user cancellation or any non-success leaves access unchanged.
+      if (err instanceof AppleNativePurchaseError) {
+        setError("The purchase didn't complete. Your access is unchanged.")
+      } else {
+        setError("Could not start the purchase. Please try again.")
+      }
+    }
   }
 
   async function handleSubscribe(planId: string) {
     setError(null)
     setLoadingId(planId)
     try {
+      if (iapAvailable) {
+        await completeApplePurchase(planId)
+        return
+      }
       const result = await createSubscriptionCheckout(planId)
       if (result.error) {
         setError(result.error)
