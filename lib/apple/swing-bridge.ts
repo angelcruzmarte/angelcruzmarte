@@ -269,10 +269,13 @@ export function describeApplePurchaseError(err: AppleNativePurchaseError): strin
       case 0:
         return "Something went wrong with the App Store. Please try again."
       case 1:
+        return "This Apple Account isn't allowed to make this purchase."
+      case 2:
+        return "The purchase was canceled."
       case 3:
-        return "Payments aren't allowed on this Apple Account."
+        return "There's a problem with the payment method on this Apple Account. Check that a valid payment method is on file (Settings › Media & Purchases), then try again."
       case 4:
-        return "This device isn't allowed to make payments."
+        return "This Apple Account isn't allowed to authorize payments. Purchases may be restricted (for example by Screen Time or a managed/family account)."
       case 5:
         return "This subscription isn't available from the App Store yet. It may still be pending setup or review in App Store Connect."
       case 6:
