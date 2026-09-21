@@ -79,12 +79,28 @@ const REQUIRED_ENV = [
   "APPLE_IAP_BUNDLE_ID",
   "APPLE_IAP_ISSUER_ID",
   "APPLE_IAP_KEY_ID",
-  "APPLE_IAP_PRIVATE_KEY",
 ] as const
+
+/**
+ * The private key may be supplied either as a single `APPLE_IAP_PRIVATE_KEY`
+ * value or split across `APPLE_IAP_PRIVATE_KEY_PART1`, `_PART2`, … The split
+ * form exists because some env-var entry forms wrap long values at 64 chars and
+ * drop the final characters of the last wrapped line, silently truncating the
+ * key. Short parts never wrap, so nothing is lost. Present = any of these set.
+ */
+function hasApplePrivateKeyMaterial(): boolean {
+  return (
+    Boolean(process.env.APPLE_IAP_PRIVATE_KEY?.trim()) ||
+    Boolean(process.env.APPLE_IAP_PRIVATE_KEY_PART1?.trim())
+  )
+}
 
 /** True only when every credential needed for real verification is present. */
 export function isAppleIapConfigured(): boolean {
-  return REQUIRED_ENV.every((key) => Boolean(process.env[key]?.trim()))
+  return (
+    REQUIRED_ENV.every((key) => Boolean(process.env[key]?.trim())) &&
+    hasApplePrivateKeyMaterial()
+  )
 }
 
 function resolveEnvironment(): Environment {
@@ -280,8 +296,9 @@ function isParseablePrivateKey(pem: string): boolean {
  * Throws AppleIapNotConfiguredError (fail closed) when no valid key can be
  * derived — e.g. the stored value is truncated and bytes are genuinely missing.
  */
-function normalizeApplePrivateKey(raw: string): string {
+function tryNormalizeApplePrivateKey(raw: string): string | null {
   let value = raw.trim()
+  if (!value) return null
 
   // Strip a single layer of surrounding quotes some forms add.
   if (
@@ -321,8 +338,39 @@ function normalizeApplePrivateKey(raw: string): string {
     if (isParseablePrivateKey(wrapped)) return wrapped
   }
 
+  return null
+}
+
+/**
+ * Concatenate the ordered `APPLE_IAP_PRIVATE_KEY_PART1..PARTn` values, if any.
+ * Parts are joined with no separator; the normalizer strips whatever
+ * whitespace/quotes each part carried. Returns "" when no parts are set.
+ */
+function readApplePrivateKeyParts(): string {
+  const parts: string[] = []
+  for (let i = 1; i <= 16; i++) {
+    const value = process.env[`APPLE_IAP_PRIVATE_KEY_PART${i}`]
+    if (!value?.trim()) break
+    parts.push(value)
+  }
+  return parts.join("")
+}
+
+/**
+ * Resolve a valid PEM private key from the environment, trying the single
+ * `APPLE_IAP_PRIVATE_KEY` value first and then the multi-part
+ * `APPLE_IAP_PRIVATE_KEY_PART1..n` form. Throws (fail closed) when neither
+ * yields a parseable key — e.g. the stored value is genuinely truncated.
+ */
+function resolveApplePrivateKey(): string {
+  const candidates = [process.env.APPLE_IAP_PRIVATE_KEY ?? "", readApplePrivateKeyParts()]
+  for (const candidate of candidates) {
+    const normalized = tryNormalizeApplePrivateKey(candidate)
+    if (normalized) return normalized
+  }
   throw new AppleIapNotConfiguredError(
-    "APPLE_IAP_PRIVATE_KEY is set but is not a valid EC private key (it looks truncated or corrupted). Re-enter the full contents of the .p8 file, including the BEGIN/END lines.",
+    "APPLE_IAP_PRIVATE_KEY is set but is not a valid EC private key (it looks truncated or corrupted). " +
+      "Re-enter the full .p8 contents, or split it across APPLE_IAP_PRIVATE_KEY_PART1, _PART2, … so no value is long enough to be truncated by the env form.",
   )
 }
 
@@ -332,7 +380,7 @@ function buildApiClient(environment: Environment): AppStoreServerAPIClient {
   const cached = apiClientCache.get(environment)
   if (cached) return cached
 
-  const signingKey = normalizeApplePrivateKey(process.env.APPLE_IAP_PRIVATE_KEY!)
+  const signingKey = resolveApplePrivateKey()
   const keyId = process.env.APPLE_IAP_KEY_ID!.trim()
   const issuerId = process.env.APPLE_IAP_ISSUER_ID!.trim()
   const bundleId = process.env.APPLE_IAP_BUNDLE_ID!.trim()
