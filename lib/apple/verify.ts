@@ -1,5 +1,7 @@
 import "server-only"
 
+import { createPrivateKey } from "node:crypto"
+
 import {
   SignedDataVerifier,
   AppStoreServerAPIClient,
@@ -77,12 +79,28 @@ const REQUIRED_ENV = [
   "APPLE_IAP_BUNDLE_ID",
   "APPLE_IAP_ISSUER_ID",
   "APPLE_IAP_KEY_ID",
-  "APPLE_IAP_PRIVATE_KEY",
 ] as const
+
+/**
+ * The private key may be supplied either as a single `APPLE_IAP_PRIVATE_KEY`
+ * value or split across `APPLE_IAP_PRIVATE_KEY_PART1`, `_PART2`, … The split
+ * form exists because some env-var entry forms wrap long values at 64 chars and
+ * drop the final characters of the last wrapped line, silently truncating the
+ * key. Short parts never wrap, so nothing is lost. Present = any of these set.
+ */
+function hasApplePrivateKeyMaterial(): boolean {
+  return (
+    Boolean(process.env.APPLE_IAP_PRIVATE_KEY?.trim()) ||
+    Boolean(process.env.APPLE_IAP_PRIVATE_KEY_PART1?.trim())
+  )
+}
 
 /** True only when every credential needed for real verification is present. */
 export function isAppleIapConfigured(): boolean {
-  return REQUIRED_ENV.every((key) => Boolean(process.env[key]?.trim()))
+  return (
+    REQUIRED_ENV.every((key) => Boolean(process.env[key]?.trim())) &&
+    hasApplePrivateKeyMaterial()
+  )
 }
 
 function resolveEnvironment(): Environment {
@@ -258,13 +276,111 @@ export async function verifyNotificationPayload(
   })
 }
 
+/** True when the string is accepted by Node as an EC/PKCS#8 private key. */
+function isParseablePrivateKey(pem: string): boolean {
+  try {
+    createPrivateKey(pem)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Normalize a `.p8` private key that may have been mangled by an environment
+ * variable form. Env forms routinely strip the PEM header/footer, drop the
+ * real newlines, keep only literal "\n" escapes, wrap the value in quotes, or
+ * even store a base64 encoding of the whole PEM. Apple's library needs a real
+ * PEM string, so we reconstruct one from whatever survived and validate it.
+ *
+ * Throws AppleIapNotConfiguredError (fail closed) when no valid key can be
+ * derived — e.g. the stored value is truncated and bytes are genuinely missing.
+ */
+function tryNormalizeApplePrivateKey(raw: string): string | null {
+  let value = raw.trim()
+  if (!value) return null
+
+  // Strip a single layer of surrounding quotes some forms add.
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim()
+  }
+
+  // Turn literal "\n" / "\r\n" escape sequences into real newlines.
+  if (value.includes("\\n")) {
+    value = value.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").trim()
+  }
+
+  // Case 1: it is already a usable PEM.
+  if (isParseablePrivateKey(value)) return value
+
+  // Case 2: the entire PEM was base64-encoded into one line.
+  if (!value.includes("BEGIN") && /^[A-Za-z0-9+/=\s]+$/.test(value)) {
+    try {
+      const decoded = Buffer.from(value.replace(/\s+/g, ""), "base64").toString("utf8")
+      if (decoded.includes("BEGIN PRIVATE KEY") && isParseablePrivateKey(decoded)) {
+        return decoded
+      }
+    } catch {
+      // fall through to body reconstruction
+    }
+  }
+
+  // Case 3: reconstruct a PKCS#8 PEM from the raw base64 body (headers and/or
+  // newlines were lost by the form).
+  const body = value.replace(/-----[^-]+-----/g, "").replace(/[^A-Za-z0-9+/=]/g, "")
+  if (body) {
+    const wrapped = `-----BEGIN PRIVATE KEY-----\n${body
+      .replace(/(.{64})/g, "$1\n")
+      .replace(/\n$/, "")}\n-----END PRIVATE KEY-----\n`
+    if (isParseablePrivateKey(wrapped)) return wrapped
+  }
+
+  return null
+}
+
+/**
+ * Concatenate the ordered `APPLE_IAP_PRIVATE_KEY_PART1..PARTn` values, if any.
+ * Parts are joined with no separator; the normalizer strips whatever
+ * whitespace/quotes each part carried. Returns "" when no parts are set.
+ */
+function readApplePrivateKeyParts(): string {
+  const parts: string[] = []
+  for (let i = 1; i <= 16; i++) {
+    const value = process.env[`APPLE_IAP_PRIVATE_KEY_PART${i}`]
+    if (!value?.trim()) break
+    parts.push(value)
+  }
+  return parts.join("")
+}
+
+/**
+ * Resolve a valid PEM private key from the environment, trying the single
+ * `APPLE_IAP_PRIVATE_KEY` value first and then the multi-part
+ * `APPLE_IAP_PRIVATE_KEY_PART1..n` form. Throws (fail closed) when neither
+ * yields a parseable key — e.g. the stored value is genuinely truncated.
+ */
+function resolveApplePrivateKey(): string {
+  const candidates = [process.env.APPLE_IAP_PRIVATE_KEY ?? "", readApplePrivateKeyParts()]
+  for (const candidate of candidates) {
+    const normalized = tryNormalizeApplePrivateKey(candidate)
+    if (normalized) return normalized
+  }
+  throw new AppleIapNotConfiguredError(
+    "APPLE_IAP_PRIVATE_KEY is set but is not a valid EC private key (it looks truncated or corrupted). " +
+      "Re-enter the full .p8 contents, or split it across APPLE_IAP_PRIVATE_KEY_PART1, _PART2, … so no value is long enough to be truncated by the env form.",
+  )
+}
+
 const apiClientCache = new Map<Environment, AppStoreServerAPIClient>()
 
 function buildApiClient(environment: Environment): AppStoreServerAPIClient {
   const cached = apiClientCache.get(environment)
   if (cached) return cached
 
-  const signingKey = process.env.APPLE_IAP_PRIVATE_KEY!.trim()
+  const signingKey = resolveApplePrivateKey()
   const keyId = process.env.APPLE_IAP_KEY_ID!.trim()
   const issuerId = process.env.APPLE_IAP_ISSUER_ID!.trim()
   const bundleId = process.env.APPLE_IAP_BUNDLE_ID!.trim()
