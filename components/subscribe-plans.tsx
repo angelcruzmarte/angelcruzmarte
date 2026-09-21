@@ -167,7 +167,14 @@ export function SubscribePlans({
     <div>
       <div className="grid gap-6 pt-3 sm:grid-cols-2">
         {PLANS.map((plan) => {
+          // Promo discounts are a WEB-only (Stripe) offer. Inside the app the
+          // native App Store purchase always charges the product's configured
+          // App Store Connect price, so advertising a discounted price there
+          // would misrepresent what Apple actually charges (App Review
+          // rejection + user-facing "50% off" that never applies). Gate the
+          // promo behind showWebOffers exactly like the free trial above.
           const promoApplies =
+            showWebOffers &&
             promo &&
             (promo.planScope === "all" || promo.planScope === plan.id)
           const discounted = promoApplies
