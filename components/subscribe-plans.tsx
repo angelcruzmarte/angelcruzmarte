@@ -183,6 +183,18 @@ export function SubscribePlans({
 
   return (
     <div>
+      {/* Free-trial pill is a WEB-only (Stripe) offer. The native App Store
+          purchase applies whatever introductory offer is configured in App
+          Store Connect (currently none), so advertising a "7-day free trial"
+          inside the app misrepresents the native terms. Gate it with
+          effectiveTrialEligible (which already folds in showWebOffers) so it
+          never disagrees with the plan card. */}
+      {effectiveTrialEligible && (
+        <p className="mx-auto mb-8 flex w-fit items-center rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+          Start with a 7-day free trial &mdash; cancel anytime
+        </p>
+      )}
+
       {/* Promo banner is a WEB-only (Stripe) offer. Inside the app the native
           App Store purchase always charges the configured App Store Connect
           price, so advertising "50% off ... at checkout" there misrepresents
