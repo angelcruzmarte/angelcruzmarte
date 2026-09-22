@@ -14,19 +14,6 @@ export interface Plan {
    * server-verified Apple transaction back to this plan.
    */
   appleProductId: string
-  /**
-   * Whether this plan's `appleProductId` is offered via Apple IAP inside the
-   * iOS app. Only products that are both registered in App Store Connect AND
-   * compiled into the SWING2APP native wrapper build can be purchased via
-   * StoreKit — passing an id the wrapper doesn't know fails at the native layer
-   * (a broken Subscribe button). Both `com.voxyfi.premium.monthly` and
-   * `com.voxyfi.premium.annual` are now registered in App Store Connect (Ready
-   * for Review) and enabled here. If a Subscribe tap still fails at the native
-   * layer for a given product, that product is not yet in the shipped wrapper
-   * build and this flag should be set back to false until a build including it
-   * ships. The web/Stripe flow ignores this field and always offers every plan.
-   */
-  availableViaAppleIap: boolean
 }
 
 // Source of truth for subscription plans. The price is validated server-side
@@ -39,7 +26,6 @@ export const PLANS: Plan[] = [
     priceInCents: 1299,
     interval: "month",
     appleProductId: "com.voxyfi.premium.monthly",
-    availableViaAppleIap: true,
     features: [
       "Unlimited access to the full library",
       "Natural word-by-word highlighting",
@@ -54,7 +40,6 @@ export const PLANS: Plan[] = [
     priceInCents: 9900,
     interval: "year",
     appleProductId: "com.voxyfi.premium.annual",
-    availableViaAppleIap: true,
     features: [
       "Everything in Premium",
       "Two months free vs. monthly",
