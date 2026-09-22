@@ -53,10 +53,7 @@ export const PLANS: Plan[] = [
     priceInCents: 9900,
     interval: "year",
     appleProductId: "com.voxyfi.premium.annual",
-    // Not yet compiled into the SWING2APP native wrapper (v0.7 ships only the
-    // monthly product), so it cannot be purchased via Apple IAP and is hidden
-    // inside the iOS app until a wrapper build with this product ships.
-    availableViaAppleIap: false,
+    availableViaAppleIap: true,
     features: [
       "Everything in Premium",
       "Two months free vs. monthly",
