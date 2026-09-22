@@ -6,6 +6,7 @@ import {
   getStorefrontData,
 } from "@/app/actions/books"
 import { getDocuments } from "@/app/actions/documents"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { BooksStore } from "@/components/books-store"
 
 export default async function BooksPage() {
@@ -15,13 +16,17 @@ export default async function BooksPage() {
     favoriteIds,
     favoriteBooks,
     uploads,
+    user,
   ] = await Promise.all([
     getStorefrontData(),
     getOwnedBookIds(),
     getFavoriteBookIds(),
     getFavoriteBooks(),
     getDocuments(),
+    getCurrentUser(),
   ])
+
+  const subscribed = hasActiveSubscription(user)
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -34,6 +39,7 @@ export default async function BooksPage() {
           ownedIds={Array.from(ownedIds)}
           favoriteIds={Array.from(favoriteIds)}
           favoriteBooks={favoriteBooks}
+          subscribed={subscribed}
           languageCounts={languageCounts}
           categoryCounts={categoryCounts}
           uploads={uploads}

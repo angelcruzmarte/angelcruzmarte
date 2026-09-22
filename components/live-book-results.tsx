@@ -220,9 +220,10 @@ function LiveBookCard({ result }: { result: StoreResult }) {
     ? { kind: "read-free", onClick: handleAddAndListen, pending }
     : iosApp
       ? // App Store Guideline 3.1.1: no external digital-purchase CTA for a
-        // copyrighted title inside the native iOS app. The result stays fully
-        // browsable and importable; buying happens on the web.
-          { kind: "premium" }
+        // copyrighted title inside the native iOS app. Premium does NOT include
+        // Amazon titles, so we don't imply it does — the honest in-app path is
+        // to import a file the user already owns and have it narrated.
+        { kind: "import", onClick: () => fileRef.current?.click(), pending: importing }
       : {
           kind: "buy",
           href: result.buyUrl,
@@ -247,20 +248,29 @@ function LiveBookCard({ result }: { result: StoreResult }) {
       footer={
         result.listenable ? null : (
           <>
-            <AffiliateBuyNote />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={importing}
-              className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-70"
-            >
-              {importing ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Upload className="h-3 w-3" />
-              )}
-              Already own it? Import file
-            </button>
+            {/* On the web the primary action is "Buy on Amazon", so the
+                affiliate note + a secondary import link belong here. Inside the
+                iOS app importing IS the primary action (above), so we skip the
+                duplicate here and drop the Amazon-purchase note that no longer
+                applies. The hidden file input stays mounted either way. */}
+            {!iosApp && (
+              <>
+                <AffiliateBuyNote />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={importing}
+                  className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-70"
+                >
+                  {importing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Upload className="h-3 w-3" />
+                  )}
+                  Already own it? Import file
+                </button>
+              </>
+            )}
             <input
               ref={fileRef}
               type="file"
