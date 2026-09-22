@@ -67,27 +67,6 @@ export default async function SubscribePage({
           )}
         </div>
 
-        {promo && promo.showBanner && (
-          <WebOnly>
-            <div className="mx-auto mt-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                Limited-time offer
-              </p>
-              <p className="mt-1 text-balance text-xl font-semibold">
-                {promo.name} &mdash; {promo.percentOff}% off
-              </p>
-              {promo.description && (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {promo.description}
-                </p>
-              )}
-              <p className="mt-2 text-sm font-medium text-primary">
-                Discount applied automatically at checkout
-              </p>
-            </div>
-          </WebOnly>
-        )}
-
         {canceled && (
           <p className="mx-auto mt-6 max-w-md rounded-lg bg-secondary px-4 py-2.5 text-center text-sm text-secondary-foreground">
             Checkout canceled. You can subscribe whenever you&apos;re ready.
@@ -102,6 +81,9 @@ export default async function SubscribePage({
                 ? {
                     percentOff: promo.percentOff,
                     planScope: promo.planScope,
+                    name: promo.name,
+                    description: promo.description,
+                    showBanner: promo.showBanner,
                   }
                 : null
             }

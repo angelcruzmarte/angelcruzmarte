@@ -14,7 +14,13 @@ import {
   describeApplePurchaseError,
 } from "@/lib/apple/swing-bridge"
 
-type PromoInfo = { percentOff: number; planScope: string }
+type PromoInfo = {
+  percentOff: number
+  planScope: string
+  name: string
+  description: string | null
+  showBanner: boolean
+}
 
 export function SubscribePlans({
   trialEligible = false,
@@ -177,6 +183,30 @@ export function SubscribePlans({
 
   return (
     <div>
+      {/* Promo banner is a WEB-only (Stripe) offer. Inside the app the native
+          App Store purchase always charges the configured App Store Connect
+          price, so advertising "50% off ... at checkout" there misrepresents
+          what Apple charges. Gate it with showWebOffers exactly like the plan
+          card's promo pricing so the two never disagree. */}
+      {showWebOffers && promo?.showBanner && (
+        <div className="mx-auto mb-8 max-w-lg overflow-hidden rounded-2xl border border-primary/30 bg-primary/10 p-5 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+            Limited-time offer
+          </p>
+          <p className="mt-1 text-balance text-xl font-semibold">
+            {promo.name} &mdash; {promo.percentOff}% off
+          </p>
+          {promo.description && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {promo.description}
+            </p>
+          )}
+          <p className="mt-2 text-sm font-medium text-primary">
+            Discount applied automatically at checkout
+          </p>
+        </div>
+      )}
+
       <div className="grid gap-6 pt-3 sm:grid-cols-2">
         {visiblePlans.map((plan) => {
           // Promo discounts are a WEB-only (Stripe) offer. Inside the app the
