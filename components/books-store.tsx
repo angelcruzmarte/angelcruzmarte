@@ -968,9 +968,13 @@ function BookHero({
                 Listen to sample
               </Link>
             ) : gateNative ? (
-              <span className="flex h-11 items-center gap-2 rounded-full bg-secondary/60 px-6 text-sm font-semibold text-muted-foreground">
-                Available on voxyfi.com
-              </span>
+              <Link
+                href="/subscribe"
+                className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Headphones className="h-4 w-4" />
+                Unlock with Premium
+              </Link>
             ) : inCart ? (
               <button
                 type="button"
@@ -1214,7 +1218,7 @@ const StoreBookCard = memo(function StoreBookCard({
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }
       : gateNative
-        ? { kind: "web-only" }
+        ? { kind: "premium" }
         : {
             kind: "add",
             priceInCents: book.priceInCents,
