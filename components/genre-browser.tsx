@@ -45,7 +45,6 @@ function GenreCard({
 }: {
   book: BookCardData
   owned: boolean
-  owned: boolean
   subscribed: boolean
   favorited: boolean
   }) {

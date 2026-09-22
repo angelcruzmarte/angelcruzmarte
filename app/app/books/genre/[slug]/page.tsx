@@ -7,6 +7,7 @@ import {
   getOwnedBookIds,
   resolveGenreBySlug,
 } from "@/app/actions/books"
+import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { GenreBrowser } from "@/components/genre-browser"
 
 export async function generateMetadata({
@@ -38,12 +39,15 @@ export default async function GenrePage({
 
   const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1)
 
-  const [data, languages, ownedIds, favoriteIds] = await Promise.all([
+  const [data, languages, ownedIds, favoriteIds, user] = await Promise.all([
     getBooksByGenre({ category, page, language: lang }),
     getGenreLanguages(category),
     getOwnedBookIds(),
     getFavoriteBookIds(),
+    getCurrentUser(),
   ])
+
+  const subscribed = hasActiveSubscription(user)
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -51,9 +55,10 @@ export default async function GenrePage({
         slug={slug}
         data={data}
         languages={languages}
-        ownedIds={Array.from(ownedIds)}
-        favoriteIds={Array.from(favoriteIds)}
-      />
+          ownedIds={Array.from(ownedIds)}
+          favoriteIds={Array.from(favoriteIds)}
+          subscribed={subscribed}
+        />
     </div>
   )
 }
