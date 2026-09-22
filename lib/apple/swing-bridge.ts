@@ -273,7 +273,14 @@ export function describeApplePurchaseError(err: AppleNativePurchaseError): strin
       case 2:
         return "The purchase was canceled."
       case 3:
-        return "There's a problem with the payment method on this Apple Account. Check that a valid payment method is on file (Settings › Media & Purchases), then try again."
+        // StoreKit SKErrorPaymentInvalid (raw value 3): "one or more of the
+        // payment parameters wasn't recognized by the App Store." In practice
+        // this fires when the specific product isn't purchasable yet — its App
+        // Store Connect metadata/pricing is incomplete or it hasn't been
+        // cleared for sale in this storefront — OR the Apple Account's payment
+        // method is invalid. Name both honestly rather than blaming only the
+        // card.
+        return "The App Store couldn't process this purchase. The subscription may not be fully set up for sale yet (App Store Connect), or the payment method on this Apple Account may be invalid (check Settings › Media & Purchases). Try again once both are in order."
       case 4:
         return "This Apple Account isn't allowed to authorize payments. Purchases may be restricted (for example by Screen Time or a managed/family account)."
       case 5:
