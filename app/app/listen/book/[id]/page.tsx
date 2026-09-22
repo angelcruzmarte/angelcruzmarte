@@ -50,7 +50,7 @@ export default async function BookListenPage({
       premium
       allowDownload
       bookId={bookId}
-      initialWord={purchase.lastWord}
+      initialWord={purchase?.lastWord ?? 0}
     />
   )
 }
