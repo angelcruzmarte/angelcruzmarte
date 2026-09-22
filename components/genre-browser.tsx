@@ -65,7 +65,7 @@ function GenreCard({
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }
       : gateNative
-        ? { kind: "web-only" }
+        ? { kind: "premium" }
         : {
             kind: "add",
             priceInCents: book.priceInCents,

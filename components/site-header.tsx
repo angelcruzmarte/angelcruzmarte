@@ -2,7 +2,6 @@ import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { buttonVariants } from "@/components/ui/button"
 import { UserMenu } from "@/components/user-menu"
-import { WebOnly } from "@/components/web-only"
 import { BrandLogo } from "@/components/brand-logo"
 import { PremiumBadge } from "@/components/premium-badge"
 
@@ -29,14 +28,12 @@ export async function SiteHeader() {
               {subscribed ? (
                 <PremiumBadge className="hidden sm:inline-flex" />
               ) : (
-                <WebOnly>
-                  <Link
-                    href="/subscribe"
-                    className={buttonVariants({ size: "sm" })}
-                  >
-                    Subscribe
-                  </Link>
-                </WebOnly>
+                <Link
+                  href="/subscribe"
+                  className={buttonVariants({ size: "sm" })}
+                >
+                  Subscribe
+                </Link>
               )}
               <UserMenu
                 name={user.name}

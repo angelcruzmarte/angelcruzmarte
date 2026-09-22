@@ -10,7 +10,6 @@ import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { SubscribePlans } from "@/components/subscribe-plans"
 import { PricingViewTracker } from "@/components/pricing-view-tracker"
-import { WebOnly } from "@/components/web-only"
 
 // Transactional/paywall page — kept out of search results.
 export const metadata: Metadata = {
@@ -90,24 +89,22 @@ export default async function SubscribePage({
           </Link>
         </p>
 
-        <WebOnly>
-          <p className="mx-auto mt-6 max-w-md text-balance text-center text-xs leading-relaxed text-muted-foreground">
-            Subscriptions renew automatically until canceled. By subscribing you
-            agree to our{" "}
-            <Link href="/legal/terms" className="underline hover:text-foreground">
-              Terms
-            </Link>
-            ,{" "}
-            <Link href="/legal/privacy" className="underline hover:text-foreground">
-              Privacy Policy
-            </Link>
-            , and{" "}
-            <Link href="/legal/refund" className="underline hover:text-foreground">
-              Refund Policy
-            </Link>
-            .
-          </p>
-        </WebOnly>
+        <p className="mx-auto mt-6 max-w-md text-balance text-center text-xs leading-relaxed text-muted-foreground">
+          Subscriptions renew automatically until canceled. By subscribing you
+          agree to our{" "}
+          <Link href="/legal/terms" className="underline hover:text-foreground">
+            Terms
+          </Link>
+          ,{" "}
+          <Link href="/legal/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+          , and{" "}
+          <Link href="/legal/refund" className="underline hover:text-foreground">
+            Refund Policy
+          </Link>
+          .
+        </p>
       </main>
     </div>
   )

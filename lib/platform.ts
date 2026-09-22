@@ -1,34 +1,31 @@
-// Platform detection is intentionally neutralized: VOXYFI now behaves IDENTICALLY
-// on web, iOS, and Android.
+// Runtime platform detection.
 //
-// Previously the native iOS wrapper loaded the site with `?platform=ios` and the
-// web app hid all purchase UI (prices, subscribe/trial CTAs, buy buttons, cart,
-// billing portal) to satisfy Apple Guideline 3.1.1. Apple rejected that approach
-// under Guideline 5.6 because functionality was being hidden from review — the
-// app behaved differently inside the reviewed build than on the web. To resolve
-// that, we no longer detect or special-case any native wrapper: `detectPlatform`
-// always reports "web", so every consumer renders the exact same experience for
-// all users regardless of how the app is launched.
+// This is HONEST environment detection, not the old `?platform=ios` URL flag
+// that Apple rejected under Guideline 5.6 (functionality hidden from review).
+// `detectPlatform()` reports "ios" only inside the genuine native iOS app
+// WebView (WKWebView) — read from the same message-handler marker the SWING
+// library's own platform check uses — and "web" in every ordinary browser,
+// including mobile Safari.
 //
-// The type and helper signatures are preserved so existing callers keep
-// compiling; they simply never take a native-only branch anymore.
+// It is used for ONE purpose: to route digital purchases through Apple In-App
+// Purchase and withhold external card/Stripe purchase surfaces inside the app,
+// as Guideline 3.1.1 requires. It is NEVER used to hide a feature, plan, book,
+// or piece of content — the in-app IAP path to acquire everything (Premium
+// unlocks the full library) stays fully present, so App Review sees the same
+// app, just with the App Store as the payment rail.
+
+import { isIosNativeApp } from "@/lib/apple/swing-bridge"
 
 export type Platform = "web" | "ios" | "android"
 
-// Always reports "web". The app presents the same functionality everywhere, so
-// there is no platform-conditional behavior and nothing is hidden from review.
 export function detectPlatform(): Platform {
-  return "web"
+  return isIosNativeApp() ? "ios" : "web"
 }
 
-// Retained for API compatibility. Always false now that the app does not
-// special-case the iOS wrapper.
-export function isIOSApp(_platform: Platform): boolean {
-  return false
+export function isIOSApp(platform: Platform): boolean {
+  return platform === "ios"
 }
 
-// Retained for API compatibility. Always false now that the app does not
-// special-case any native wrapper.
-export function isNativeApp(_platform: Platform): boolean {
-  return false
+export function isNativeApp(platform: Platform): boolean {
+  return platform === "ios" || platform === "android"
 }

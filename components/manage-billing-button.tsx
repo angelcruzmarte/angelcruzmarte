@@ -11,15 +11,16 @@ export function ManageBillingButton() {
   const [error, setError] = useState<string | null>(null)
   const { isIOS } = usePlatform()
 
-  // Apple Guideline 3.1.1: the Stripe billing portal is an external purchase-
-  // management surface, which must not be linked from the native iOS app.
-  // Direct iOS users to manage billing where they subscribed instead.
+  // Inside the iOS app the subscription is an Apple In-App Purchase, so it is
+  // managed through the App Store (Settings > Apple Account > Subscriptions) —
+  // the same place Apple manages every IAP subscription. We do not link out to
+  // an external billing surface here.
   if (isIOS) {
     return (
       <p className="text-sm text-muted-foreground">
-        Manage your subscription at{" "}
-        <span className="font-medium text-foreground">voxyfi.com</span> on the
-        web.
+        Manage or cancel your subscription in the App Store: open the Settings
+        app, tap your name, then tap{" "}
+        <span className="font-medium text-foreground">Subscriptions</span>.
       </p>
     )
   }

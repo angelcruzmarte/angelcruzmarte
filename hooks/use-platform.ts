@@ -3,9 +3,9 @@
 import { useSyncExternalStore } from "react"
 import { detectPlatform, isIOSApp, isNativeApp, type Platform } from "@/lib/platform"
 
-// The runtime platform is fixed for a session (it comes from a URL flag /
-// localStorage), so we detect it exactly ONCE and share the result with every
-// consumer via a tiny external store. This matters for the store page, which
+// The runtime platform is fixed for a session (it comes from the native app's
+// WebView environment), so we detect it exactly ONCE and share the result with
+// every consumer via a tiny external store. This matters for the store page, which
 // renders hundreds of book cards that each call usePlatform(): a per-card
 // useState+useEffect would make every card render twice on mount (once as
 // "web", then again after detection) — a big, repeated cost while new shelves

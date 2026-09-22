@@ -222,7 +222,7 @@ function LiveBookCard({ result }: { result: StoreResult }) {
       ? // App Store Guideline 3.1.1: no external digital-purchase CTA for a
         // copyrighted title inside the native iOS app. The result stays fully
         // browsable and importable; buying happens on the web.
-        { kind: "web-only" }
+          { kind: "premium" }
       : {
           kind: "buy",
           href: result.buyUrl,
