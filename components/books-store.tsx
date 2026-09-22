@@ -58,12 +58,15 @@ import {
   type BookCardBadge,
 } from "@/components/store/book-card"
 import { FavoriteButton } from "@/components/favorite-button"
-import { LiveBookResults } from "@/components/live-book-results"
-import type { Suggestion } from "@/app/api/store/suggest/route"
 
-// A search suggestion tagged with whether it comes from our own catalog
-// (native) or an external source (Open Library / Amazon).
-type MergedSuggestion = Suggestion & { native?: boolean }
+// A native-catalog search suggestion for the typeahead dropdown.
+type MergedSuggestion = {
+  title: string
+  author: string
+  coverUrl: string | null
+  listenable: boolean
+  native?: boolean
+}
 import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
 import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
@@ -325,13 +328,16 @@ export function BooksStore({
   // on the raw query feeds both the typeahead dropdown and the results grid.
   // Ranked server-side: title prefix > title match > author, featured nudged up.
   const [nativeMatches, setNativeMatches] = useState<Book[]>([])
+  const [nativeLoading, setNativeLoading] = useState(false)
   useEffect(() => {
     const q = query.trim()
     if (q.length < 2) {
       setNativeMatches([])
+      setNativeLoading(false)
       return
     }
     let cancelled = false
+    setNativeLoading(true)
     const id = setTimeout(() => {
       searchNativeCatalog(q)
         .then((rows) => {
@@ -340,6 +346,9 @@ export function BooksStore({
         .catch(() => {
           if (!cancelled) setNativeMatches([])
         })
+        .finally(() => {
+          if (!cancelled) setNativeLoading(false)
+        })
     }, 220)
     return () => {
       cancelled = true
@@ -347,38 +356,13 @@ export function BooksStore({
     }
   }, [query])
 
-  // Smart autocomplete: fetch title/author suggestions as the user types.
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [suggestOpen, setSuggestOpen] = useState(false)
-  useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) {
-      setSuggestions([])
-      return
-    }
-    let cancelled = false
-    const id = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/store/suggest?q=${encodeURIComponent(q)}`,
-        )
-        const data = (await res.json()) as { suggestions?: Suggestion[] }
-        if (!cancelled) setSuggestions(data.suggestions ?? [])
-      } catch {
-        if (!cancelled) setSuggestions([])
-      }
-    }, 180)
-    return () => {
-      cancelled = true
-      clearTimeout(id)
-    }
-  }, [query])
 
-  // Native-catalog typeahead: the top few server matches, shown at the TOP of
-  // the dropdown before the remote (Open Library / Amazon) suggestions.
-  const nativeSuggestions = useMemo<MergedSuggestion[]>(() => {
+  // Native-catalog typeahead: the top few server matches. The store is
+  // native-only, so suggestions come solely from books we actually carry.
+  const mergedSuggestions = useMemo<MergedSuggestion[]>(() => {
     if (query.trim().length < 2) return []
-    return nativeMatches.slice(0, 4).map((b) => ({
+    return nativeMatches.slice(0, 7).map((b) => ({
       title: b.title,
       author: b.author || "Unknown",
       coverUrl: b.coverImageUrl ?? null,
@@ -387,23 +371,7 @@ export function BooksStore({
     }))
   }, [nativeMatches, query])
 
-  // Native suggestions first, then remote suggestions with any duplicate
-  // title/author pairs removed, capped so the dropdown stays compact.
-  const mergedSuggestions = useMemo<MergedSuggestion[]>(() => {
-    const seen = new Set(
-      nativeSuggestions.map(
-        (s) => `${s.title.toLowerCase()}|${s.author.toLowerCase()}`,
-      ),
-    )
-    const remote = suggestions
-      .filter(
-        (s) => !seen.has(`${s.title.toLowerCase()}|${s.author.toLowerCase()}`),
-      )
-      .map((s) => ({ ...s, native: false }))
-    return [...nativeSuggestions, ...remote].slice(0, 7)
-  }, [nativeSuggestions, suggestions])
-
-  function pickSuggestion(s: Suggestion) {
+  function pickSuggestion(s: MergedSuggestion) {
     const value = `${s.title} ${s.author}`.trim()
     setQuery(value)
     setDebounced(value)
@@ -469,7 +437,7 @@ export function BooksStore({
               type="button"
               onClick={() => {
                 setQuery("")
-                setSuggestions([])
+                setSuggestOpen(false)
               }}
               aria-label="Clear search"
               className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -587,39 +555,40 @@ export function BooksStore({
             )}
           </h2>
 
-          {/* Native store matches first — books we actually carry, ready to
-              listen or buy in-app. */}
-          {nativeMatches.length > 0 && (
-            <div className="mb-8">
-              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
-                <BookOpen className="h-4 w-4 text-primary" />
-                In our library
-                <span className="text-sm font-medium text-muted-foreground">
-                  {nativeMatches.length}
-                </span>
-              </h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
-                {nativeMatches.map((book) => (
-                  <StoreBookCard
-                    key={book.id}
-                    book={book}
-                    owned={owned.has(book.id)}
-                    favorited={favorites.has(book.id)}
-                  />
-                ))}
-              </div>
+          {/* Native store only — books we actually carry, ready to listen or
+              buy in-app. */}
+          {nativeLoading && nativeMatches.length === 0 ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex flex-col gap-2.5">
+                  <div className="aspect-[2/3] animate-pulse rounded-lg bg-secondary" />
+                  <div className="h-3.5 w-3/4 animate-pulse rounded bg-secondary" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-secondary" />
+                </div>
+              ))}
+            </div>
+          ) : nativeMatches.length > 0 ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+              {nativeMatches.map((book) => (
+                <StoreBookCard
+                  key={book.id}
+                  book={book}
+                  owned={owned.has(book.id)}
+                  favorited={favorites.has(book.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-12 text-center">
+              <BookOpen className="h-8 w-8 text-muted-foreground" />
+              <p className="font-medium">
+                No books found for &ldquo;{debounced}&rdquo;
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Try a different title, author, or keyword.
+              </p>
             </div>
           )}
-
-          {/* External results (Amazon / Open Library) as a fallback for
-              anything not in our own catalog. */}
-          <div>
-            <h3 className="mb-3 flex items-center gap-2 text-base font-semibold">
-              <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-              {nativeMatches.length > 0 ? "More from Amazon" : "From Amazon"}
-            </h3>
-            <LiveBookResults query={debounced} language={languageFilter} />
-          </div>
         </section>
       ) : showFavorites ? (
         <FavoritesView

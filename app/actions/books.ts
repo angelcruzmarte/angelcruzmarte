@@ -69,13 +69,19 @@ export async function getBooks(): Promise<BookCard[]> {
     .select(bookCardColumns)
     .from(book)
     // Only surface published titles in the public store. Admins can toggle
-    // visibility without deleting the catalog row.
-    .where(eq(book.published, true))
+    // visibility without deleting the catalog row. Amazon-fulfilled (affiliate)
+    // titles are never shown — the store is native-only.
+    .where(and(eq(book.published, true), ne(book.fulfillment, "affiliate")))
     .orderBy(desc(book.featured), desc(book.createdAt))
 }
 
 export async function getBook(id: number) {
-  const [row] = await db.select().from(book).where(eq(book.id, id)).limit(1)
+  // Native-only store: affiliate (Amazon-fulfilled) titles are not served.
+  const [row] = await db
+    .select()
+    .from(book)
+    .where(and(eq(book.id, id), ne(book.fulfillment, "affiliate")))
+    .limit(1)
   return row ?? null
 }
 
@@ -96,7 +102,13 @@ export async function resolveGenreBySlug(slug: string): Promise<string | null> {
   const rows = await db
     .selectDistinct({ category: book.category })
     .from(book)
-    .where(and(eq(book.published, true), sql`${book.category} is not null`))
+    .where(
+      and(
+        eq(book.published, true),
+        ne(book.fulfillment, "affiliate"),
+        sql`${book.category} is not null`,
+      ),
+    )
   for (const r of rows) {
     if (r.category && categorySlug(r.category) === slug) return r.category
   }
@@ -132,7 +144,11 @@ export async function getBooksByGenre(opts: {
   const language = opts.language && opts.language !== "all" ? opts.language : "all"
   const pageSize = GENRE_PAGE_SIZE
 
-  const filters = [eq(book.published, true), eq(book.category, opts.category)]
+  const filters = [
+    eq(book.published, true),
+    ne(book.fulfillment, "affiliate"),
+    eq(book.category, opts.category),
+  ]
   if (language !== "all") filters.push(eq(book.language, language))
   const where = and(...filters)
 
@@ -168,7 +184,13 @@ export async function getGenreLanguages(
   const rows = await db
     .select({ code: book.language, c: count() })
     .from(book)
-    .where(and(eq(book.published, true), eq(book.category, category)))
+    .where(
+      and(
+        eq(book.published, true),
+        ne(book.fulfillment, "affiliate"),
+        eq(book.category, category),
+      ),
+    )
     .groupBy(book.language)
     .orderBy(desc(count()))
   return rows
@@ -932,7 +954,9 @@ export async function searchNativeCatalog(
   const rows = await db
     .select(bookCardColumns)
     .from(book)
-    .where(and(eq(book.published, true), ...tokenFilters))
+    .where(
+      and(eq(book.published, true), ne(book.fulfillment, "affiliate"), ...tokenFilters),
+    )
     .orderBy(desc(relevance), desc(book.featured))
     .limit(18)
   return rows
