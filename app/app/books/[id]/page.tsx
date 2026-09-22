@@ -101,14 +101,14 @@ export default async function BookDetailPage({
               Included with Premium
             </p>
           ) : (
-            <p className="mt-3 text-lg font-bold">
-              {formatPrice(book.priceInCents)}
+            <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-primary">
+              <Sparkles className="h-4 w-4" />
+              Available with Premium
             </p>
           )}
 
           <BuyBookButton
             bookId={book.id}
-            priceInCents={book.priceInCents}
             owned={owned}
             subscribed={subscribed}
             className="mt-3 gap-2"

@@ -1,70 +1,35 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Crown, Headphones, Loader2, Plus, ShoppingCart } from "lucide-react"
-import { createBookCheckout } from "@/app/actions/books"
-import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
-import { isSwingIapAvailable } from "@/lib/apple/swing-bridge"
+import { Crown, Headphones } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { formatPrice } from "@/lib/plans"
 
 /**
- * Book detail actions.
+ * Book detail primary action.
  *
- * Access to a book's full text/audio is granted by EITHER owning the book
- * (a one-time purchase) OR an active Premium subscription — Premium is
- * "Unlimited access to the full library", so a subscriber can open any book
- * without buying it individually.
+ * Access to a book's full text/audio is granted by EITHER already owning the
+ * book (a legacy one-time purchase that is grandfathered in) OR an active
+ * Premium subscription. VOXYFI now monetizes books ONLY through Premium
+ * ("Unlimited access to the full library") — individual titles are no longer
+ * sold — so anyone who doesn't yet have access is routed to the Premium paywall.
  *
- * Payment rail by platform (Apple Guideline 3.1.1):
- *  - Inside the iOS app (SWING2APP native IAP module present) we must NOT run an
- *    external card/Stripe checkout for digital goods. Books are acquired by
- *    subscribing to Premium via Apple In-App Purchase, so the buy action routes
- *    to the Premium paywall (which runs the native StoreKit sheet). This is a
- *    payment-rail switch, not hidden functionality — the book is still fully
- *    acquirable in-app.
- *  - On the web (and any non-module build) the existing Stripe one-time
- *    purchase + cart flow renders unchanged.
+ * Apple Guideline 3.1.1: the paywall runs Apple In-App Purchase inside the iOS
+ * app and Stripe on the web, so no external checkout or price for digital goods
+ * is ever presented here, on any platform.
  */
 export function BuyBookButton({
   bookId,
-  priceInCents,
   owned,
   subscribed = false,
-  cartItem,
   className,
 }: {
   bookId: number
-  priceInCents: number
   owned: boolean
   /** True when the current user has an active Premium subscription. */
   subscribed?: boolean
-  /** Minimal book info used to add this book to the cart. */
-  cartItem?: CartItem
   className?: string
 }) {
   const router = useRouter()
-  const [pending, startTransition] = useTransition()
-  const { has, add } = useCart()
-  const { setOpen } = useCartUI()
-  const inCart = has(bookId)
-
-  // Runtime capability detection for the native Apple IAP module. Matches the
-  // paywall's approach: never a URL flag, so the web build is never affected.
-  const [iapAvailable, setIapAvailable] = useState(false)
-  useEffect(() => {
-    setIapAvailable(isSwingIapAvailable())
-  }, [])
-
-  function handleBuy() {
-    startTransition(async () => {
-      const res = await createBookCheckout(bookId)
-      if (res.url) {
-        window.location.href = res.url
-      }
-    })
-  }
 
   // Owned outright, or unlocked through Premium — either way the book is
   // playable, so the primary action is to listen.
@@ -81,59 +46,22 @@ export function BuyBookButton({
     )
   }
 
-  // Inside the iOS app: acquire the book by subscribing to Premium via Apple
-  // In-App Purchase (StoreKit). No external checkout is presented.
-  if (iapAvailable) {
-    return (
-      <div className={"flex flex-col gap-2 " + (className ?? "")}>
-        <Button
-          size="lg"
-          className="gap-2"
-          onClick={() => router.push("/subscribe")}
-        >
-          <Crown className="h-4 w-4" />
-          Unlock with Premium
-        </Button>
-        <p className="text-sm text-muted-foreground">
-          Premium unlocks this and every book in the library.
-        </p>
-      </div>
-    )
-  }
-
-  // Web / non-iOS: the existing Stripe one-time purchase and cart flow.
+  // Everyone else acquires the book by subscribing to Premium. The paywall
+  // handles the correct payment rail per platform (Apple IAP on iOS, Stripe on
+  // web), so no price or external checkout is shown here.
   return (
-    <div className={"flex flex-col gap-2 sm:flex-row " + (className ?? "")}>
-      <Button size="lg" className="gap-2" onClick={handleBuy} disabled={pending}>
-        {pending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShoppingCart className="h-4 w-4" />
-        )}
-        Buy for {formatPrice(priceInCents)}
+    <div className={"flex flex-col gap-2 " + (className ?? "")}>
+      <Button
+        size="lg"
+        className="gap-2"
+        onClick={() => router.push("/subscribe")}
+      >
+        <Crown className="h-4 w-4" />
+        Unlock with Premium
       </Button>
-      {cartItem &&
-        (inCart ? (
-          <Button
-            size="lg"
-            variant="outline"
-            className="gap-2"
-            onClick={() => setOpen(true)}
-          >
-            <Check className="h-4 w-4" />
-            In cart · View
-          </Button>
-        ) : (
-          <Button
-            size="lg"
-            variant="outline"
-            className="gap-2"
-            onClick={() => add(cartItem)}
-          >
-            <Plus className="h-4 w-4" />
-            Add to cart
-          </Button>
-        ))}
+      <p className="text-sm text-muted-foreground">
+        Premium unlocks this and every book in the library.
+      </p>
     </div>
   )
 }
