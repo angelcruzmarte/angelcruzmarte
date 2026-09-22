@@ -58,13 +58,6 @@ export default async function SubscribePage({
             Subscribe to listen to every title with natural narration and
             word-by-word highlighting.
           </p>
-          {trialEligible && (
-            <WebOnly>
-              <p className="mx-auto mt-5 inline-flex items-center rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-                Start with a 7-day free trial &mdash; cancel anytime
-              </p>
-            </WebOnly>
-          )}
         </div>
 
         {canceled && (
