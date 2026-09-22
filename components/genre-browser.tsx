@@ -16,27 +16,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { useCart } from "@/components/cart-provider"
-import { usePlatform } from "@/hooks/use-platform"
 import { languageLabel } from "@/lib/languages"
 import { cn } from "@/lib/utils"
 import type { GenrePage } from "@/app/actions/books"
 import type { BookCard as BookCardData } from "@/lib/db/schema"
 
-function toCartItem(b: BookCardData) {
-  return {
-    id: b.id,
-    title: b.title,
-    author: b.author,
-    priceInCents: b.priceInCents,
-    coverColor: b.coverColor,
-    accentColor: b.accentColor,
-    coverImageUrl: b.coverImageUrl,
-  }
-}
-
 // Card wrapper mirroring the storefront's StoreBookCard so a genre page book
-// behaves identically (owned → Listen, affiliate → Sample, native → Add).
+// behaves identically (owned → Listen, affiliate → Sample, native → Unlock
+// with Premium).
 function GenreCard({
   book,
   owned,
@@ -48,39 +35,31 @@ function GenreCard({
   subscribed: boolean
   favorited: boolean
   }) {
-  const { has, add, remove } = useCart()
-  const { isIOS } = usePlatform()
-  const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
   // A native title is already playable when owned OR covered by Premium
   // ("Unlimited access to the full library"). Affiliate titles are never
   // covered by Premium.
   const accessible = owned || (subscribed && !isAffiliate)
-  const gateNative = isIOS && !accessible && !isAffiliate
-
+  // Subscription-only model (identical to the storefront's StoreBookCard):
+  // books are acquired by subscribing to Premium and are never sold
+  // individually, so every not-yet-accessible native title routes to the
+  // Premium paywall ("Unlock with Premium") on every platform — no per-book
+  // Stripe cart and no external price. This keeps digital-goods purchasing
+  // compliant with App Store Guideline 3.1.1 on iOS and stays consistent with
+  // the main store regardless of client-side platform detection.
   const badge: BookCardBadge = owned
     ? { kind: "owned" }
     : accessible
       ? { kind: "listen" }
       : isAffiliate
         ? { kind: "sample" }
-        : gateNative
-          ? null
-          : { kind: "price", priceInCents: book.priceInCents }
+        : null
 
   const action: BookCardAction = accessible
     ? { kind: "listen", href: `/app/listen/book/${book.id}` }
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }
-      : gateNative
-        ? { kind: "premium" }
-        : {
-            kind: "add",
-            priceInCents: book.priceInCents,
-            inCart,
-            onAdd: () => add(toCartItem(book)),
-            onRemove: () => remove(book.id),
-          }
+      : { kind: "premium" }
 
   return (
     <BookCard
