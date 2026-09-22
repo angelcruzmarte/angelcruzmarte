@@ -62,6 +62,18 @@ export function SubscribePlans({
   const showWebOffers = !iapAvailable
   const effectiveTrialEligible = trialEligible && showWebOffers
 
+  // Inside the iOS app we can only offer plans whose Apple product id is
+  // actually compiled into the current SWING2APP native wrapper. The wrapper
+  // (v0.7) ships only `com.voxyfi.premium.monthly`, so routing the annual plan
+  // to StoreKit sends an unknown product id and the purchase fails at the
+  // native layer (the "didn't complete" error). We therefore show only
+  // IAP-available plans in the app and keep the full list on the web (Stripe
+  // sells every plan). Once a wrapper build includes the annual product, flip
+  // its `availableViaAppleIap` flag and it reappears automatically.
+  const visiblePlans = iapAvailable
+    ? PLANS.filter((p) => p.availableViaAppleIap)
+    : PLANS
+
   // Verify a completed native purchase on our backend before granting access.
   async function completeApplePurchase(planId: string) {
     const plan = PLANS.find((p) => p.id === planId)
@@ -166,8 +178,15 @@ export function SubscribePlans({
   return (
     <div>
       <div className="grid gap-6 pt-3 sm:grid-cols-2">
-        {PLANS.map((plan) => {
+        {visiblePlans.map((plan) => {
+          // Promo discounts are a WEB-only (Stripe) offer. Inside the app the
+          // native App Store purchase always charges the product's configured
+          // App Store Connect price, so advertising a discounted price there
+          // would misrepresent what Apple actually charges (App Review
+          // rejection + user-facing "50% off" that never applies). Gate the
+          // promo behind showWebOffers exactly like the free trial above.
           const promoApplies =
+            showWebOffers &&
             promo &&
             (promo.planScope === "all" || promo.planScope === plan.id)
           const discounted = promoApplies
