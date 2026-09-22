@@ -61,11 +61,15 @@ export function SubscribePlans({
     }
   }, [])
 
-  // Apple offers (introductory free trials, promo discounts) are configured
-  // separately in App Store Connect and are NOT the same as our web trial/promo
-  // pricing. Until those Apple offers exist we don't advertise them in the IAP
-  // paywall — the native purchase sheet shows the authoritative price/terms.
-  const showWebOffers = !iapAvailable
+  // The web and the iOS app must show the SAME subscription price and terms.
+  // The Apple IAP sheet can only charge the plain App Store Connect price (no
+  // free trial or promo discount is configured there), so instead of showing a
+  // richer offer on the web we bring the web DOWN to match: no 7-day trial pill,
+  // no promo banner, and no discounted/strikethrough pricing on either surface.
+  // Everyone sees the standard plan price. `iapAvailable` is intentionally
+  // referenced so the detection effect stays meaningful for the payment rail.
+  void iapAvailable
+  const showWebOffers = false
   const effectiveTrialEligible = trialEligible && showWebOffers
 
   // The SAME plans render on every platform — no plan is ever filtered out by
