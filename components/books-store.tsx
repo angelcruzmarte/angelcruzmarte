@@ -1,6 +1,14 @@
 "use client"
 
-import { memo, useEffect, useMemo, useRef, useState } from "react"
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import Link from "next/link"
 import {
   ArrowRight,
@@ -145,10 +153,17 @@ function toCartItem(b: Book): CartItem {
   }
 }
 
+// Store-wide Premium flag. Every book card needs it to decide whether a native
+// title is already unlocked ("Listen") or still needs to be acquired, and the
+// cards render deep inside several nested shelves — so we share it via context
+// instead of drilling the same boolean through every shelf component.
+const SubscribedContext = createContext(false)
+
 export function BooksStore({
   books,
   storefront,
   personalized,
+  subscribed = false,
   ownedIds = [],
   favoriteIds = [],
   favoriteBooks: favoriteBooksProp = [],
@@ -162,6 +177,11 @@ export function BooksStore({
   books: Book[]
   storefront?: Storefront
   personalized: boolean
+  /** True when the current user has an active Premium subscription. Premium is
+   *  "Unlimited access to the full library", so native (non-affiliate) titles
+   *  become directly playable ("Listen") rather than showing a purchase or
+   *  "Unlock with Premium" CTA the subscriber has already paid for. */
+  subscribed?: boolean
   ownedIds?: number[]
   favoriteIds?: number[]
   // Full favorited book rows, fetched server-side so favorites always render
@@ -391,6 +411,7 @@ export function BooksStore({
   }
 
   return (
+    <SubscribedContext.Provider value={subscribed}>
     <div className="space-y-7">
       <CartReturnHandler />
 
@@ -710,6 +731,7 @@ export function BooksStore({
         </>
       )}
     </div>
+    </SubscribedContext.Provider>
   )
 }
 
@@ -911,10 +933,16 @@ function BookHero({
 }) {
   const { has, add, remove } = useCart()
   const { isIOS } = usePlatform()
+  const subscribed = useContext(SubscribedContext)
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
-  // Apple Guideline 3.1.1: no native purchase surface inside the iOS app.
-  const gateNative = isIOS && !owned && !isAffiliate
+  // A native title is already playable when owned OR covered by Premium
+  // ("Unlimited access to the full library"). Affiliate titles are never
+  // covered by Premium.
+  const accessible = owned || (subscribed && !isAffiliate)
+  // Apple Guideline 3.1.1: no native purchase surface inside the iOS app —
+  // but only when the user still needs to acquire the title.
+  const gateNative = isIOS && !accessible && !isAffiliate
 
   return (
     <section
@@ -951,7 +979,7 @@ function BookHero({
             </p>
           )}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5 sm:justify-start">
-            {owned ? (
+            {accessible ? (
               <Link
                 href={`/app/listen/book/${book.id}`}
                 className="flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
@@ -1200,20 +1228,28 @@ const StoreBookCard = memo(function StoreBookCard({
 }) {
   const { has, add, remove } = useCart()
   const { isIOS } = usePlatform()
+  const subscribed = useContext(SubscribedContext)
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
-  // Apple Guideline 3.1.1: no price/purchase surface for native titles on iOS.
-  const gateNative = isIOS && !owned && !isAffiliate
+  // A native title is already playable when owned OR covered by Premium
+  // ("Unlimited access to the full library"). Affiliate titles are never
+  // covered by Premium.
+  const accessible = owned || (subscribed && !isAffiliate)
+  // Apple Guideline 3.1.1: no price/purchase surface for native titles on iOS —
+  // but only when the user still needs to acquire the title.
+  const gateNative = isIOS && !accessible && !isAffiliate
 
   const badge: BookCardBadge = owned
     ? { kind: "owned" }
-    : isAffiliate
-      ? { kind: "sample" }
-      : gateNative
-        ? null
-        : { kind: "price", priceInCents: book.priceInCents }
+    : accessible
+      ? { kind: "listen" }
+      : isAffiliate
+        ? { kind: "sample" }
+        : gateNative
+          ? null
+          : { kind: "price", priceInCents: book.priceInCents }
 
-  const action: BookCardAction = owned
+  const action: BookCardAction = accessible
     ? { kind: "listen", href: `/app/listen/book/${book.id}` }
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }

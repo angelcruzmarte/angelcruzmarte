@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   ShoppingCart,
+  Upload,
 } from "lucide-react"
 import { BookCover, type CoverBook } from "@/components/book-cover"
 import { browserAmazonLink } from "@/lib/affiliate"
@@ -100,6 +101,11 @@ export type BookCardAction =
   // subscription (Apple IAP), so the card routes to the in-app paywall rather
   // than any external purchase surface.
   | { kind: "premium" }
+  // Live external (Amazon) title inside the iOS app: no external digital
+  // purchase link is allowed there, and Premium does NOT include Amazon
+  // titles, so the honest in-app action is importing a file the user already
+  // owns to have it narrated.
+  | { kind: "import"; onClick: () => void; pending?: boolean }
   // Commercial title → buy on Amazon (affiliate out-link).
   | {
       kind: "buy"
@@ -185,6 +191,22 @@ function ActionButton({ action }: { action: BookCardAction }) {
           <Headphones className="h-3.5 w-3.5" />
           Unlock with Premium
         </Link>
+      )
+    case "import":
+      return (
+        <button
+          type="button"
+          onClick={action.onClick}
+          disabled={action.pending}
+          className={cn(ACTION_BASE, ACTION_SECONDARY, "disabled:opacity-70")}
+        >
+          {action.pending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Upload className="h-3.5 w-3.5" />
+          )}
+          Import file
+        </button>
       )
     case "add":
       return action.inCart ? (

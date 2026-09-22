@@ -40,27 +40,36 @@ function toCartItem(b: BookCardData) {
 function GenreCard({
   book,
   owned,
+  subscribed,
   favorited,
 }: {
   book: BookCardData
   owned: boolean
+  owned: boolean
+  subscribed: boolean
   favorited: boolean
-}) {
+  }) {
   const { has, add, remove } = useCart()
   const { isIOS } = usePlatform()
   const inCart = has(book.id)
   const isAffiliate = book.fulfillment === "affiliate"
-  const gateNative = isIOS && !owned && !isAffiliate
+  // A native title is already playable when owned OR covered by Premium
+  // ("Unlimited access to the full library"). Affiliate titles are never
+  // covered by Premium.
+  const accessible = owned || (subscribed && !isAffiliate)
+  const gateNative = isIOS && !accessible && !isAffiliate
 
   const badge: BookCardBadge = owned
     ? { kind: "owned" }
-    : isAffiliate
-      ? { kind: "sample" }
-      : gateNative
-        ? null
-        : { kind: "price", priceInCents: book.priceInCents }
+    : accessible
+      ? { kind: "listen" }
+      : isAffiliate
+        ? { kind: "sample" }
+        : gateNative
+          ? null
+          : { kind: "price", priceInCents: book.priceInCents }
 
-  const action: BookCardAction = owned
+  const action: BookCardAction = accessible
     ? { kind: "listen", href: `/app/listen/book/${book.id}` }
     : isAffiliate
       ? { kind: "sample", href: `/app/books/${book.id}` }
@@ -189,15 +198,17 @@ export function GenreBrowser({
   slug,
   data,
   languages,
+  subscribed = false,
   ownedIds,
   favoriteIds,
-}: {
+  }: {
   slug: string
   data: GenrePage
   languages: Array<{ code: string; count: number }>
+  subscribed?: boolean
   ownedIds: number[]
   favoriteIds: number[]
-}) {
+  }) {
   const router = useRouter()
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
@@ -260,9 +271,10 @@ export function GenreBrowser({
             {data.books.map((book) => (
               <GenreCard
                 key={book.id}
-                book={book}
-                owned={owned.has(book.id)}
-                favorited={favorites.has(book.id)}
+              book={book}
+              owned={owned.has(book.id)}
+              subscribed={subscribed}
+              favorited={favorites.has(book.id)}
               />
             ))}
           </div>
