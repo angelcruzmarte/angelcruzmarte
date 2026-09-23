@@ -39,7 +39,6 @@ import {
   Scale,
   ScrollText,
   Search,
-  ShoppingBag,
   Sparkles,
   TrendingUp,
   UserRound,
@@ -66,17 +65,13 @@ type MergedSuggestion = {
   listenable: boolean
   native?: boolean
 }
-import { CartReturnHandler } from "@/components/cart-return-handler"
 import { UploadBook } from "@/components/upload-book"
-import { useCart, useCartUI, type CartItem } from "@/components/cart-provider"
-import { usePlatform } from "@/hooks/use-platform"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
-import { formatPrice } from "@/lib/plans"
 import { languageLabel } from "@/lib/languages"
 import { cn } from "@/lib/utils"
 
@@ -143,18 +138,6 @@ function genreSlug(category: string) {
   return `genre-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
 }
 
-function toCartItem(b: Book): CartItem {
-  return {
-    id: b.id,
-    title: b.title,
-    author: b.author,
-    priceInCents: b.priceInCents,
-    coverColor: b.coverColor,
-    accentColor: b.accentColor,
-    coverImageUrl: b.coverImageUrl,
-  }
-}
-
 // Store-wide Premium flag. Every book card needs it to decide whether a native
 // title is already unlocked ("Listen") or still needs to be acquired, and the
 // cards render deep inside several nested shelves — so we share it via context
@@ -197,9 +180,6 @@ export function BooksStore({
 }) {
   const owned = useMemo(() => new Set(ownedIds), [ownedIds])
   const favorites = useMemo(() => new Set(favoriteIds), [favoriteIds])
-  const { count, totalCents } = useCart()
-  const { setOpen } = useCartUI()
-  const { isIOS } = usePlatform()
 
   // Language handling. The store defaults to English; other languages are only
   // surfaced on demand via the language picker (search-on-demand), never as a
@@ -380,9 +360,7 @@ export function BooksStore({
   return (
     <SubscribedContext.Provider value={subscribed}>
     <div className="space-y-7">
-      <CartReturnHandler />
-
-      {/* Modern store header: title, cart, prominent always-on search, chips */}
+      {/* Modern store header: title, prominent always-on search, chips */}
       <header className="space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -391,22 +369,6 @@ export function BooksStore({
               Search and listen to millions of books.
             </p>
           </div>
-          {!isIOS && (
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}
-              className="relative flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-semibold shadow-sm transition-colors hover:bg-secondary"
-            >
-              <ShoppingBag className="h-4 w-4 text-primary" />
-              {count > 0 ? formatPrice(totalCents) : "$0"}
-              {count > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
-                  {count}
-                </span>
-              )}
-            </button>
-          )}
         </div>
 
         {/* Prominent, always-visible search bar */}

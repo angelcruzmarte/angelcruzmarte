@@ -5,8 +5,6 @@ import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
 import { AppTabBar } from "@/components/app-tab-bar"
 import { PlayerProvider } from "@/components/player-provider"
 import { ListeningPreferencesProvider } from "@/components/listening-preferences"
-import { CartProvider } from "@/components/cart-provider"
-import { CartDrawer } from "@/components/cart-drawer"
 import { ReadingAssistant } from "@/components/reading-assistant"
 import { UserMenu } from "@/components/user-menu"
 import { Badge } from "@/components/ui/badge"
@@ -36,7 +34,6 @@ export default async function AppLayout({
   // per-feature rather than by locking them out at the door.
 
   return (
-    <CartProvider>
     <ListeningPreferencesProvider
       value={{
         autoPlay: user.prefAutoPlay,
@@ -81,11 +78,9 @@ export default async function AppLayout({
       <main className="flex-1 pb-28">{children}</main>
 
       <AppTabBar />
-      <CartDrawer />
       <ReadingAssistant />
     </div>
     </PlayerProvider>
     </ListeningPreferencesProvider>
-    </CartProvider>
   )
 }
