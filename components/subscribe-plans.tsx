@@ -108,6 +108,20 @@ export function SubscribePlans({
   async function completeApplePurchase(planId: string) {
     const plan = PLANS.find((p) => p.id === planId)
     if (!plan) return
+    // Diagnostic context for any native IAP failure. The SWING2APP bridge only
+    // accepts a bare product id (`subscribe(productId, cb)`) — there is no slot
+    // for an offer, discount, promotional identifier, or price — so
+    // `offerSupplied` is ALWAYS "none". Logging this makes a StoreKit failure
+    // (e.g. code 3) diagnosable from a device log without changing the native
+    // wrapper. No credentials, receipts, or payment data are logged.
+    const diagnostics = {
+      productId: plan.appleProductId,
+      planId: plan.id,
+      platform: "ios-native",
+      bridgeMethod: "subscribe",
+      offerSupplied: "none",
+    }
+    console.log("[v0] Apple IAP purchase starting:", JSON.stringify(diagnostics))
     try {
       const purchase = await subscribeViaApple(plan.appleProductId)
       const res = await fetch("/api/apple/purchase", {
@@ -133,8 +147,20 @@ export function SubscribePlans({
       // the specific native error code (mapped to a readable reason) so a
       // failing purchase is diagnosable instead of an opaque generic message.
       if (err instanceof AppleNativePurchaseError) {
+        console.log(
+          "[v0] Apple IAP purchase failed:",
+          JSON.stringify({
+            ...diagnostics,
+            storeKitCode: err.code,
+            storeKitMessage: err.message,
+          }),
+        )
         setError(describeApplePurchaseError(err))
       } else {
+        console.log(
+          "[v0] Apple IAP purchase error (non-StoreKit):",
+          JSON.stringify(diagnostics),
+        )
         setError("Could not start the purchase. Please try again.")
       }
     }

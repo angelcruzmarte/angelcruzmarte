@@ -30,7 +30,7 @@ export default async function BooksPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6">
-      {/* Suspense boundary so useSearchParams (in CartReturnHandler) works. */}
+      {/* Suspense boundary so useSearchParams (in BooksStore) works. */}
       <Suspense fallback={null}>
         <BooksStore
           books={books}
