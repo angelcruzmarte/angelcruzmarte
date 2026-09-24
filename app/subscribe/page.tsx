@@ -10,6 +10,7 @@ import { getActivePromotion } from "@/app/actions/promotions"
 import { SiteHeader } from "@/components/site-header"
 import { SubscribePlans } from "@/components/subscribe-plans"
 import { PricingViewTracker } from "@/components/pricing-view-tracker"
+import { StoreKitDiagnostic } from "@/components/dev/storekit-diagnostic"
 
 // Transactional/paywall page — kept out of search results.
 export const metadata: Metadata = {

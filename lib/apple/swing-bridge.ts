@@ -344,3 +344,292 @@ export function isSubscribedNative(productId: string): Promise<boolean> {
     }
   })
 }
+
+/* -------------------------------------------------------------------------- */
+/* READ-ONLY StoreKit diagnostic (temporary).                                 */
+/*                                                                            */
+/* This block ONLY inspects the runtime environment. It never calls buy() or  */
+/* subscribe(), never simulates or fakes a purchase, never grants an          */
+/* entitlement, and never touches the server. It does not add reviewer        */
+/* detection, TestFlight-only behavior, URL flags, or hidden functionality —  */
+/* it reports what the native bridge already exposes so we can see whether    */
+/* StoreKit recognizes the two subscription products on a device.             */
+/* -------------------------------------------------------------------------- */
+
+/** Per-product outcome of the read-only StoreKit diagnostic. */
+export type StoreKitProductDiagnostic = {
+  productId: string
+  /** Name of the bridge method that returned product metadata, if any. */
+  queryMethodUsed: string | null
+  /** Whether a product-query method returned a record for this id. */
+  storeKitReturnedProduct: boolean | "unknown"
+  /** Whether StoreKit reports the product is purchasable. */
+  availableForPurchase: boolean | "unknown"
+  /** Localized price string from StoreKit, or null when the bridge can't report it. */
+  localizedPrice: string | null
+  /** Subscription duration from StoreKit, or null when the bridge can't report it. */
+  subscriptionDuration: string | null
+  /** Result of the StoreKit-backed isSubscribed() call for this id. */
+  isSubscribedResult: boolean | "no-callback" | "unavailable"
+  /** Raw payload from any product-query method, for manual inspection. */
+  raw: string | null
+}
+
+/** Full report of the read-only StoreKit diagnostic. */
+export type StoreKitDiagnosticReport = {
+  inNativeAppWebView: boolean
+  isIosNativeApp: boolean
+  bridgePresent: boolean
+  /** Method names discovered on the native inapp bridge object. */
+  availableMethods: string[]
+  /** True if the bridge exposes any recognizable product-metadata query method. */
+  productQuerySupported: boolean
+  products: StoreKitProductDiagnostic[]
+}
+
+/**
+ * Candidate names for a StoreKit "fetch product metadata" method. The SWING2APP
+ * guide documents only buy/subscribe/isSubscribed, so we probe for a product
+ * query under the names such bridges commonly use. If none exists, the report
+ * says so plainly rather than inventing values.
+ */
+const PRODUCT_QUERY_CANDIDATES = [
+  "getProducts",
+  "products",
+  "getProductInfo",
+  "productInfo",
+  "getProductDetails",
+  "productDetails",
+  "requestProducts",
+  "retrieveProducts",
+  "fetchProducts",
+  "getProduct",
+] as const
+
+/** Best-effort extraction of price/duration from an unknown product payload. */
+function extractProductFields(payload: unknown): {
+  returned: boolean
+  available: boolean | "unknown"
+  price: string | null
+  duration: string | null
+} {
+  if (payload == null) {
+    return { returned: false, available: "unknown", price: null, duration: null }
+  }
+  let obj: Record<string, unknown> | null = null
+  if (typeof payload === "string") {
+    try {
+      obj = JSON.parse(payload) as Record<string, unknown>
+    } catch {
+      // A non-JSON, non-empty string still means the bridge returned something.
+      return { returned: payload.length > 0, available: "unknown", price: null, duration: null }
+    }
+  } else if (typeof payload === "object") {
+    obj = payload as Record<string, unknown>
+  }
+  if (!obj) return { returned: false, available: "unknown", price: null, duration: null }
+
+  // If the bridge returns an array/collection, use the first record.
+  const record =
+    Array.isArray(obj) && obj.length > 0 ? (obj[0] as Record<string, unknown>) : obj
+
+  const pick = (keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = record[k]
+      if (typeof v === "string" && v) return v
+      if (typeof v === "number") return String(v)
+    }
+    return null
+  }
+
+  const price = pick(["localizedPrice", "priceString", "displayPrice", "price", "formattedPrice"])
+  const duration = pick([
+    "subscriptionPeriod",
+    "subscriptionDuration",
+    "period",
+    "duration",
+    "billingPeriod",
+  ])
+  const availRaw = record["isAvailable"] ?? record["available"] ?? record["purchasable"]
+  const available: boolean | "unknown" =
+    typeof availRaw === "boolean" ? availRaw : "unknown"
+
+  return { returned: true, available, price, duration }
+}
+
+/** Calls isSubscribed(productId) with a timeout; never initiates a purchase. */
+function probeIsSubscribed(
+  inapp: SwingInApp,
+  productId: string,
+  timeoutMs: number,
+): Promise<boolean | "no-callback"> {
+  return new Promise((resolve) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        resolve("no-callback")
+      }
+    }, timeoutMs)
+    try {
+      inapp.isSubscribed(productId, (value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(Boolean(value))
+      })
+    } catch {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        resolve("no-callback")
+      }
+    }
+  })
+}
+
+/** Calls a discovered product-query method for one id with a timeout. */
+function probeProductQuery(
+  method: (...args: unknown[]) => void,
+  productId: string,
+  timeoutMs: number,
+): Promise<unknown> {
+  return new Promise((resolve) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        resolve(null)
+      }
+    }, timeoutMs)
+    const done = (payload: unknown) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(payload)
+    }
+    try {
+      // These bridges are callback-style; the exact signature is unknown, so we
+      // pass the id and a completion callback and accept whatever comes back.
+      method(productId, (payload: unknown) => done(payload))
+    } catch {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        resolve(null)
+      }
+    }
+  })
+}
+
+/**
+ * Runs the read-only StoreKit diagnostic for the given product ids. Ensures the
+ * bridge library is present (inside the native app only), inspects which
+ * methods the bridge exposes, attempts a product-metadata query if one is
+ * available, and runs the StoreKit-backed isSubscribed() probe per product.
+ * Purchases are never started and nothing is granted.
+ */
+export async function runStoreKitProductDiagnostic(
+  productIds: string[],
+  perCallTimeoutMs = 4000,
+): Promise<StoreKitDiagnosticReport> {
+  const inNativeAppWebView = isNativeAppWebView()
+  const iosNative = isIosNativeApp()
+
+  if (inNativeAppWebView) {
+    // Make sure the bridge library has a chance to inject before we inspect it.
+    await waitForSwingIap(perCallTimeoutMs)
+  }
+
+  const inapp = getInApp()
+  const bridgePresent = Boolean(inapp)
+
+  const availableMethods: string[] = []
+  if (inapp) {
+    for (const key of [
+      "buy",
+      "subscribe",
+      "isSubscribed",
+      ...PRODUCT_QUERY_CANDIDATES,
+    ]) {
+      if (typeof (inapp as unknown as Record<string, unknown>)[key] === "function") {
+        availableMethods.push(key)
+      }
+    }
+  }
+
+  const queryMethodName =
+    inapp &&
+    PRODUCT_QUERY_CANDIDATES.find(
+      (name) => typeof (inapp as unknown as Record<string, unknown>)[name] === "function",
+    )
+  const productQuerySupported = Boolean(queryMethodName)
+
+  const products: StoreKitProductDiagnostic[] = []
+  for (const productId of productIds) {
+    if (!inapp) {
+      products.push({
+        productId,
+        queryMethodUsed: null,
+        storeKitReturnedProduct: "unknown",
+        availableForPurchase: "unknown",
+        localizedPrice: null,
+        subscriptionDuration: null,
+        isSubscribedResult: "unavailable",
+        raw: null,
+      })
+      continue
+    }
+
+    let raw: unknown = null
+    let fields = {
+      returned: false as boolean,
+      available: "unknown" as boolean | "unknown",
+      price: null as string | null,
+      duration: null as string | null,
+    }
+    if (queryMethodName) {
+      const method = (inapp as unknown as Record<string, unknown>)[
+        queryMethodName
+      ] as (...args: unknown[]) => void
+      raw = await probeProductQuery(method, productId, perCallTimeoutMs)
+      fields = extractProductFields(raw)
+    }
+
+    const isSub =
+      typeof inapp.isSubscribed === "function"
+        ? await probeIsSubscribed(inapp, productId, perCallTimeoutMs)
+        : ("unavailable" as const)
+
+    products.push({
+      productId,
+      queryMethodUsed: queryMethodName ?? null,
+      storeKitReturnedProduct: queryMethodName ? fields.returned : "unknown",
+      availableForPurchase: queryMethodName ? fields.available : "unknown",
+      localizedPrice: fields.price,
+      subscriptionDuration: fields.duration,
+      isSubscribedResult: isSub,
+      raw:
+        raw == null
+          ? null
+          : typeof raw === "string"
+            ? raw
+            : (() => {
+                try {
+                  return JSON.stringify(raw)
+                } catch {
+                  return String(raw)
+                }
+              })(),
+    })
+  }
+
+  return {
+    inNativeAppWebView,
+    isIosNativeApp: iosNative,
+    bridgePresent,
+    availableMethods,
+    productQuerySupported,
+    products,
+  }
+}
