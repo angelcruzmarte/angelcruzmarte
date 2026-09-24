@@ -369,122 +369,131 @@ export async function importNewBooks(opts?: {
     existingKeys.set(dedupeKey(b.title, b.author), b.id)
   }
 
-  // Download and parse full text (concurrent, bounded).
-  const built = (
-    await mapWithConcurrency(selected, 8, async (entry, i) => {
-      const raw = await fetchText(entry.gutenbergId)
-      if (!raw) return null
-      const parsed = parseText(raw, entry.title, entry.author)
-      const body = parsed.body
-      if (!body || body.length < 2000) return null
+  // Process the batch in chunks, committing each chunk's inserts as soon as it
+  // is built. A single insert at the very end means a slow run that hits the
+  // function time budget mid-download adds *nothing* — the catalog stops
+  // growing for that run. Chunked commits make partial progress durable, so
+  // whatever was downloaded before a timeout is still published.
+  const CHUNK_SIZE = 20
+  const seenInBatch = new Set<string>()
+  const byLanguage: Record<string, number> = {}
+  const insertedTitles: string[] = []
+  let added = 0
 
-      // Normalize metadata and rebuild a clean description from the prose,
-      // stripping Gutenberg boilerplate / transcriber notes.
-      const title = normalizeTitle(entry.title)
-      const author = normalizeAuthor(parsed.author || entry.author)
-      const derived = deriveDescription(body)
-      const description = derived.description || parsed.description
-      const excerpt = derived.excerpt || parsed.excerpt
+  for (let start = 0; start < selected.length; start += CHUNK_SIZE) {
+    const chunk = selected.slice(start, start + CHUNK_SIZE)
 
-      // Verify the language against the actual script of the text (catches a
-      // translation whose script contradicts the catalog tag).
-      const sample = `${title} ${body.slice(0, 1200)}`
-      const { language } = verifyLanguage(entry.language, sample)
+    // Download and parse full text (concurrent, bounded).
+    const built = (
+      await mapWithConcurrency(chunk, 8, async (entry, i) => {
+        const raw = await fetchText(entry.gutenbergId)
+        if (!raw) return null
+        const parsed = parseText(raw, entry.title, entry.author)
+        const body = parsed.body
+        if (!body || body.length < 2000) return null
 
-      // Prefer real cover artwork; never store a generic Gutenberg placeholder.
-      // When nothing legitimate exists, leave it null so the UI shows our
-      // branded card.
-      const coverImageUrl = await resolveRealCover({ title, author })
-      const [coverColor, accentColor] = PALETTE[i % PALETTE.length]
+        // Normalize metadata and rebuild a clean description from the prose,
+        // stripping Gutenberg boilerplate / transcriber notes.
+        const title = normalizeTitle(entry.title)
+        const author = normalizeAuthor(parsed.author || entry.author)
+        const derived = deriveDescription(body)
+        const description = derived.description || parsed.description
+        const excerpt = derived.excerpt || parsed.excerpt
 
+        // Verify the language against the actual script of the text (catches a
+        // translation whose script contradicts the catalog tag).
+        const sample = `${title} ${body.slice(0, 1200)}`
+        const { language } = verifyLanguage(entry.language, sample)
+
+        // Prefer real cover artwork; never store a generic Gutenberg
+        // placeholder. When nothing legitimate exists, leave it null so the UI
+        // shows our branded card.
+        const coverImageUrl = await resolveRealCover({ title, author })
+        const [coverColor, accentColor] = PALETTE[(start + i) % PALETTE.length]
+
+        return {
+          entry,
+          title,
+          author,
+          language,
+          description,
+          excerpt,
+          body,
+          sample,
+          coverImageUrl,
+          coverColor,
+          accentColor,
+          key: dedupeKey(title, author),
+        }
+      })
+    ).filter((r): r is NonNullable<typeof r> => r !== null)
+
+    // Score each book and quarantine failures / duplicates. Duplicate detection
+    // is tracked across the whole run (seenInBatch) so we also catch duplicates
+    // *within* this run, even across chunk boundaries.
+    const rows = built.map((b) => {
+      const duplicateOf = existingKeys.get(b.key) ?? null
+      const isBatchDup = !duplicateOf && seenInBatch.has(b.key)
+      seenInBatch.add(b.key)
+
+      const report = scoreBook({
+        title: b.title,
+        author: b.author,
+        language: b.language,
+        coverImageUrl: b.coverImageUrl,
+        description: b.description,
+        publicationYear: null,
+        isbn: null,
+        category: b.entry.category,
+        sample: b.sample,
+        fulfillment: "in_app",
+        duplicateOf: duplicateOf ?? (isBatchDup ? -1 : null),
+      })
+
+      const publishable = report.verdict === "publish"
       return {
-        entry,
-        title,
-        author,
-        language,
-        description,
-        excerpt,
-        body,
-        sample,
-        coverImageUrl,
-        coverColor,
-        accentColor,
-        key: dedupeKey(title, author),
+        title: b.title,
+        author: b.author,
+        category: b.entry.category,
+        language: b.language,
+        description: b.description,
+        excerpt: b.excerpt,
+        content: b.body,
+        priceInCents: b.entry.price,
+        coverImageUrl: b.coverImageUrl,
+        gutenbergId: b.entry.gutenbergId,
+        coverColor: b.coverColor,
+        accentColor: b.accentColor,
+        fulfillment: "in_app" as const,
+        published: autoPublish && publishable,
+        availability: publishable ? "available" : "needs_review",
+        qualityScore: report.score,
+        qualityReport: report,
+        qualityCheckedAt: new Date(),
       }
     })
-  ).filter((r): r is NonNullable<typeof r> => r !== null)
 
-  // Score each book and quarantine failures / duplicates. Duplicate detection
-  // runs sequentially so we also catch duplicates *within* this batch.
-  const seenInBatch = new Set<string>()
-  const rows = built.map((b) => {
-    const duplicateOf = existingKeys.get(b.key) ?? null
-    const isBatchDup = !duplicateOf && seenInBatch.has(b.key)
-    seenInBatch.add(b.key)
+    if (rows.length === 0) continue
 
-    const report = scoreBook({
-      title: b.title,
-      author: b.author,
-      language: b.language,
-      coverImageUrl: b.coverImageUrl,
-      description: b.description,
-      publicationYear: null,
-      isbn: null,
-      category: b.entry.category,
-      sample: b.sample,
-      fulfillment: "in_app",
-      duplicateOf: duplicateOf ?? (isBatchDup ? -1 : null),
-    })
+    // Insert; ON CONFLICT DO NOTHING guards against a race with a concurrent run
+    // (the partial unique index on gutenbergId enforces dedupe at the DB level).
+    const inserted = await db
+      .insert(book)
+      .values(rows)
+      .onConflictDoNothing()
+      .returning({ id: book.id, title: book.title, language: book.language })
 
-    const publishable = report.verdict === "publish"
-    return {
-      title: b.title,
-      author: b.author,
-      category: b.entry.category,
-      language: b.language,
-      description: b.description,
-      excerpt: b.excerpt,
-      content: b.body,
-      priceInCents: b.entry.price,
-      coverImageUrl: b.coverImageUrl,
-      gutenbergId: b.entry.gutenbergId,
-      coverColor: b.coverColor,
-      accentColor: b.accentColor,
-      fulfillment: "in_app" as const,
-      published: autoPublish && publishable,
-      availability: publishable ? "available" : "needs_review",
-      qualityScore: report.score,
-      qualityReport: report,
-      qualityCheckedAt: new Date(),
+    for (const r of inserted) {
+      byLanguage[r.language] = (byLanguage[r.language] ?? 0) + 1
+      insertedTitles.push(r.title)
     }
-  })
-
-  if (rows.length === 0) {
-    return {
-      added: 0,
-      candidates: selected.length,
-      byLanguage: {},
-      titles: [],
-    }
-  }
-
-  // Insert; ON CONFLICT DO NOTHING guards against a race with a concurrent run
-  // (the partial unique index on gutenbergId enforces dedupe at the DB level).
-  const inserted = await db
-    .insert(book)
-    .values(rows)
-    .onConflictDoNothing()
-    .returning({ id: book.id, title: book.title, language: book.language })
-
-  const byLanguage: Record<string, number> = {}
-  for (const r of inserted) {
-    byLanguage[r.language] = (byLanguage[r.language] ?? 0) + 1
+    added += inserted.length
   }
 
   return {
-    added: inserted.length,
+    added,
     candidates: selected.length,
     byLanguage,
-    titles: inserted.map((r) => r.title),
+    titles: insertedTitles,
   }
 }
