@@ -1,79 +1,119 @@
 # VOXYFI — App Store / Play Store Readiness
 
-VOXYFI ships to the Apple App Store and Google Play as a **native wrapper**
-(PWABuilder / Capacitor) around the deployed web app. The wrapper loads the site
-with a `?platform=ios` (or `?platform=android`) query flag, which is persisted to
-`localStorage` and read by `lib/platform.ts` → `usePlatform()`.
+VOXYFI ships to the Apple App Store as a **native wrapper** (SWING2APP WKWebView)
+around the deployed web app. The wrapper loads the production site, and the app
+detects that it is running inside the native iOS WebView at runtime.
 
-## Apple Guideline 3.1.1 — the "reader" model
+> **History — do not regress.** An earlier build hid all purchase surfaces on
+> iOS ("reader model") and detected the platform from a `?platform=ios` URL
+> flag. Apple rejected that under **Guideline 5.6 (Developer Code of Conduct)**
+> as functionality "intentionally hidden during the review process" (cloaking).
+> That model has been removed. The rules below are what keeps VOXYFI compliant;
+> reverting to hiding features on iOS will get the app rejected again.
 
-Apple forbids selling digital content/subscriptions inside an iOS app through any
-mechanism other than Apple In-App Purchase. VOXYFI's paid content (Premium
-subscription + individual audiobook purchases) is sold **only on the web via
-Stripe**. Inside the iOS shell we run the **reader model**: the app plays content
-the user already owns, but shows **no purchase surface, no prices, and no external
-links to buy**.
+## The compliant model: same app, In-App Purchase as the iOS payment rail
 
-### What is hidden on iOS (`isIOS === true`)
+The app shows **the same features, plans, books, and content to everyone**,
+including App Review. The ONLY thing that changes inside the iOS app is the
+**payment rail**: digital purchases run through **Apple In-App Purchase (IAP)**
+instead of Stripe, as **Guideline 3.1.1** requires. Nothing is hidden.
 
-| Surface | File | Behavior on iOS |
+### Platform detection (honest)
+
+`lib/platform.ts` → `detectPlatform()` reports `"ios"` only inside the genuine
+native iOS WebView (the WKWebView message-handler marker the SWING library
+itself uses), and `"web"` in every ordinary browser including mobile Safari. It
+is **never** driven by a URL flag, User-Agent, IP, date, or reviewer heuristic,
+and is used for one purpose only: choosing the payment rail.
+
+### What is identical on iOS and web (must stay visible to reviewers)
+
+| Surface | File | Behavior |
 | --- | --- | --- |
-| Subscription plans / prices / trial / checkout | `components/subscribe-plans.tsx`, `app/subscribe/page.tsx` | Reader message; no prices, no checkout, no external links |
-| Manage billing (Stripe portal) | `components/manage-billing-button.tsx` | Hidden |
-| Book store cart button | `components/books-store.tsx` (`BooksStore`) | Hidden |
-| Cart drawer + checkout | `components/cart-drawer.tsx` | Returns `null` (never opens) |
-| Featured hero "Add · $" / "In cart" | `components/books-store.tsx` (`BookHero`) | "Available on voxyfi.com" note |
-| Store card "Add · $" + price badge | `components/books-store.tsx` (`StoreBookCard`) → `components/store/book-card.tsx` (`web-only` action) | "On voxyfi.com" note, no price |
-| Book-detail "Buy for $" / "Add to cart" | `components/buy-book-button.tsx` | Neutral "get it on voxyfi.com" note |
-| Premium feature gate CTA | `components/premium-gate.tsx` | Info text, no "View plans" link |
-| Persistent "Upgrade" / "Subscribe" chrome | `app/app/layout.tsx`, `components/site-header.tsx`, `components/user-menu.tsx` | Hidden (wrapped in `WebOnly` / `!isIOS`) |
+| Subscribe screen, plans, features | `app/subscribe/page.tsx`, `components/subscribe-plans.tsx` | Shown on every platform. On iOS the Subscribe button runs the Apple IAP sheet; on web it runs Stripe checkout. |
+| Header "Subscribe" / "Upgrade" chrome | `components/site-header.tsx`, `app/app/layout.tsx`, `components/user-menu.tsx` | Shown to non-subscribers on every platform (no `isIOS` gating). |
+| Premium feature gate CTA | `components/premium-gate.tsx` | Always shows "View plans" → `/subscribe`. |
+| Book acquisition | `components/buy-book-button.tsx`, `components/books-store.tsx`, `components/genre-browser.tsx` | "Unlock with Premium" → `/subscribe` on every platform. Individual titles are no longer sold; Premium unlocks the whole library. |
+| Owned / free content | reader + player | "Listen" / "Read free" everywhere. |
+| Amazon affiliate out-links | `buy-on-amazon-button.tsx`, `amazon-buy-formats.tsx`, etc. | Open Amazon's own store in the external browser (physical goods) — allowed on iOS. |
 
-### What stays on iOS (Apple-compliant)
+### The only two iOS differences (both Apple-*required*, not cloaking)
 
-- **Amazon affiliate out-links** (`scan-result-sheet.tsx`, `live-book-results.tsx`,
-  `buy-on-amazon-button.tsx`, `amazon-buy-formats.tsx`) — these open Amazon's own
-  store in the external browser (physical goods / Amazon's storefront), not an
-  in-app purchase mechanism.
-- **Owned content** — "Listen" / "Listen now" for purchased or free titles.
-- **Free public-domain** ("Read free") and **in-app samples**.
-- All non-commerce features (uploads, library, player, AI tools within quota).
+1. **Manage/cancel subscription** (`components/manage-billing-button.tsx`) — on
+   iOS an IAP subscription is managed in the App Store (Settings › Apple Account
+   › Subscriptions), so the app shows that instruction instead of the Stripe
+   billing portal. This is where Apple *requires* IAP subscriptions to be
+   managed.
+2. **Promotional / discount pricing** (`components/home-promo.tsx`) — the
+   limited-time "% off" web promo is not shown on iOS, because the IAP price is
+   Apple's configured price and 3.1.1 forbids advertising a discounted digital
+   price inside the app that IAP will not actually charge. Fails closed (no
+   discount shown if platform detection is uncertain).
 
-### Single compliant boundary
+Neither of these removes a feature or a path to subscribe — they present the
+Apple-standard equivalent.
 
-Every remaining in-app link to `/subscribe` (contextual quota banners,
-locked-feature prompts, profile) now leads to the **reader-safe** `/subscribe`
-page, which on iOS contains no prices, no checkout, and no external purchase
-links. This is the single choke point that keeps the app compliant even where an
-individual CTA was left in place for web/Android.
+## Known submission blocker (as of this writing): StoreKit error code 3
 
-> Note: `isIOS` starts `false` on first render (to match SSR and avoid hydration
-> mismatch) and resolves after mount. In the native shell the `platform=ios` flag
-> is persisted in `localStorage`, so purchase UI is suppressed on every load.
+TestFlight purchases of the **annual** plan (`com.voxyfi.premium.annual`) fail
+with StoreKit **code 3** (`SKErrorPaymentInvalid`). This is thrown on-device by
+StoreKit **before** any receipt reaches the server, and the annual purchase call
+is byte-for-byte identical to the (working) monthly one except the product-id
+string. **This is an App Store Connect / test-environment configuration issue,
+not a code bug.** See the "Manual steps" below.
 
-## Android (Google Play)
+## IAP wiring (server)
 
-Google permits external purchase links more liberally than Apple. The current
-implementation only special-cases **iOS** (`isIOS`); Android (`isNative &&
-!isIOS`) behaves like the web and keeps the Stripe flow. If Play policy for your
-content category requires Play Billing, extend the gates from `isIOS` to
-`isNative`.
+- Product ids: `lib/plans.ts` (`com.voxyfi.premium.monthly`,
+  `com.voxyfi.premium.annual`).
+- Purchase verification: `app/api/apple/purchase/route.ts` + `lib/apple/verify.ts`
+  (App Store Server API, signed with the `APPLE_IAP_*` env keys). Premium is
+  granted **only after** server-side receipt verification.
+- Restore: `app/api/apple/restore/route.ts`.
+- Server notifications (renew / expire / revoke): `app/api/apple/notifications/route.ts`.
+- Entitlement resolution: `lib/entitlements.ts`.
 
 ## Pre-submission checklist
 
-- [ ] Deploy the web app to production (Publish).
-- [ ] Build the iOS wrapper so it loads `https://<prod-domain>/?platform=ios`.
-- [ ] Build the Android wrapper so it loads `https://<prod-domain>/?platform=android`.
-- [ ] Manually confirm on a signed-in iOS build: store shows no prices/cart,
-      book detail shows no Buy button, `/subscribe` shows the reader message,
-      account shows no "Manage billing" / "Upgrade".
-- [ ] Confirm owned/free content still plays on iOS.
-- [ ] App Review notes: state that Premium and book purchases are sold only on the
-      website and the iOS app is a reader that plays previously purchased content.
-- [ ] Provide a demo account with at least one owned title for reviewers.
-- [ ] Privacy: `/legal/privacy`, `/legal/terms`, `/legal/refund` are reachable.
-- [ ] `next build` passes with `ignoreBuildErrors: false` (verified).
+- [ ] Deploy the web app to production (Publish) and confirm the SWING2APP
+      wrapper loads the production domain.
+- [ ] On a signed-in iOS build, confirm **the same app is visible as on web**:
+      the store shows books, `/subscribe` shows the plans, and the header shows
+      the Subscribe/Upgrade affordance. (Nothing purchase-related should be
+      hidden — that was the rejected behavior.)
+- [ ] Confirm the Subscribe button on iOS opens the **Apple IAP sheet** (not
+      Stripe) and that a completed purchase unlocks Premium after server
+      verification.
+- [ ] Confirm owned/free content plays on iOS.
+- [ ] Confirm "Manage subscription" on iOS points to App Store settings, and no
+      discounted/strikethrough price is shown inside the iOS app.
+- [ ] Resolve StoreKit code 3 on the annual product (see Manual steps).
+- [ ] App Review notes: state that Premium is sold via **Apple In-App Purchase**
+      inside the app, the same plans are shown on web via Stripe, and physical
+      books link out to Amazon. Provide a demo account.
+- [ ] Privacy/terms/refund pages reachable; account deletion available
+      (`components/profile-view.tsx` / `components/settings-controls.tsx`).
+- [ ] `next build` passes with `ignoreBuildErrors: false`.
 
-## How to verify locally
+## Manual steps to clear StoreKit code 3 (App Store Connect — cannot be fixed in code)
 
-Append `?platform=ios` to any URL to simulate the iOS shell (the flag persists via
-`localStorage`); use `?platform=web` or clear the `voxyfi:platform` key to reset.
+1. **The annual product** (`com.voxyfi.premium.annual`): product id matches
+   exactly; type is **Auto-Renewable Subscription**; in the correct subscription
+   group and attached to the app (bundle id `APPLE_IAP_BUNDLE_ID`); **pricing is
+   set**; status is approved/"Ready to Submit" (not "Missing Metadata"); cleared
+   for sale in the tested storefront; no invalid promotional/introductory offer
+   attached. The first auto-renewable subscription in a group must be submitted
+   with an app version before it is purchasable even in Sandbox.
+2. **Test account / device:** Sandbox account has "Allow Purchases & Renewals"
+   on, a valid payment method, no storefront mismatch, and no stuck prior
+   transaction for the annual product. The device StoreKit environment is set by
+   how the build was installed (TestFlight/dev = Sandbox), independent of
+   `APPLE_IAP_ENVIRONMENT` (which governs server verification).
+3. Re-test both monthly and annual and read the device logs; a failure prints a
+   structured `[v0]` diagnostic with the product id and StoreKit code.
+
+## Android (Google Play)
+
+Only iOS is special-cased (IAP as the payment rail). Android behaves like the
+web (Stripe). If Play policy for this content category requires Play Billing,
+extend the payment-rail branch from iOS to native Android as well.
