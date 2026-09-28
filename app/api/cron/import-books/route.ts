@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     // downloads/parses at concurrency 8 and comfortably fits 150 titles inside
     // the 300s budget; override with IMPORT_MAX_PER_RUN if needed. Combined with
     // the twice-daily schedule this adds up to ~300 new titles/day.
-    const limit = Number(process.env.IMPORT_MAX_PER_RUN) || 150
+    const limit = Number(process.env.IMPORT_MAX_PER_RUN) || 40
     const result = await importNewBooks({ limit, autoPublish: true })
 
     if (result.added > 0) {
