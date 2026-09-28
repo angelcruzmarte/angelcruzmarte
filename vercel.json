@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/cron/check-book-links",
-      "schedule": "0 10 * * 1"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/prune-audit-log",
@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/cron/import-books",
-      "schedule": "0 5 * * *"
+      "schedule": "0 5,17 * * *"
     }
   ]
 }
