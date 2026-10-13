@@ -14,6 +14,8 @@ import {
   subscribeViaApple,
   AppleNativePurchaseError,
   describeApplePurchaseError,
+  getStoreKitLocalizedPrices,
+  isIosNativeApp,
 } from "@/lib/apple/swing-bridge"
 
 type PromoInfo = {
@@ -46,6 +48,46 @@ type RestoreState =
   /** Unexpected failure. */
   | { kind: "error" }
 
+/**
+ * Price shown for a plan inside the iOS app. Prefers StoreKit's localized price;
+ * when the SWING2APP bridge can't report one, shows the App Store Connect price
+ * and says Apple confirms it, so the web/Stripe price is never shown for an
+ * Apple purchase.
+ */
+function ApplePlanPrice({
+  loading,
+  storeKitPrice,
+  fallbackCents,
+  interval,
+}: {
+  loading: boolean
+  storeKitPrice: string | null
+  fallbackCents: number
+  interval: "month" | "year"
+}) {
+  if (loading) {
+    return (
+      <p className="mt-5 flex h-10 items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading App Store price&hellip;
+      </p>
+    )
+  }
+  return (
+    <>
+      <p className="mt-5 text-4xl font-semibold tracking-tight">
+        {storeKitPrice ?? formatPrice(fallbackCents)}
+        <span className="text-base font-normal text-muted-foreground">/{interval}</span>
+      </p>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {storeKitPrice
+          ? `Billed ${interval === "year" ? "yearly" : "monthly"} through your Apple ID.`
+          : `USD price. Apple shows your local price before you confirm.`}
+      </p>
+    </>
+  )
+}
+
 export function SubscribePlans({
   trialEligible = false,
   promo = null,
@@ -76,12 +118,28 @@ export function SubscribePlans({
   // can close the race for a tap that lands before detection settles.
   const [iapAvailable, setIapAvailable] = useState(false)
   const detectedRef = useRef<boolean | null>(null)
+  // Apple pricing inside the iOS app. "loading" while the bridge is detected and
+  // StoreKit is asked for localized prices; "ready" once settled. `storeKitPrices`
+  // holds StoreKit's localized string per product id (null when unavailable, in
+  // which case the App Store Connect price is shown and labeled).
+  const [applePricing, setApplePricing] = useState<"off" | "loading" | "ready">("off")
+  const [storeKitPrices, setStoreKitPrices] = useState<Record<string, string | null>>({})
   useEffect(() => {
     let active = true
-    waitForSwingIap().then((available) => {
+    if (isIosNativeApp()) setApplePricing("loading")
+    waitForSwingIap().then(async (available) => {
       if (!active) return
       detectedRef.current = available
       setIapAvailable(available)
+      if (!available) {
+        setApplePricing("off")
+        return
+      }
+      setApplePricing("loading")
+      const prices = await getStoreKitLocalizedPrices(PLANS.map((p) => p.appleProductId))
+      if (!active) return
+      setStoreKitPrices(prices)
+      setApplePricing("ready")
     })
     return () => {
       active = false
@@ -340,6 +398,14 @@ export function SubscribePlans({
             <p className="mt-1 text-sm text-muted-foreground">
               {plan.description}
             </p>
+            {applePricing !== "off" ? (
+              <ApplePlanPrice
+                loading={applePricing === "loading"}
+                storeKitPrice={storeKitPrices[plan.appleProductId] ?? null}
+                fallbackCents={plan.applePriceInCents}
+                interval={plan.interval}
+              />
+            ) : (
             <p className="mt-5 text-4xl font-semibold tracking-tight">
               {discounted !== null && (
                 <span className="mr-2 align-middle text-xl font-normal text-muted-foreground line-through">
@@ -351,6 +417,7 @@ export function SubscribePlans({
                 /{plan.interval}
               </span>
             </p>
+            )}
             {discounted !== null && (
               <p className="mt-1.5 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                 {promo!.percentOff}% off applied

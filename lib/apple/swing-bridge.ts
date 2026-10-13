@@ -523,6 +523,37 @@ function probeProductQuery(
 }
 
 /**
+ * Returns the StoreKit localized price string for each product id, or null per
+ * id when the bridge can't report one. The SWING2APP guide documents no product
+ * query, so this only uses a query method if the live bridge actually exposes
+ * one; otherwise it resolves immediately with nulls. Never starts a purchase.
+ */
+export async function getStoreKitLocalizedPrices(
+  productIds: string[],
+  perCallTimeoutMs = 3000,
+): Promise<Record<string, string | null>> {
+  const result: Record<string, string | null> = {}
+  for (const id of productIds) result[id] = null
+
+  const inapp = getInApp()
+  if (!inapp) return result
+  const record = inapp as unknown as Record<string, unknown>
+  const queryMethodName = PRODUCT_QUERY_CANDIDATES.find(
+    (name) => typeof record[name] === "function",
+  )
+  if (!queryMethodName) return result
+
+  const method = (record[queryMethodName] as (...args: unknown[]) => void).bind(inapp)
+  await Promise.all(
+    productIds.map(async (id) => {
+      const raw = await probeProductQuery(method, id, perCallTimeoutMs)
+      result[id] = extractProductFields(raw).price
+    }),
+  )
+  return result
+}
+
+/**
  * Runs the read-only StoreKit diagnostic for the given product ids. Ensures the
  * bridge library is present (inside the native app only), inspects which
  * methods the bridge exposes, attempts a product-metadata query if one is
