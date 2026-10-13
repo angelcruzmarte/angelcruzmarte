@@ -45,7 +45,7 @@ export const PLANS: Plan[] = [
     id: "yearly",
     name: "VOXYFI Premium Annual",
     description: "Unlimited listening, billed yearly. Save 30%.",
-    priceInCents: 9900,
+    priceInCents: 9999,
     interval: "year",
     appleProductId: "com.voxyfi.premium.annual",
     applePriceInCents: 9999,
