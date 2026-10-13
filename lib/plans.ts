@@ -14,6 +14,13 @@ export interface Plan {
    * server-verified Apple transaction back to this plan.
    */
   appleProductId: string
+  /**
+   * The price configured for `appleProductId` in App Store Connect (USD). Shown
+   * inside the iOS app when StoreKit can't report a localized price, so the app
+   * never displays the web/Stripe price for an Apple purchase. Must be kept in
+   * sync with App Store Connect.
+   */
+  applePriceInCents: number
 }
 
 // Source of truth for subscription plans. The price is validated server-side
@@ -26,6 +33,7 @@ export const PLANS: Plan[] = [
     priceInCents: 1299,
     interval: "month",
     appleProductId: "com.voxyfi.premium.monthly",
+    applePriceInCents: 1299,
     features: [
       "Unlimited access to the full library",
       "Natural word-by-word highlighting",
@@ -40,6 +48,7 @@ export const PLANS: Plan[] = [
     priceInCents: 9900,
     interval: "year",
     appleProductId: "com.voxyfi.premium.annual",
+    applePriceInCents: 9999,
     features: [
       "Everything in Premium",
       "Two months free vs. monthly",

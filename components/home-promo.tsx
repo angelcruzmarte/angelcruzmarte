@@ -73,6 +73,7 @@ export function PromoHeroBadge({ promo }: { promo: HomePromo | null }) {
  */
 export function HomePricing({ promo }: { promo: HomePromo | null }) {
   const showPromo = useWebPromoVisible(promo)
+  const { isIOS } = usePlatform()
 
   return (
     <>
@@ -126,7 +127,9 @@ export function HomePricing({ promo }: { promo: HomePromo | null }) {
                     {formatPrice(plan.priceInCents)}
                   </span>
                 )}
-                {formatPrice(discounted ?? plan.priceInCents)}
+                {formatPrice(
+                  discounted ?? (isIOS ? plan.applePriceInCents : plan.priceInCents),
+                )}
                 <span className="text-base font-normal text-muted-foreground">
                   /{plan.interval}
                 </span>
