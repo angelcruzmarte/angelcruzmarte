@@ -7,6 +7,7 @@ import {
   isTrialActive,
 } from "@/lib/session"
 import { syncSubscription } from "@/app/actions/subscription"
+import { reconcileAppleEntitlement } from "@/lib/apple/reconcile"
 import { getPlan, formatPrice } from "@/lib/plans"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -30,8 +31,14 @@ export default async function AccountPage() {
     console.error("[v0] syncSubscription failed on account page:", error)
   }
 
-  const user = await getCurrentUser()
-  if (!user) redirect("/sign-in")
+  const before = await getCurrentUser()
+  if (!before) redirect("/sign-in")
+  // Apple is authoritative for Apple subscriptions: re-read its current state
+  // so renewals, auto-renew changes, refunds, and expirations show correctly.
+  const appleSync = await reconcileAppleEntitlement(before)
+  const user = appleSync === "synced" ? ((await getCurrentUser()) ?? before) : before
+  const isApple = user.paymentProvider === "apple"
+  const applePending = isApple && appleSync === "pending"
 
   const subscribed = hasActiveSubscription(user)
   const plan = user.plan ? getPlan(user.plan) : undefined
@@ -94,6 +101,11 @@ export default async function AccountPage() {
                 : "no subscription"}
             </Badge>
           </div>
+          {applePending && (
+            <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground" role="status">
+              {"We're confirming your App Store subscription with Apple. This can take a moment — refresh shortly."}
+            </p>
+          )}
 
           {manageable ? (
             <div className="mt-4">
@@ -128,20 +140,50 @@ export default async function AccountPage() {
                   })}
                 </p>
               )}
-              <div className="mt-5">
-                <CancelSubscriptionButton
-                  cancelAtPeriodEnd={user.cancelAtPeriodEnd}
-                  periodEnd={periodEndIso}
-                  isTrialing={trialing}
-                  paymentFailing={paymentFailing}
-                />
-              </div>
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Update your card or view invoices in the billing portal.
-                </p>
-                <ManageBillingButton />
-              </div>
+              {isApple ? (
+                <div className="mt-4 border-t border-border pt-4">
+                  {user.cancelAtPeriodEnd && user.currentPeriodEnd && (
+                    <p className="mb-2 text-sm text-muted-foreground">
+                      {"Auto-renew is off. Premium stays active until "}
+                      {new Date(user.currentPeriodEnd).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                      .
+                    </p>
+                  )}
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Billed through the App Store. Manage or cancel in your Apple
+                    ID subscription settings.
+                  </p>
+                  <a
+                    href="https://apps.apple.com/account/subscriptions"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={buttonVariants({ variant: "outline" })}
+                  >
+                    Manage in App Store
+                  </a>
+                </div>
+              ) : (
+                <>
+                  <div className="mt-5">
+                    <CancelSubscriptionButton
+                      cancelAtPeriodEnd={user.cancelAtPeriodEnd}
+                      periodEnd={periodEndIso}
+                      isTrialing={trialing}
+                      paymentFailing={paymentFailing}
+                    />
+                  </div>
+                  <div className="mt-4 border-t border-border pt-4">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Update your card or view invoices in the billing portal.
+                    </p>
+                    <ManageBillingButton />
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="mt-4">

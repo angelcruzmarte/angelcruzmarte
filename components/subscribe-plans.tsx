@@ -182,18 +182,43 @@ export function SubscribePlans({
     console.log("[v0] Apple IAP purchase starting:", JSON.stringify(diagnostics))
     try {
       const purchase = await subscribeViaApple(plan.appleProductId)
-      const res = await fetch("/api/apple/purchase", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: purchase.productId,
-          transactionId: purchase.transactionId,
-          receipt: purchase.receipt,
-        }),
+      const payload = JSON.stringify({
+        productId: purchase.productId,
+        transactionId: purchase.transactionId,
+        receipt: purchase.receipt,
       })
-      if (!res.ok) {
+      // Apple can be briefly unreachable right after a purchase; the server
+      // answers 202 (pending) instead of a false failure, so retry with backoff.
+      let res: Response | null = null
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1500 * attempt))
+        }
+        res = await fetch("/api/apple/purchase", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        })
+        if (res.status !== 202) break
+      }
+      const result = res
+        ? ((await res.json().catch(() => ({}))) as { ok?: boolean; error?: string })
+        : {}
+      if (!res || res.status === 202) {
         setError(
-          "We couldn't confirm your purchase yet. If you were charged, it will unlock shortly.",
+          "Your purchase is being confirmed with Apple. Premium will unlock shortly — you can also tap Restore Purchases in a minute.",
+        )
+        return
+      }
+      if (res.status === 409) {
+        setError(
+          "This App Store subscription is already linked to a different VOXYFI account. Sign in to that account to use it.",
+        )
+        return
+      }
+      if (!res.ok || !result.ok) {
+        setError(
+          "We couldn't verify this purchase with Apple. If you were charged, tap Restore Purchases or contact support.",
         )
         return
       }
