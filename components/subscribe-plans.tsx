@@ -326,10 +326,38 @@ export function SubscribePlans({
       // Close the mount-time race: if detection hasn't settled yet, give the
       // native bridge a brief chance before deciding the payment rail. Once
       // detection has resolved we trust that result and don't re-wait.
-      const useApple =
+      const inIosApp = isIosNativeApp()
+      let useApple =
         detectedRef.current === null ? await waitForSwingIap(2000) : iapAvailable
+      // Inside the iOS app the bridge can be injected after the initial
+      // detection window. Re-check instead of trusting a stale "false".
+      if (!useApple && inIosApp) {
+        useApple = await waitForSwingIap(8000)
+        if (useApple) {
+          detectedRef.current = true
+          setIapAvailable(true)
+        }
+      }
       if (useApple) {
         await completeApplePurchase(planId)
+        return
+      }
+      // Apple requires In-App Purchase inside the iOS app; never open Stripe
+      // checkout there, even when the native bridge is slow to load.
+      if (inIosApp) {
+        const plugin = (window as unknown as { swingWebViewPlugin?: { app?: { inapp?: unknown } } })
+          .swingWebViewPlugin
+        console.log(
+          "[v0] Apple IAP bridge unavailable in iOS app:",
+          JSON.stringify({
+            pluginPresent: Boolean(plugin),
+            inappPresent: Boolean(plugin?.app?.inapp),
+            libraryTag: Boolean(document.querySelector("script[data-swing-iap]")),
+          }),
+        )
+        setError(
+          "In-app purchases are still loading. Please wait a moment and tap Subscribe again.",
+        )
         return
       }
       const result = await createSubscriptionCheckout(planId)
