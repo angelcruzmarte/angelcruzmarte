@@ -88,6 +88,40 @@ function ApplePlanPrice({
   )
 }
 
+// Temporary diagnostic: describes the native purchase callback's structure
+// (types, keys, lengths) without ever including receipt or transaction values.
+function describeCallbackShape(code: unknown, data: unknown) {
+  let parsed: unknown = null
+  let parseable = false
+  if (typeof data === "string") {
+    try {
+      parsed = JSON.parse(data)
+      parseable = true
+    } catch {
+      // Non-JSON payload; only its length is reported.
+    }
+  } else if (data && typeof data === "object") {
+    parsed = data
+  }
+  const obj = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
+  const tx = obj?.transaction
+  return {
+    codeType: typeof code,
+    code: typeof code === "number" || typeof code === "string" || typeof code === "boolean" ? code : null,
+    dataType: typeof data,
+    dataLength: typeof data === "string" ? data.length : null,
+    dataParseable: parseable,
+    dataKeys: obj ? Object.keys(obj) : [],
+    receiptType: obj ? typeof obj.receipt : null,
+    receiptLength: typeof obj?.receipt === "string" ? obj.receipt.length : null,
+    productIdValue: typeof obj?.productId === "string" ? obj.productId : null,
+    transactionType: tx === null ? "null" : typeof tx,
+    transactionKeys: tx && typeof tx === "object" ? Object.keys(tx as object) : [],
+    nonJsonPreview:
+      typeof data === "string" && !parseable ? data.slice(0, 120) : null,
+  }
+}
+
 // Temporary diagnostic: tells the server what this WebView exposes so we can
 // see why the TestFlight build isn't detected as the native iOS app.
 function reportIapEnvironment(extra: Record<string, unknown>) {
@@ -216,8 +250,17 @@ export function SubscribePlans({
       offerSupplied: "none",
     }
     console.log("[v0] Apple IAP purchase starting:", JSON.stringify(diagnostics))
+    let callbackSeen = false
+    const noCallbackTimer = setTimeout(() => {
+      if (!callbackSeen) reportIapEnvironment({ stage: "purchase-no-callback-90s", planId })
+    }, 90_000)
+    reportIapEnvironment({ stage: "purchase-start", planId, productId: plan.appleProductId })
     try {
-      const purchase = await subscribeViaApple(plan.appleProductId)
+      const purchase = await subscribeViaApple(plan.appleProductId, (code, data) => {
+        callbackSeen = true
+        clearTimeout(noCallbackTimer)
+        reportIapEnvironment({ stage: "purchase-callback", planId, ...describeCallbackShape(code, data) })
+      })
       const payload = JSON.stringify({
         productId: purchase.productId,
         transactionId: purchase.transactionId,

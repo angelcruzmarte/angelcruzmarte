@@ -301,14 +301,25 @@ export function describeApplePurchaseError(err: AppleNativePurchaseError): strin
 }
 
 /** Starts a native subscription purchase for the given Apple product id. */
-export function subscribeViaApple(productId: string): Promise<AppleNativePurchase> {
+export function subscribeViaApple(
+  productId: string,
+  onRawCallback?: (responseCode: unknown, data: unknown) => void,
+): Promise<AppleNativePurchase> {
   return new Promise((resolve, reject) => {
     const inapp = getInApp()
     if (!inapp?.subscribe) {
       reject(new AppleNativePurchaseError(-1, "In-app purchases are not available."))
       return
     }
-    inapp.subscribe(productId, makeCallback(resolve, reject))
+    const parse = makeCallback(resolve, reject)
+    inapp.subscribe(productId, (responseCode, data) => {
+      try {
+        onRawCallback?.(responseCode, data)
+      } catch {
+        // Diagnostics must never affect the purchase result.
+      }
+      parse(responseCode, data)
+    })
   })
 }
 
