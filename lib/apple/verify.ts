@@ -5,6 +5,7 @@ import { createPrivateKey } from "node:crypto"
 import {
   SignedDataVerifier,
   AppStoreServerAPIClient,
+  APIException,
   Environment,
   Status,
   type JWSTransactionDecodedPayload,
@@ -32,20 +33,20 @@ import { appleRootCertificates } from "./apple-root-certs"
  * `@apple/app-store-server-library`.
  */
 
-/** Thrown whenever Apple verification cannot be performed. Callers fail closed. */
-export class AppleIapNotConfiguredError extends Error {
-  constructor(message = "Apple IAP verification is not configured") {
-    super(message)
-    this.name = "AppleIapNotConfiguredError"
-  }
-}
+import {
+  AppleIapNotConfiguredError,
+  AppleIapTransientError,
+  AppleIapVerificationError,
+} from "./errors"
+import type {
+  AppleSubscriptionState,
+  AppleTransaction,
+} from "./process-purchase"
 
-/** Thrown when signed data is present but fails cryptographic verification. */
-export class AppleIapVerificationError extends Error {
-  constructor(message = "Apple IAP signed data failed verification") {
-    super(message)
-    this.name = "AppleIapVerificationError"
-  }
+export {
+  AppleIapNotConfiguredError,
+  AppleIapTransientError,
+  AppleIapVerificationError,
 }
 
 /**
@@ -135,6 +136,10 @@ export type VerifiedAppleTransaction = {
   expiresAt: Date | null
   /** Opaque token linking the purchase to a VOXYFI user (set by the client). */
   appAccountToken: string | null
+  /** Set when Apple refunded or revoked the transaction. */
+  revokedAt: Date | null
+  /** "Sandbox" (TestFlight) or "Production". */
+  environment: string | null
 }
 
 const verifierCache = new Map<Environment, SignedDataVerifier>()
@@ -226,6 +231,11 @@ function mapDecodedTransaction(
     expiresAt:
       typeof payload.expiresDate === "number" ? new Date(payload.expiresDate) : null,
     appAccountToken: payload.appAccountToken?.trim() || null,
+    revokedAt:
+      typeof payload.revocationDate === "number"
+        ? new Date(payload.revocationDate)
+        : null,
+    environment: payload.environment ? String(payload.environment) : null,
   }
 }
 
@@ -469,6 +479,153 @@ export async function restoreByOriginalTransactionId(
       `Restore lookup failed: ${
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
+    )
+  }
+  return null
+}
+
+/** Network failures, Apple 5xx, and 429 are retryable; nothing is granted or denied. */
+function isTransientAppleError(error: unknown): boolean {
+  if (error instanceof APIException) {
+    return error.httpStatusCode === 429 || error.httpStatusCode >= 500
+  }
+  return error instanceof TypeError
+}
+
+function isNotFoundAppleError(error: unknown): boolean {
+  return error instanceof APIException && error.httpStatusCode === 404
+}
+
+function looksLikeJws(value: string): boolean {
+  return value.trim().split(".").length === 3
+}
+
+/**
+ * Verifies the transaction the SWING2APP bridge returned after a native
+ * purchase. Accepts either a StoreKit 2 JWS (`receipt`) or, when the bridge
+ * only hands back a transaction id, looks that id up on Apple's App Store
+ * Server API and verifies the Apple-signed response. Either way the returned
+ * data is Apple-signed and verified; client fields are never trusted.
+ */
+export async function verifyNativePurchase(input: {
+  receipt: string
+  transactionId: string | null
+}): Promise<AppleTransaction> {
+  ensureConfigured()
+  const receipt = input.receipt?.trim() ?? ""
+  const transactionId = input.transactionId?.trim() || null
+
+  if (receipt && looksLikeJws(receipt)) {
+    try {
+      return await verifySignedTransaction(receipt)
+    } catch (error) {
+      if (!transactionId) throw error
+    }
+  }
+  if (!transactionId) {
+    throw new AppleIapVerificationError("No verifiable transaction data.")
+  }
+
+  let transient: unknown = null
+  for (const environment of environmentAttemptOrder()) {
+    try {
+      const response = await buildApiClient(environment).getTransactionInfo(
+        transactionId,
+      )
+      if (!response.signedTransactionInfo) continue
+      const decoded = await buildVerifier(environment).verifyAndDecodeTransaction(
+        response.signedTransactionInfo,
+      )
+      return mapDecodedTransaction(decoded)
+    } catch (error) {
+      if (error instanceof AppleIapNotConfiguredError) throw error
+      if (isTransientAppleError(error)) transient = error
+    }
+  }
+  if (transient) {
+    throw new AppleIapTransientError(
+      `Apple transaction lookup unavailable: ${(transient as Error).message}`,
+    )
+  }
+  throw new AppleIapVerificationError("Apple has no verifiable record of this transaction.")
+}
+
+/**
+ * Apple's CURRENT, verified state for a subscription: entitlement (ACTIVE or
+ * BILLING_GRACE_PERIOD), auto-renew on/off, grace end, and the latest
+ * transaction (renewals included). Null when Apple has no record in either
+ * environment. Throws AppleIapTransientError when Apple can't be reached so the
+ * caller reports "pending" instead of a false "expired"/"canceled".
+ */
+export async function getAppleSubscriptionState(
+  originalTransactionId: string,
+): Promise<AppleSubscriptionState | null> {
+  ensureConfigured()
+  const id = originalTransactionId?.trim()
+  if (!id) return null
+
+  let transient: unknown = null
+  let failure: unknown = null
+  for (const environment of environmentAttemptOrder()) {
+    try {
+      const response = await buildApiClient(environment).getAllSubscriptionStatuses(id)
+      const verifier = buildVerifier(environment)
+      let bestActive: AppleSubscriptionState | null = null
+      let bestAny: AppleSubscriptionState | null = null
+
+      for (const group of response.data ?? []) {
+        for (const last of group.lastTransactions ?? []) {
+          if (!last.signedTransactionInfo) continue
+          let transaction: AppleTransaction
+          try {
+            transaction = mapDecodedTransaction(
+              await verifier.verifyAndDecodeTransaction(last.signedTransactionInfo),
+            )
+          } catch {
+            continue
+          }
+          let autoRenew: boolean | null = null
+          let graceExpiresAt: Date | null = null
+          if (last.signedRenewalInfo) {
+            try {
+              const renewal = await verifier.verifyAndDecodeRenewalInfo(
+                last.signedRenewalInfo,
+              )
+              if (typeof renewal.autoRenewStatus === "number") {
+                autoRenew = renewal.autoRenewStatus === 1
+              }
+              if (typeof renewal.gracePeriodExpiresDate === "number") {
+                graceExpiresAt = new Date(renewal.gracePeriodExpiresDate)
+              }
+            } catch {
+              // Renewal info is advisory; entitlement comes from the status.
+            }
+          }
+          const entitled =
+            last.status === Status.ACTIVE ||
+            last.status === Status.BILLING_GRACE_PERIOD
+          const candidate = { entitled, autoRenew, graceExpiresAt, transaction }
+          if (entitled && !bestActive) bestActive = candidate
+          if (!bestAny) bestAny = candidate
+        }
+      }
+      const result = bestActive ?? bestAny
+      if (result) return result
+    } catch (error) {
+      if (error instanceof AppleIapNotConfiguredError) throw error
+      if (isNotFoundAppleError(error)) continue
+      if (isTransientAppleError(error)) transient = error
+      else failure = error
+    }
+  }
+  if (transient) {
+    throw new AppleIapTransientError(
+      `Apple subscription status unavailable: ${(transient as Error).message}`,
+    )
+  }
+  if (failure) {
+    throw new AppleIapVerificationError(
+      `Apple subscription status lookup failed: ${(failure as Error).message}`,
     )
   }
   return null

@@ -6,6 +6,7 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { isAdminHost, mainSiteUrl } from "@/lib/domains"
 import type { User } from "@/lib/db/schema"
+import { hasPremiumEntitlement } from "@/lib/entitlement-rules"
 
 /** Returns the full DB user row for the current session, or null. */
 export async function getCurrentUser(): Promise<User | null> {
@@ -111,6 +112,5 @@ export {
 export function hasActiveSubscription(u: User | null): boolean {
   if (!u) return false
   if (isAdmin(u)) return true
-  if (u.subscriptionStatus === "active") return true
-  return isTrialActive(u)
+  return hasPremiumEntitlement(u)
 }

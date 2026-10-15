@@ -1,5 +1,6 @@
 import { grantBookPurchase, grantCartPurchase } from "@/app/actions/books"
 import { db } from "@/lib/db"
+import { shouldStripeOverwrite } from "@/lib/entitlement-rules"
 import { user as userTable } from "@/lib/db/schema"
 import { stripe } from "@/lib/stripe"
 import { eq } from "drizzle-orm"
@@ -12,6 +13,17 @@ async function applySubscription(sub: Stripe.Subscription) {
     typeof sub.customer === "string" ? sub.customer : sub.customer.id
   const item = sub.items.data[0]
   const planId = sub.metadata?.planId ?? null
+
+  const [current] = await db
+    .select({
+      paymentProvider: userTable.paymentProvider,
+      subscriptionStatus: userTable.subscriptionStatus,
+      currentPeriodEnd: userTable.currentPeriodEnd,
+    })
+    .from(userTable)
+    .where(eq(userTable.stripeCustomerId, customerId))
+    .limit(1)
+  if (current && !shouldStripeOverwrite(current, sub.status)) return
 
   await db
     .update(userTable)

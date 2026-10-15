@@ -3,6 +3,7 @@
 import { db } from "@/lib/db"
 import { user as userTable } from "@/lib/db/schema"
 import { getPlan } from "@/lib/plans"
+import { shouldStripeOverwrite } from "@/lib/entitlement-rules"
 import { getCurrentUser } from "@/lib/session"
 import { stripe } from "@/lib/stripe"
 import { getBaseUrl } from "@/lib/urls"
@@ -366,6 +367,17 @@ export async function refreshSubscriptionFor(userId: string | null) {
   // consumed its one-time trial and won't be offered another.
   const usedTrial =
     u.hasUsedTrial || sub.status === "trialing" || Boolean(sub.trial_end)
+  // An old canceled/expired Stripe subscription must not clobber a live,
+  // verified Apple subscription (the cause of Apple buyers seeing "canceled").
+  if (!shouldStripeOverwrite(u, sub.status)) {
+    if (usedTrial !== u.hasUsedTrial) {
+      await db
+        .update(userTable)
+        .set({ hasUsedTrial: usedTrial, updatedAt: new Date() })
+        .where(eq(userTable.id, u.id))
+    }
+    return
+  }
   await db
     .update(userTable)
     .set({

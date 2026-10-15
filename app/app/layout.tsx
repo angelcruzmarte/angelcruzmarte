@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { getCurrentUser, hasActiveSubscription } from "@/lib/session"
+import { reconcileAppleEntitlement } from "@/lib/apple/reconcile"
 import { AppTabBar } from "@/components/app-tab-bar"
 import { PlayerProvider } from "@/components/player-provider"
 import { ListeningPreferencesProvider } from "@/components/listening-preferences"
@@ -24,9 +25,19 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const user = await getCurrentUser()
+  let user = await getCurrentUser()
   if (!user) redirect("/sign-in")
   if (!user.onboardingComplete) redirect("/onboarding")
+  // App launch / sign-in: if an Apple subscription's stored period has lapsed
+  // (a renewal notification may have been missed), re-read Apple before gating.
+  if (
+    user.appleOriginalTransactionId &&
+    (!user.currentPeriodEnd || new Date(user.currentPeriodEnd) <= new Date())
+  ) {
+    if ((await reconcileAppleEntitlement(user)) === "synced") {
+      user = (await getCurrentUser()) ?? user
+    }
+  }
   const subscribed = hasActiveSubscription(user)
   // Speechify-style free tier: everyone can use the app. Non-subscribers get a
   // limited experience (a daily listening cap, only the free preview voices,
