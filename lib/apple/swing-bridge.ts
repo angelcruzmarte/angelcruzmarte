@@ -40,7 +40,7 @@ declare global {
 
 /** Normalized, still-UNVERIFIED result of a native purchase callback. */
 export type AppleNativePurchase = {
-  /** Purchase receipt returned by the module. Sensitive verification data. */
+  /** App receipt returned by the module, or "" when only a transaction id was sent. */
   receipt: string
   /** Apple product id reported by the module. */
   productId: string
@@ -204,47 +204,86 @@ export function waitForSwingIap(timeoutMs = 4000, intervalMs = 150): Promise<boo
 // we follow the worked examples (1 === success) and treat everything else as a
 // non-success that must NOT grant access. Malformed/partial payloads are also
 // rejected rather than trusted.
+const RECEIPT_KEYS = ["receipt", "receiptData", "appReceipt", "transactionReceipt"]
+const TRANSACTION_ID_KEYS = [
+  "transactionIdentifier",
+  "transactionId",
+  "originalTransactionIdentifier",
+  "originalTransactionId",
+]
+
+function pickString(obj: Record<string, unknown> | null, keys: string[]): string {
+  if (!obj) return ""
+  for (const key of keys) {
+    const value = obj[key]
+    if (typeof value === "string" && value) return value
+    if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  }
+  return ""
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value)
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null
+}
+
+/**
+ * Normalizes a SWING2APP purchase callback into data the backend can verify.
+ *
+ * The native callback contract is under-specified: responseCode 1 is documented
+ * as both "success" and "payment error", the payload may arrive as a JSON string
+ * or an object, and key names vary between builds. Gating on responseCode alone
+ * dropped real sandbox purchases before they reached the server. So whenever the
+ * payload carries ANY verifiable evidence (an app receipt or a transaction id)
+ * we hand it to the backend, which verifies it with Apple before granting —
+ * nothing is granted from this client result. Only a payload with no verifiable
+ * data is treated as a failure.
+ */
+export function parseNativePurchasePayload(
+  responseCode: unknown,
+  data: unknown,
+  requestedProductId: string,
+): AppleNativePurchase | AppleNativePurchaseError {
+  const code = typeof responseCode === "number" ? responseCode : Number(responseCode)
+  const record = asRecord(data)
+  const transaction = asRecord(record?.transaction)
+  const receipt = pickString(record, RECEIPT_KEYS) || pickString(transaction, RECEIPT_KEYS)
+  const transactionId =
+    pickString(transaction, TRANSACTION_ID_KEYS) || pickString(record, TRANSACTION_ID_KEYS) || null
+  const productId =
+    pickString(record, ["productId", "productIdentifier"]) ||
+    pickString(transaction, ["productId", "productIdentifier"]) ||
+    requestedProductId
+
+  if (receipt || transactionId) {
+    return { receipt, productId, transactionId }
+  }
+  const safeCode = Number.isFinite(code) ? code : 0
+  if (safeCode !== 1) {
+    return new AppleNativePurchaseError(
+      safeCode,
+      typeof data === "string" && data ? data : "The purchase did not complete.",
+    )
+  }
+  return new AppleNativePurchaseError(safeCode, "Incomplete purchase response.")
+}
+
 function makeCallback(
+  requestedProductId: string,
   resolve: (p: AppleNativePurchase) => void,
   reject: (e: AppleNativePurchaseError) => void,
 ): SwingPurchaseCallback {
   return (responseCode, data) => {
-    if (responseCode !== 1) {
-      reject(
-        new AppleNativePurchaseError(
-          responseCode,
-          typeof data === "string" && data
-            ? data
-            : "The purchase did not complete.",
-        ),
-      )
-      return
-    }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(data)
-    } catch {
-      reject(new AppleNativePurchaseError(responseCode, "Malformed purchase response."))
-      return
-    }
-    const record = (parsed ?? {}) as {
-      receipt?: unknown
-      productId?: unknown
-      transaction?: { transactionIdentifier?: unknown } | null
-    }
-    const receipt = typeof record.receipt === "string" ? record.receipt : ""
-    const productId = typeof record.productId === "string" ? record.productId : ""
-    const transactionId =
-      record.transaction && typeof record.transaction.transactionIdentifier === "string"
-        ? record.transaction.transactionIdentifier
-        : null
-    if (!receipt || !productId) {
-      reject(
-        new AppleNativePurchaseError(responseCode, "Incomplete purchase response."),
-      )
-      return
-    }
-    resolve({ receipt, productId, transactionId })
+    const result = parseNativePurchasePayload(responseCode, data, requestedProductId)
+    if (result instanceof AppleNativePurchaseError) reject(result)
+    else resolve(result)
   }
 }
 
@@ -311,7 +350,7 @@ export function subscribeViaApple(
       reject(new AppleNativePurchaseError(-1, "In-app purchases are not available."))
       return
     }
-    const parse = makeCallback(resolve, reject)
+    const parse = makeCallback(productId, resolve, reject)
     inapp.subscribe(productId, (responseCode, data) => {
       try {
         onRawCallback?.(responseCode, data)
@@ -331,7 +370,7 @@ export function buyViaApple(productId: string): Promise<AppleNativePurchase> {
       reject(new AppleNativePurchaseError(-1, "In-app purchases are not available."))
       return
     }
-    inapp.buy(productId, makeCallback(resolve, reject))
+    inapp.buy(productId, makeCallback(productId, resolve, reject))
   })
 }
 
