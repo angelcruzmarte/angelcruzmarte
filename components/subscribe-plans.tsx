@@ -17,6 +17,7 @@ import {
   getStoreKitLocalizedPrices,
   isIosNativeApp,
 } from "@/lib/apple/swing-bridge"
+import { type RestoreState, restoreStateFromResponse } from "@/lib/apple/restore-result"
 
 type PromoInfo = {
   percentOff: number
@@ -26,27 +27,6 @@ type PromoInfo = {
   showBanner: boolean
 }
 
-/**
- * The possible outcomes of a server-driven "Restore Purchases" attempt. Each
- * maps to a distinct, honest user-facing explanation — restore only ever
- * re-verifies the Apple subscription already linked to THIS VOXYFI account, so
- * "not found" is a real, expected state (the subscription may belong to another
- * account) and gets a recovery panel rather than a generic error.
- */
-type RestoreState =
-  | { kind: "idle" }
-  /** Verified active — access re-granted; the handler navigates away. */
-  | { kind: "success" }
-  /** Not signed in — cannot restore to an anonymous user. */
-  | { kind: "unauthenticated" }
-  /** No Apple transaction is linked to this account (wrong account, or never subscribed here). */
-  | { kind: "no_record" }
-  /** Apple was queried but reports the subscription is no longer entitled (expired/refunded/revoked). */
-  | { kind: "not_active" }
-  /** Apple verification is unavailable (credentials not configured / API error). */
-  | { kind: "unavailable" }
-  /** Unexpected failure. */
-  | { kind: "error" }
 
 /**
  * Price shown for a plan inside the iOS app. Prefers StoreKit's localized price;
@@ -346,39 +326,11 @@ export function SubscribePlans({
         reason?: string
       }
 
-      // Not signed in — restore is per VOXYFI account and can never apply to an
-      // anonymous user.
-      if (res.status === 401) {
-        setRestoreState({ kind: "unauthenticated" })
-        return
-      }
-      // Apple verification unavailable (credentials not configured). Fail closed.
-      if (res.status === 503) {
-        setRestoreState({ kind: "unavailable" })
-        return
-      }
-      if (res.ok && data.restored) {
-        setRestoreState({ kind: "success" })
+      const next = restoreStateFromResponse(res.status, data)
+      setRestoreState(next)
+      if (next.kind === "success") {
         router.refresh()
         router.push("/app")
-        return
-      }
-      // Map the server's honest reason to a precise explanation.
-      switch (data.reason) {
-        case "no_record":
-        case "not_found":
-        case "unrecognized_product":
-          // No Apple transaction is linked to THIS account — most often the
-          // subscription lives on a different VOXYFI account.
-          setRestoreState({ kind: "no_record" })
-          break
-        case "not_active":
-          // Apple was queried and reports the subscription is no longer
-          // entitled (expired, refunded, or revoked).
-          setRestoreState({ kind: "not_active" })
-          break
-        default:
-          setRestoreState({ kind: "error" })
       }
     } catch {
       setRestoreState({ kind: "error" })
@@ -677,6 +629,13 @@ export function SubscribePlans({
             <p className="mx-auto mt-4 max-w-md text-pretty text-sm text-muted-foreground">
               Purchase verification is temporarily unavailable. Please try again
               in a little while.
+            </p>
+          )}
+
+          {restoreState.kind === "pending" && (
+            <p className="mx-auto mt-4 max-w-md text-pretty text-sm text-muted-foreground">
+              Apple is temporarily unreachable, so nothing was changed. Please
+              try Restore Purchases again in a minute.
             </p>
           )}
 
