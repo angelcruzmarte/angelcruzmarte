@@ -161,6 +161,103 @@ describe("processAppleRestore", () => {
     expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("pending")
     expect(writes).toHaveLength(0)
   })
+
+  it("queries Apple with the account's recorded original transaction and never trusts a client receipt", async () => {
+    const { deps } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: true, graceExpiresAt: null, transaction: tx() },
+    })
+    await processAppleRestore(deps, { userId: "u1" })
+    expect(deps.getRecordedOriginalTransactionId).toHaveBeenCalledWith("u1")
+    expect(deps.getSubscriptionState).toHaveBeenCalledWith("otid-1")
+    expect(deps.verifyNativePurchase).not.toHaveBeenCalled()
+  })
+
+  it("grants nothing when Apple has no record of the transaction", async () => {
+    const { deps, writes } = makeDeps({ recorded: "otid-1", state: null })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("not_found")
+    expect(writes).toHaveLength(0)
+  })
+
+  it("grants nothing when Apple's signed data fails verification", async () => {
+    const { deps, writes } = makeDeps({ recorded: "otid-1", state: new AppleIapVerificationError("bad jws") })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("error")
+    expect(writes).toHaveLength(0)
+  })
+
+  it("grants nothing for a product that is not a VOXYFI plan", async () => {
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: true, graceExpiresAt: null, transaction: tx({ productId: "com.other.app" }) },
+    })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("unrecognized_product")
+    expect(writes).toHaveLength(0)
+  })
+
+  it("restores the monthly plan with Apple's latest renewal period", async () => {
+    const renewed = tx({ productId: "com.voxyfi.premium.monthly", transactionId: "tx-9" })
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: true, graceExpiresAt: null, transaction: renewed },
+    })
+    const out = await processAppleRestore(deps, { userId: "u1" })
+    expect(out.kind).toBe("restored")
+    expect(writes[0]).toMatchObject({
+      userId: "u1",
+      write: {
+        status: "active",
+        plan: "monthly",
+        currentPeriodEnd: FUTURE,
+        appleOriginalTransactionId: "otid-1",
+        appleProductId: "com.voxyfi.premium.monthly",
+      },
+    })
+  })
+
+  it("keeps access through a billing grace period", async () => {
+    const grace = new Date("2026-10-30T12:00:00Z")
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: true, graceExpiresAt: grace, transaction: tx({ expiresAt: PAST }) },
+    })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("restored")
+    expect(writes[0].write).toMatchObject({ status: "active", currentPeriodEnd: grace })
+  })
+
+  it("does not restore a refunded (revoked) subscription", async () => {
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: false, graceExpiresAt: null, transaction: tx({ revokedAt: PAST }) },
+    })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("not_active")
+    expect(writes[0].write.status).toBe("revoked")
+  })
+
+  it("records auto-renew off so the account shows it ends at period end", async () => {
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: false, graceExpiresAt: null, transaction: tx() },
+    })
+    expect((await processAppleRestore(deps, { userId: "u1" })).kind).toBe("restored")
+    expect(writes[0].write.cancelAtPeriodEnd).toBe(true)
+  })
+
+  it("a restored entitlement unlocks Premium under the app's gating rule", async () => {
+    const { deps, writes } = makeDeps({
+      recorded: "otid-1",
+      state: { entitled: true, autoRenew: true, graceExpiresAt: null, transaction: tx() },
+    })
+    await processAppleRestore(deps, { userId: "u1" })
+    const w = writes[0].write
+    expect(
+      hasPremiumEntitlement({
+        paymentProvider: "apple",
+        subscriptionStatus: w.status,
+        currentPeriodEnd: w.currentPeriodEnd,
+        cancelAtPeriodEnd: w.cancelAtPeriodEnd,
+      } as Parameters<typeof hasPremiumEntitlement>[0], NOW),
+    ).toBe(true)
+  })
 })
 
 describe("processAppleNotification", () => {
