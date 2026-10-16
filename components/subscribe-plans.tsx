@@ -646,6 +646,30 @@ export function SubscribePlans({
           )}
         </div>
       )}
+
+      {/* App Store Guideline 3.1.2 requires auto-renewal terms and functional
+          Terms of Use / Privacy Policy links on the in-app subscription screen. */}
+      {applePricing !== "off" && (
+        <div className="mx-auto mt-8 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground">
+          <p className="text-pretty">
+            VOXYFI Premium (1 month) and VOXYFI Premium Annual (1 year) are
+            auto-renewable subscriptions at the prices shown above. Payment is
+            charged to your Apple Account at confirmation of purchase. The
+            subscription renews automatically at the same price for each period
+            unless auto-renew is turned off at least 24 hours before the end of
+            the current period. Manage or cancel your subscription in your Apple
+            Account settings.
+          </p>
+          <p className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link href="/legal/terms" className="font-medium text-primary underline">
+              Terms of Use
+            </Link>
+            <Link href="/legal/privacy" className="font-medium text-primary underline">
+              Privacy Policy
+            </Link>
+          </p>
+        </div>
+      )}
     </div>
   )
 }
