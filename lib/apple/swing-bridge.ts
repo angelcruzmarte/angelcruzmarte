@@ -395,6 +395,23 @@ export function isSubscribedNative(productId: string): Promise<boolean> {
   })
 }
 
+/**
+ * Like `isSubscribedNative`, but bounded by a timeout and three-valued so a
+ * missing callback is never mistaken for "not subscribed" or "subscribed".
+ * Used only to avoid reopening the purchase sheet for an Apple ID that is
+ * already subscribed; it never grants anything.
+ */
+export function probeNativeSubscription(
+  productId: string,
+  timeoutMs = 3000,
+): Promise<boolean | "unknown"> {
+  const inapp = getInApp()
+  if (!inapp?.isSubscribed) return Promise.resolve("unknown")
+  return probeIsSubscribed(inapp, productId, timeoutMs).then((r) =>
+    r === "no-callback" ? "unknown" : r,
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /* READ-ONLY StoreKit diagnostic (temporary).                                 */
 /*                                                                            */
