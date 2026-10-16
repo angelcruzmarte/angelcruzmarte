@@ -40,9 +40,18 @@ export default function TermsPage() {
         </p>
         <p>
           Your subscription renews automatically at the end of each billing
-          period unless you cancel before the renewal date. You can cancel at any
-          time from your account page; cancellation takes effect at the end of the
-          current billing period.
+          period unless you cancel before the renewal date. Cancellation takes
+          effect at the end of the current billing period.
+        </p>
+        <p>
+          If you subscribed through the VOXYFI iOS app, your subscription is
+          billed by Apple. To cancel, turn off auto-renew in your Apple Account
+          subscription settings at least 24 hours before the end of the current
+          period. Apple subscriptions cannot be canceled from the VOXYFI website.
+        </p>
+        <p>
+          If you subscribed on the VOXYFI website, you can cancel at any time from
+          your account page.
         </p>
       </LegalSection>
 
