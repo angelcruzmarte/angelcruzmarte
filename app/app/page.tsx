@@ -103,9 +103,9 @@ export default async function AppHome() {
             <Lock className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Start your free trial</p>
+            <p className="text-sm font-semibold">Upgrade to Premium</p>
             <p className="truncate text-xs text-muted-foreground">
-              7 days free &mdash; unlock everything VOXYFI can do.
+              Unlock everything VOXYFI can do.
             </p>
           </div>
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">

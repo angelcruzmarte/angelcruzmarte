@@ -16,7 +16,13 @@ import {
   describeApplePurchaseError,
   getStoreKitLocalizedPrices,
   isIosNativeApp,
+  probeNativeSubscription,
 } from "@/lib/apple/swing-bridge"
+import {
+  APPLE_MANAGE_SUBSCRIPTIONS_URL,
+  decidePurchaseGate,
+  isOwnershipConflict,
+} from "@/lib/apple/purchase-gate"
 import { type RestoreState, restoreStateFromResponse } from "@/lib/apple/restore-result"
 
 type PromoInfo = {
@@ -151,7 +157,18 @@ export function SubscribePlans({
   // precisely instead of collapsing every result into one vague message.
   const [restoreState, setRestoreState] = useState<RestoreState>({ kind: "idle" })
   const [signingOut, setSigningOut] = useState(false)
+  // True when this device's Apple ID already holds an active VOXYFI
+  // subscription that this (non-Premium) account doesn't own. Blocks reopening
+  // the purchase sheet; never grants access.
+  const [alreadySubscribed, setAlreadySubscribed] = useState(false)
   const router = useRouter()
+
+  async function appleIdAlreadySubscribed(): Promise<boolean> {
+    const probes = await Promise.all(
+      PLANS.map((p) => probeNativeSubscription(p.appleProductId)),
+    )
+    return decidePurchaseGate(probes) === "already_subscribed"
+  }
 
   // Detect the SWING2APP native In-App Purchase module at runtime. When present
   // (i.e. inside the module-enabled iOS app) subscribe buttons route to Apple
@@ -186,9 +203,13 @@ export function SubscribePlans({
         return
       }
       setApplePricing("loading")
-      const prices = await getStoreKitLocalizedPrices(PLANS.map((p) => p.appleProductId))
+      const [prices, subscribedElsewhere] = await Promise.all([
+        getStoreKitLocalizedPrices(PLANS.map((p) => p.appleProductId)),
+        appleIdAlreadySubscribed(),
+      ])
       if (!active) return
       setStoreKitPrices(prices)
+      setAlreadySubscribed(subscribedElsewhere)
       setApplePricing("ready")
     })
     return () => {
@@ -269,10 +290,8 @@ export function SubscribePlans({
         )
         return
       }
-      if (res.status === 409) {
-        setError(
-          "This App Store subscription is already linked to a different VOXYFI account. Sign in to that account to use it.",
-        )
+      if (isOwnershipConflict(res.status)) {
+        setAlreadySubscribed(true)
         return
       }
       if (!res.ok || !result.ok) {
@@ -371,6 +390,10 @@ export function SubscribePlans({
       }
       reportIapEnvironment({ stage: "subscribe-tap", planId, inIosApp, useApple })
       if (useApple) {
+        if (alreadySubscribed || (await appleIdAlreadySubscribed())) {
+          setAlreadySubscribed(true)
+          return
+        }
         await completeApplePurchase(planId)
         return
       }
@@ -526,19 +549,60 @@ export function SubscribePlans({
 
             <Button
               onClick={() => handleSubscribe(plan.id)}
-              disabled={loadingId !== null}
+              disabled={loadingId !== null || (iapAvailable && alreadySubscribed)}
               variant={plan.highlighted ? "default" : "secondary"}
               className="mt-7 w-full gap-2"
             >
               {loadingId === plan.id && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
-              {effectiveTrialEligible ? "Start free trial" : "Subscribe"}
+              {iapAvailable && alreadySubscribed
+                ? "Already subscribed"
+                : effectiveTrialEligible
+                  ? "Start free trial"
+                  : "Subscribe"}
             </Button>
           </Card>
           )
         })}
       </div>
+
+      {iapAvailable && alreadySubscribed && (
+        <div
+          role="status"
+          className="mx-auto mt-6 max-w-md rounded-2xl border border-primary/30 bg-primary/5 p-5 text-left"
+        >
+          <p className="text-sm font-semibold">
+            Your Apple ID is already subscribed
+          </p>
+          <p className="mt-1 text-pretty text-sm text-muted-foreground">
+            This Apple ID already has an active VOXYFI Premium subscription,
+            but it isn&apos;t linked to the VOXYFI account you&apos;re signed in
+            to. Sign in to the VOXYFI account you subscribed with to use it. If
+            you subscribed with this account, tap Restore Purchases below.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="gap-2"
+            >
+              {signingOut && <Loader2 className="h-4 w-4 animate-spin" />}
+              Switch account
+            </Button>
+            <a
+              href={APPLE_MANAGE_SUBSCRIPTIONS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+            >
+              Manage subscription
+            </a>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="mt-5 rounded-lg bg-destructive/10 px-4 py-2.5 text-center text-sm text-destructive">
